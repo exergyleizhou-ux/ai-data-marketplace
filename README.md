@@ -25,6 +25,9 @@ ai-data-marketplace/
 │           ├── payment/     支付 + 分账（资金不落平台账户）
 │           └── delivery/    临时链接 + 指纹 + 许可签约
 ├── frontend/                Next.js 14 (App Router) + TS + Tailwind
+│   ├── lib/                 API 客户端（统一 envelope + JWT + 401 刷新）+ 认证态
+│   ├── components/          UI 原语 / Nav / Protected
+│   └── app/                 登录·注册·账户(KYC)·数据市场·详情·卖家·订单·收益·运营后台
 ├── docker-compose.yml       本地全栈（postgres/redis/backend/frontend）
 └── .github/workflows/ci.yml CI（go vet/build/test + 前端 typecheck/lint/build）
 ```
@@ -55,9 +58,26 @@ make frontend-dev
 > 注意：首次构建后端需联网拉取 Go 依赖并生成 `go.sum`（`make backend-tidy`）；前端需 `npm install`。
 > 数据库迁移：`make migrate-up`/`migrate-down`/`migrate-create name=xxx`；进程内自迁移设 `AUTO_MIGRATE=true`（compose 已默认开启）。迁移文件在 [`backend/migrations/`](backend/migrations/) 并编译进二进制。
 
-## 开发路线（PR 计划见 docs §9）
+## 演示（沙箱全栈，无需 Docker）
 
-已完成：**PR-01 脚手架** · **PR-02 数据库 + 迁移** · **PR-03 统一响应/错误码/中间件**。
-下一步：PR-04 注册登录 + JWT（依赖 PR-02/03）。
+后端二进制 + 本地 Postgres + 前端 `next start` 即可跑通完整闭环。后端用沙箱支付（`PAYMENT_PROVIDER=mock`）与本地存储驱动；开发态启用 `POST /payments/dev/mark-paid` 模拟支付成功，便于演示。
 
-正式编码前必须完成 **Spike-2（分账/担保支付闭环可行性）** —— 拉法务 + 持牌方一起做，确认可行再写支付代码。
+```bash
+# 后端（开发态：自动迁移 + 自动实名 + 沙箱支付）
+cd backend && AUTO_MIGRATE=true KYC_AUTO_APPROVE=true APP_ENV=development \
+  DATABASE_URL='postgres://app@localhost:5432/app?sslmode=disable' \
+  STORAGE_DIR=./data/storage go run ./cmd/api      # :8080
+# 前端
+cd frontend && npm install && npm run build && npm run start   # :3000
+```
+
+闭环（已在浏览器端实测）：注册 → 实名 → 浏览/预览 → 下单 → 沙箱支付 → 下载 → 确认收货 → 自动分账(卖家90%/平台10%) → 评价；卖家「收益」实时反映已结算金额。`cmd/devsql` 可把某账号提权为 `ops` 以使用运营后台审核。
+
+## 进度（PR 计划见 docs §9）
+
+**已完成 PR-01 ~ 18 全部可做范围 + 前端 Web 应用**，每个 PR 真库 e2e + GitHub CI 验证。
+
+**尚需外部介入（外部墙，代码已留可插拔适配点）**：
+- **支付分账真集成**：替换 `payment.MockProvider` 前必须完成 **Spike-2 + 法务**（资金二清是刑事红线，docs §2.1）。
+- **对象存储**：用云凭证实现 `storage/oss.go`（生产为浏览器直传预签名）。
+- 中文检索：当前 `ILIKE` 子串匹配；规模化接 `zhparser`/ES+IK。
