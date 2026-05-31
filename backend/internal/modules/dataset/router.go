@@ -2,10 +2,10 @@ package dataset
 
 import "github.com/gin-gonic/gin"
 
-// Register mounts dataset routes. authMW protects seller-only mutations; detail
-// reads are public so buyers can browse. The server supplies authMW (built from
-// the auth module) so this package stays decoupled from auth.
-func Register(rg *gin.RouterGroup, svc *Service, authMW gin.HandlerFunc) {
+// Register mounts dataset routes. authMW protects seller mutations; opsGate
+// guards the admin review endpoints. The server supplies both (built from the
+// auth module) so this package stays decoupled from auth.
+func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc) {
 	h := &handler{svc: svc}
 
 	// Public read.
@@ -25,4 +25,10 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW gin.HandlerFunc) {
 	authed.PUT("/datasets/:id/upload/part", h.uploadPart)
 	authed.POST("/datasets/:id/upload/complete", h.completeUpload)
 	authed.GET("/datasets/:id/upload/status", h.uploadStatus)
+
+	// Ops review / takedown.
+	admin := rg.Group("/admin/datasets")
+	admin.Use(authMW, opsGate)
+	admin.POST("/:id/review", h.review)
+	admin.POST("/:id/delist", h.delist)
 }

@@ -229,6 +229,42 @@ func TestUploadWithUndeclaredPIIBouncesToDraft(t *testing.T) {
 	}
 }
 
+func TestReviewAndDelistFlow(t *testing.T) {
+	ctx := context.Background()
+	repo := newFakeRepo()
+	svc := NewService(repo, fakeIdentity{status: map[string]string{"owner": kycVerified}}, nil)
+	d, _ := svc.Create(ctx, "owner", CreateInput{Title: "t", DataType: "text", LicenseType: "commercial", SourceDeclaration: validDecl()})
+
+	// Cannot review a draft (not awaiting review).
+	if _, err := svc.Review(ctx, "ops", d.ID, true, ""); !errors.Is(err, ErrNotReviewable) {
+		t.Fatalf("want ErrNotReviewable, got %v", err)
+	}
+
+	_ = repo.SetStatus(ctx, d.ID, StatusReviewing)
+	approved, err := svc.Review(ctx, "ops", d.ID, true, "looks good")
+	if err != nil || approved.Status != StatusPublished {
+		t.Fatalf("approve: %v status=%q", err, approved.Status)
+	}
+
+	// Delist a published dataset.
+	delisted, err := svc.Delist(ctx, "ops", d.ID, "complaint")
+	if err != nil || delisted.Status != StatusDelisted {
+		t.Fatalf("delist: %v status=%q", err, delisted.Status)
+	}
+	// Delisting again (not published) fails.
+	if _, err := svc.Delist(ctx, "ops", d.ID, "x"); !errors.Is(err, ErrNotPublished) {
+		t.Fatalf("want ErrNotPublished, got %v", err)
+	}
+
+	// Reject path.
+	d2, _ := svc.Create(ctx, "owner", CreateInput{Title: "t2", DataType: "text", LicenseType: "commercial", SourceDeclaration: validDecl()})
+	_ = repo.SetStatus(ctx, d2.ID, StatusReviewing)
+	rejected, err := svc.Review(ctx, "ops", d2.ID, false, "源不清")
+	if err != nil || rejected.Status != StatusRejected {
+		t.Fatalf("reject: %v status=%q", err, rejected.Status)
+	}
+}
+
 func TestSignSourceFlow(t *testing.T) {
 	ctx := context.Background()
 	svc := newSvc("owner")

@@ -112,6 +112,6 @@ func (s *Server) routes() {
 			dsOpts = append(dsOpts, dataset.WithStorage(store))
 		}
 		dsSvc := dataset.NewService(dataset.NewRepository(s.db), authSvc, rec, dsOpts...)
-		dataset.Register(api, dsSvc, authMW)
+		dataset.Register(api, dsSvc, authMW, auth.RequireRole("ops", "admin"))
 	}
 }

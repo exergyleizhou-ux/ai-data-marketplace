@@ -151,6 +151,40 @@ func (h *handler) uploadStatus(c *gin.Context) {
 	httpx.OK(c, gin.H{"upload": st, "dataset_status": status})
 }
 
+type reviewRequest struct {
+	Approve bool   `json:"approve"`
+	Note    string `json:"note"`
+}
+
+func (h *handler) review(c *gin.Context) {
+	var req reviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	d, err := h.svc.Review(c.Request.Context(), httpx.UserID(c), c.Param("id"), req.Approve, req.Note)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, d)
+}
+
+type delistRequest struct {
+	Reason string `json:"reason"`
+}
+
+func (h *handler) delist(c *gin.Context) {
+	var req delistRequest
+	_ = c.ShouldBindJSON(&req)
+	d, err := h.svc.Delist(c.Request.Context(), httpx.UserID(c), c.Param("id"), req.Reason)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, d)
+}
+
 func fail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrValidation):
@@ -171,6 +205,12 @@ func fail(c *gin.Context, err error) {
 		httpx.Fail(c, httpx.ErrForbidden.WithMessage("upload does not belong to caller"))
 	case errors.Is(err, ErrStorageUnavailable):
 		httpx.Fail(c, httpx.ErrInternal.WithMessage("storage not configured"))
+	case errors.Is(err, ErrNotReviewable):
+		httpx.Fail(c, httpx.ErrConflict.WithMessage("dataset is not awaiting review"))
+	case errors.Is(err, ErrNotPublished):
+		httpx.Fail(c, httpx.ErrConflict.WithMessage("dataset is not published"))
+	case errors.Is(err, ErrBadTransition):
+		httpx.Fail(c, httpx.ErrConflict.WithMessage("illegal status transition"))
 	default:
 		httpx.Fail(c, httpx.ErrInternal)
 	}
