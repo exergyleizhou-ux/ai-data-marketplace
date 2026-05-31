@@ -76,6 +76,75 @@ func (h *handler) me(c *gin.Context) {
 	httpx.OK(c, user)
 }
 
+type updateProfileRequest struct {
+	Role string `json:"role"`
+}
+
+func (h *handler) updateProfile(c *gin.Context) {
+	var req updateProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	user, err := h.svc.UpdateRole(c.Request.Context(), httpx.UserID(c), req.Role)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, user)
+}
+
+type submitKYCRequest struct {
+	Type         string   `json:"type"`
+	RealName     string   `json:"real_name"`
+	CompanyName  string   `json:"company_name"`
+	IDNo         string   `json:"id_no"`
+	MaterialURLs []string `json:"material_urls"`
+}
+
+func (h *handler) submitKYC(c *gin.Context) {
+	var req submitKYCRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	rec, err := h.svc.SubmitKYC(c.Request.Context(), httpx.UserID(c),
+		req.Type, req.RealName, req.CompanyName, req.IDNo, req.MaterialURLs)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, rec)
+}
+
+func (h *handler) getKYC(c *gin.Context) {
+	rec, err := h.svc.GetKYC(c.Request.Context(), httpx.UserID(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, rec)
+}
+
+type reviewKYCRequest struct {
+	KYCID   string `json:"kyc_id"`
+	Approve bool   `json:"approve"`
+}
+
+func (h *handler) adminReviewKYC(c *gin.Context) {
+	var req reviewKYCRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.KYCID == "" {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	rec, err := h.svc.ReviewKYC(c.Request.Context(), req.KYCID, req.Approve, httpx.UserID(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, rec)
+}
+
 // fail maps auth sentinel errors onto the uniform httpx error envelope.
 func fail(c *gin.Context, err error) {
 	switch {
@@ -87,7 +156,7 @@ func fail(c *gin.Context, err error) {
 		httpx.Fail(c, httpx.ErrUnauthorized.WithMessage(err.Error()))
 	case errors.Is(err, ErrUserFrozen):
 		httpx.Fail(c, httpx.ErrForbidden.WithMessage("user is frozen"))
-	case errors.Is(err, ErrUserNotFound):
+	case errors.Is(err, ErrUserNotFound), errors.Is(err, ErrKYCNotFound):
 		httpx.Fail(c, httpx.ErrNotFound)
 	default:
 		httpx.Fail(c, httpx.ErrInternal)

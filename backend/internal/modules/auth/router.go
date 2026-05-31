@@ -17,4 +17,12 @@ func Register(rg *gin.RouterGroup, svc *Service, tm *TokenManager) {
 	authed := rg.Group("")
 	authed.Use(Middleware(tm))
 	authed.GET("/users/me", h.me)
+	authed.PUT("/users/me", h.updateProfile)
+	authed.POST("/users/me/kyc", h.submitKYC)
+	authed.GET("/users/me/kyc", h.getKYC)
+
+	// Ops-only review of KYC submissions.
+	admin := rg.Group("/admin")
+	admin.Use(Middleware(tm), RequireRole(roleOps, roleAdmin))
+	admin.POST("/kyc/review", h.adminReviewKYC)
 }

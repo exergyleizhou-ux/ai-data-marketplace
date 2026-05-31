@@ -34,3 +34,21 @@ func Middleware(tm *TokenManager) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// RequireRole gates a route to the given roles. It must run after Middleware so
+// the role is populated. This is a lightweight RBAC; PR-06 generalizes it
+// (Casbin / policy) and adds rate limiting.
+func RequireRole(roles ...string) gin.HandlerFunc {
+	allowed := make(map[string]bool, len(roles))
+	for _, r := range roles {
+		allowed[r] = true
+	}
+	return func(c *gin.Context) {
+		if !allowed[httpx.UserRole(c)] {
+			httpx.Fail(c, httpx.ErrForbidden)
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}

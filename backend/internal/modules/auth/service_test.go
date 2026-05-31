@@ -11,7 +11,9 @@ import (
 type fakeRepo struct {
 	byAccount map[string]userWithHash
 	byID      map[string]User
+	kyc       map[string]KYCRecord // by kyc id
 	seq       int
+	kycSeq    int
 }
 
 type userWithHash struct {
@@ -20,7 +22,66 @@ type userWithHash struct {
 }
 
 func newFakeRepo() *fakeRepo {
-	return &fakeRepo{byAccount: map[string]userWithHash{}, byID: map[string]User{}}
+	return &fakeRepo{byAccount: map[string]userWithHash{}, byID: map[string]User{}, kyc: map[string]KYCRecord{}}
+}
+
+func (r *fakeRepo) setKYCStatus(userID, status string) {
+	u := r.byID[userID]
+	u.KYCStatus = status
+	r.byID[userID] = u
+	if v, ok := r.byAccount[u.Account]; ok {
+		v.user.KYCStatus = status
+		r.byAccount[u.Account] = v
+	}
+}
+
+func (r *fakeRepo) UpdateUserRole(_ context.Context, id, role string) (User, error) {
+	u, ok := r.byID[id]
+	if !ok {
+		return User{}, ErrUserNotFound
+	}
+	u.Role = role
+	r.byID[id] = u
+	if v, ok := r.byAccount[u.Account]; ok {
+		v.user.Role = role
+		r.byAccount[u.Account] = v
+	}
+	return u, nil
+}
+
+func (r *fakeRepo) SubmitKYC(_ context.Context, rec KYCRecord, _ string) (KYCRecord, error) {
+	r.kycSeq++
+	rec.ID = "kyc-" + itoa(r.kycSeq)
+	rec.VerifyStatus = kycPending
+	r.kyc[rec.ID] = rec
+	r.setKYCStatus(rec.UserID, kycPending)
+	return rec, nil
+}
+
+func (r *fakeRepo) GetLatestKYC(_ context.Context, userID string) (KYCRecord, error) {
+	var latest KYCRecord
+	var found bool
+	for _, rec := range r.kyc {
+		if rec.UserID == userID {
+			latest = rec
+			found = true
+		}
+	}
+	if !found {
+		return KYCRecord{}, ErrKYCNotFound
+	}
+	return latest, nil
+}
+
+func (r *fakeRepo) ReviewKYC(_ context.Context, kycID, newStatus, _ string) (KYCRecord, error) {
+	rec, ok := r.kyc[kycID]
+	if !ok {
+		return KYCRecord{}, ErrKYCNotFound
+	}
+	rec.VerifyStatus = newStatus
+	r.kyc[kycID] = rec
+	r.setKYCStatus(rec.UserID, newStatus)
+	return rec, nil
 }
 
 func (r *fakeRepo) CreateUser(_ context.Context, account, accountType, passwordHash string) (User, error) {
@@ -161,6 +222,74 @@ func TestLoginFrozenUser(t *testing.T) {
 
 	if _, err := svc.Login(ctx, "frozen@example.com", "password123"); !errors.Is(err, ErrUserFrozen) {
 		t.Fatalf("want ErrUserFrozen, got %v", err)
+	}
+}
+
+func TestKYCManualReviewFlow(t *testing.T) {
+	svc, repo := newTestService() // default ManualVerifier
+	ctx := context.Background()
+
+	reg, err := svc.Register(ctx, "seller@example.com", accountTypeEmail, "password123")
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	uid := reg.User.ID
+
+	rec, err := svc.SubmitKYC(ctx, uid, kycTypePersonal, "张三", "", "110101199001011234", []string{"oss://id-front.jpg"})
+	if err != nil {
+		t.Fatalf("submit kyc: %v", err)
+	}
+	if rec.VerifyStatus != kycPending {
+		t.Fatalf("manual verifier should leave kyc pending, got %q", rec.VerifyStatus)
+	}
+	if u, _ := svc.Me(ctx, uid); u.KYCStatus != kycPending {
+		t.Fatalf("user kyc_status = %q, want pending", u.KYCStatus)
+	}
+
+	// Ops approves.
+	if _, err := svc.ReviewKYC(ctx, rec.ID, true, "ops-1"); err != nil {
+		t.Fatalf("review: %v", err)
+	}
+	if u, _ := svc.Me(ctx, uid); u.KYCStatus != kycVerified {
+		t.Fatalf("after approve user kyc_status = %q, want verified", u.KYCStatus)
+	}
+	_ = repo
+}
+
+func TestKYCValidationAndAutoApprove(t *testing.T) {
+	repo := newFakeRepo()
+	tm := NewTokenManager("test-secret", time.Minute, time.Hour)
+	svc := NewService(repo, tm, WithKYC(AutoApproveVerifier{}, "pii-secret"))
+	ctx := context.Background()
+
+	reg, _ := svc.Register(ctx, "u@example.com", accountTypeEmail, "password123")
+
+	// personal without id_no -> validation error.
+	if _, err := svc.SubmitKYC(ctx, reg.User.ID, kycTypePersonal, "张三", "", "", nil); !errors.Is(err, ErrValidation) {
+		t.Fatalf("want ErrValidation, got %v", err)
+	}
+	// auto-approve verifies immediately.
+	rec, err := svc.SubmitKYC(ctx, reg.User.ID, kycTypeCompany, "", "示例公司", "", []string{"oss://license.pdf"})
+	if err != nil {
+		t.Fatalf("submit kyc: %v", err)
+	}
+	if rec.VerifyStatus != kycVerified {
+		t.Fatalf("auto-approve should verify, got %q", rec.VerifyStatus)
+	}
+}
+
+func TestUpdateRole(t *testing.T) {
+	svc, _ := newTestService()
+	ctx := context.Background()
+	reg, _ := svc.Register(ctx, "u2@example.com", accountTypeEmail, "password123")
+
+	u, err := svc.UpdateRole(ctx, reg.User.ID, roleBoth)
+	if err != nil || u.Role != roleBoth {
+		t.Fatalf("update role both: %v role=%q", err, u.Role)
+	}
+	// Privileged roles cannot be self-assigned.
+	if _, err := svc.UpdateRole(ctx, reg.User.ID, roleAdmin); !errors.Is(err, ErrValidation) {
+		t.Fatalf("want ErrValidation for admin self-assign, got %v", err)
 	}
 }
 

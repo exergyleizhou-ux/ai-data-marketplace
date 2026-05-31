@@ -14,6 +14,20 @@ type User struct {
 	Status      string `json:"status"`
 }
 
+// KYCRecord is a real-name verification submission (实名认证). The raw ID number
+// is never stored — only id_no_hash (see hashIDNo); a production system should
+// encrypt for retrievability, hashing is the MVP floor.
+type KYCRecord struct {
+	ID           string   `json:"id"`
+	UserID       string   `json:"user_id"`
+	Type         string   `json:"type"` // personal | company
+	RealName     string   `json:"real_name,omitempty"`
+	CompanyName  string   `json:"company_name,omitempty"`
+	MaterialURLs []string `json:"material_urls"`
+	VerifyStatus string   `json:"verify_status"` // pending | verified | rejected
+	CreatedAt    string   `json:"created_at,omitempty"`
+}
+
 // Sentinel errors returned by the repository and service layers. Handlers map
 // these onto httpx error codes; lower layers stay HTTP-agnostic.
 var (
@@ -23,6 +37,7 @@ var (
 	ErrUserFrozen         = errors.New("user is frozen")
 	ErrInvalidToken       = errors.New("invalid or expired token")
 	ErrValidation         = errors.New("validation failed")
+	ErrKYCNotFound        = errors.New("no kyc record")
 )
 
 const (
@@ -31,4 +46,18 @@ const (
 
 	statusActive = "active"
 	statusFrozen = "frozen"
+
+	kycTypePersonal = "personal"
+	kycTypeCompany  = "company"
+
+	kycNone     = "none"
+	kycPending  = "pending"
+	kycVerified = "verified"
+	kycRejected = "rejected"
+
+	roleBuyer  = "buyer"
+	roleSeller = "seller"
+	roleBoth   = "both"
+	roleOps    = "ops"
+	roleAdmin  = "admin"
 )

@@ -11,12 +11,30 @@ import (
 // Service holds the auth business logic. It is HTTP-agnostic: it returns the
 // sentinel errors from model.go, which handlers translate to httpx codes.
 type Service struct {
-	repo   Repository
-	tokens *TokenManager
+	repo      Repository
+	tokens    *TokenManager
+	verifier  KYCVerifier
+	piiSecret string
 }
 
-func NewService(repo Repository, tokens *TokenManager) *Service {
-	return &Service{repo: repo, tokens: tokens}
+// Option configures optional Service dependencies.
+type Option func(*Service)
+
+// WithKYC sets the real-name verification backend and the secret used to hash
+// ID numbers before storage.
+func WithKYC(verifier KYCVerifier, piiSecret string) Option {
+	return func(s *Service) {
+		s.verifier = verifier
+		s.piiSecret = piiSecret
+	}
+}
+
+func NewService(repo Repository, tokens *TokenManager, opts ...Option) *Service {
+	s := &Service{repo: repo, tokens: tokens, verifier: ManualVerifier{}}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // AuthResult bundles the user and freshly issued tokens.

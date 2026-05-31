@@ -17,9 +17,12 @@ type Config struct {
 	RedisURL    string // redis URL
 	AutoMigrate bool   // run DB migrations on startup (handy for dev/CI)
 
-	JWTSecret      string        // HMAC signing secret for JWTs
-	JWTAccessTTL   time.Duration // access-token lifetime
-	JWTRefreshTTL  time.Duration // refresh-token lifetime
+	JWTSecret     string        // HMAC signing secret for JWTs
+	JWTAccessTTL  time.Duration // access-token lifetime
+	JWTRefreshTTL time.Duration // refresh-token lifetime
+
+	PIISecret      string // keyed-hash secret for sensitive fields (e.g. ID numbers)
+	KYCAutoApprove bool   // dev only: auto-verify KYC submissions instead of manual review
 }
 
 // Load reads configuration from the environment, applying sane local-dev
@@ -36,6 +39,9 @@ func Load() (*Config, error) {
 		JWTSecret:     getenv("JWT_SECRET", "dev-insecure-change-me"),
 		JWTAccessTTL:  15 * time.Minute,
 		JWTRefreshTTL: 30 * 24 * time.Hour,
+
+		PIISecret:      getenv("PII_SECRET", "dev-pii-secret"),
+		KYCAutoApprove: getenv("KYC_AUTO_APPROVE", "false") == "true",
 	}
 	// Validate that any provided PORT-style override parses, to fail fast.
 	if v := os.Getenv("HTTP_PORT"); v != "" {

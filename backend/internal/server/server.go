@@ -57,7 +57,12 @@ func (s *Server) routes() {
 	// db may be nil in route-only tests; modules needing it are skipped then.
 	if s.db != nil {
 		tm := auth.NewTokenManager(s.cfg.JWTSecret, s.cfg.JWTAccessTTL, s.cfg.JWTRefreshTTL)
-		authSvc := auth.NewService(auth.NewRepository(s.db), tm)
+		var verifier auth.KYCVerifier = auth.ManualVerifier{}
+		if s.cfg.KYCAutoApprove {
+			verifier = auth.AutoApproveVerifier{}
+		}
+		authSvc := auth.NewService(auth.NewRepository(s.db), tm,
+			auth.WithKYC(verifier, s.cfg.PIISecret))
 		auth.Register(api, authSvc, tm)
 	}
 }
