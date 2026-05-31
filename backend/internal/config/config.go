@@ -26,6 +26,9 @@ type Config struct {
 
 	StorageDriver string // local | oss
 	StorageDir    string // base dir for the local storage driver
+
+	PaymentProvider   string // mock (sandbox) | wechat | alipay (real = Spike-2 + 法务)
+	PaymentMockSecret string // HMAC secret for the sandbox provider's callbacks
 }
 
 // Load reads configuration from the environment, applying sane local-dev
@@ -48,6 +51,9 @@ func Load() (*Config, error) {
 
 		StorageDriver: getenv("STORAGE_DRIVER", "local"),
 		StorageDir:    getenv("STORAGE_DIR", "./data/storage"),
+
+		PaymentProvider:   getenv("PAYMENT_PROVIDER", "mock"),
+		PaymentMockSecret: getenv("PAYMENT_MOCK_SECRET", "dev-pay-secret"),
 	}
 	// Validate that any provided PORT-style override parses, to fail fast.
 	if v := os.Getenv("HTTP_PORT"); v != "" {

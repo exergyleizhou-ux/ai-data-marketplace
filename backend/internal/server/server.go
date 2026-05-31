@@ -17,6 +17,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/dataset"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/order"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/payment"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
@@ -80,6 +81,29 @@ func (a datasetPurchaseAdapter) ForPurchase(ctx context.Context, id string) (ord
 	}, nil
 }
 
+// orderPaymentAdapter bridges order.Service to payment.OrderGateway, converting
+// value types so neither package imports the other.
+type orderPaymentAdapter struct{ o *order.Service }
+
+func (a orderPaymentAdapter) GetSystem(ctx context.Context, id string) (payment.OrderInfo, error) {
+	o, err := a.o.GetSystem(ctx, id)
+	if err != nil {
+		return payment.OrderInfo{}, err
+	}
+	return payment.OrderInfo{
+		ID: o.ID, BuyerID: o.BuyerID, SellerID: o.SellerID, Status: o.Status,
+		AmountCents: o.AmountCents, PlatformFeeCents: o.PlatformFeeCents, SellerAmountCents: o.SellerAmountCents,
+	}, nil
+}
+func (a orderPaymentAdapter) MarkPaid(ctx context.Context, id string) error {
+	_, err := a.o.MarkPaid(ctx, id)
+	return err
+}
+func (a orderPaymentAdapter) MarkSettled(ctx context.Context, id string) error {
+	_, err := a.o.MarkSettled(ctx, id)
+	return err
+}
+
 // objectStorage builds the configured object-storage driver. Returns nil (and
 // logs) on failure so upload endpoints degrade to "storage unavailable" rather
 // than crashing the whole server.
@@ -135,5 +159,15 @@ func (s *Server) routes() {
 
 		orderSvc := order.NewService(order.NewRepository(s.db), authSvc, datasetPurchaseAdapter{ds: dsSvc}, rec)
 		order.Register(api, orderSvc, authMW)
+
+		// Payment + split-settlement. SANDBOX provider only — real WeChat/Alipay
+		// + split requires Spike-2 + 法务 before touching production funds.
+		if s.cfg.PaymentProvider != "mock" {
+			slog.Warn("only the sandbox payment provider is implemented; using mock", "requested", s.cfg.PaymentProvider)
+		}
+		mock := payment.MockProvider{Secret: s.cfg.PaymentMockSecret}
+		paySvc := payment.NewService(payment.NewRepository(s.db), orderPaymentAdapter{o: orderSvc}, mock, mock, rec)
+		payment.Register(api, paySvc, authMW)
+		orderSvc.SetSettlementTrigger(paySvc) // confirm-delivery -> auto settle
 	}
 }

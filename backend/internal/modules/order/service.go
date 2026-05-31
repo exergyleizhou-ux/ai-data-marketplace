@@ -25,12 +25,20 @@ type DatasetReader interface {
 	ForPurchase(ctx context.Context, datasetID string) (Purchasable, error)
 }
 
+// SettlementTrigger runs split-settlement once an order is confirmed. It is
+// implemented by the payment module and injected by the server, so order does
+// not import payment (avoids an import cycle).
+type SettlementTrigger interface {
+	Settle(ctx context.Context, orderID string) error
+}
+
 // Service holds order business logic and drives the status state machine.
 type Service struct {
 	repo     Repository
 	identity IdentityChecker
 	datasets DatasetReader
 	audit    audit.Recorder
+	settle   SettlementTrigger
 }
 
 func NewService(repo Repository, identity IdentityChecker, datasets DatasetReader, rec audit.Recorder) *Service {
@@ -38,6 +46,16 @@ func NewService(repo Repository, identity IdentityChecker, datasets DatasetReade
 		rec = audit.Noop{}
 	}
 	return &Service{repo: repo, identity: identity, datasets: datasets, audit: rec}
+}
+
+// SetSettlementTrigger wires the settlement hook after construction (the
+// payment service needs this order service, so the dependency is set late).
+func (s *Service) SetSettlementTrigger(t SettlementTrigger) { s.settle = t }
+
+// GetSystem returns an order without a party check — for internal callers
+// (payment/settlement) acting as the system, not an end user.
+func (s *Service) GetSystem(ctx context.Context, id string) (Order, error) {
+	return s.repo.GetByID(ctx, id)
 }
 
 const kycVerified = "verified"
@@ -112,12 +130,12 @@ func (s *Service) transition(ctx context.Context, actorID, id, from, to string, 
 
 // MarkPaid: created -> paid (called by the payment module on a verified callback).
 func (s *Service) MarkPaid(ctx context.Context, id string) (Order, error) {
-	return s.transition(ctx, "system", id, StatusCreated, StatusPaid, false)
+	return s.transition(ctx, "", id, StatusCreated, StatusPaid, false)
 }
 
 // MarkDelivered: paid -> delivered, arming the 7-day auto-confirm (called by delivery).
 func (s *Service) MarkDelivered(ctx context.Context, id string) (Order, error) {
-	return s.transition(ctx, "system", id, StatusPaid, StatusDelivered, true)
+	return s.transition(ctx, "", id, StatusPaid, StatusDelivered, true)
 }
 
 // ConfirmDelivery: delivered -> confirmed (buyer action or auto-confirm).
@@ -129,17 +147,26 @@ func (s *Service) ConfirmDelivery(ctx context.Context, buyerID, id string) (Orde
 	if o.BuyerID != buyerID {
 		return Order{}, ErrForbidden
 	}
-	return s.transition(ctx, buyerID, id, StatusDelivered, StatusConfirmed, false)
+	if _, err := s.transition(ctx, buyerID, id, StatusDelivered, StatusConfirmed, false); err != nil {
+		return Order{}, err
+	}
+	// Trigger split-settlement. It is idempotent and retriable, so a failure
+	// here leaves the order confirmed (settlement can be re-run) rather than
+	// blocking the buyer's confirmation.
+	if s.settle != nil {
+		_ = s.settle.Settle(ctx, id)
+	}
+	return s.repo.GetByID(ctx, id)
 }
 
 // MarkSettled: confirmed -> settled (called by the settlement module).
 func (s *Service) MarkSettled(ctx context.Context, id string) (Order, error) {
-	return s.transition(ctx, "system", id, StatusConfirmed, StatusSettled, false)
+	return s.transition(ctx, "", id, StatusConfirmed, StatusSettled, false)
 }
 
 // Cancel: created -> cancelled (payment timeout).
 func (s *Service) Cancel(ctx context.Context, id string) (Order, error) {
-	return s.transition(ctx, "system", id, StatusCreated, StatusCancelled, false)
+	return s.transition(ctx, "", id, StatusCreated, StatusCancelled, false)
 }
 
 // Dispute moves an active order to disputed and records the dispute.
