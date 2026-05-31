@@ -21,6 +21,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/payment"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/metrics"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
 	redispkg "github.com/lei/ai-data-marketplace/backend/internal/platform/redis"
@@ -40,10 +41,12 @@ func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	engine := gin.New()
-	// CORS first (handles preflight); then RequestID so logger/recovery correlate.
+	// CORS first (handles preflight); RequestID so logger/recovery correlate;
+	// metrics times the whole handler stack.
 	engine.Use(
 		middleware.CORS(cfg.CORSAllowOrigin),
 		middleware.RequestID(),
+		metrics.Middleware(),
 		middleware.Logger(),
 		middleware.Recovery(),
 	)
@@ -145,6 +148,8 @@ func (s *Server) routes() {
 	// Liveness / readiness — used by Docker Compose healthchecks and CI.
 	s.engine.GET("/healthz", s.handleHealthz)
 	s.engine.GET("/readyz", s.handleReadyz)
+	// Prometheus scrape endpoint (HTTP + Go/process metrics).
+	s.engine.GET("/metrics", gin.WrapH(metrics.Handler()))
 
 	// Versioned API surface. Module routers register under this group in
 	// later PRs, e.g. auth.Register(api), dataset.Register(api), ...

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,24 @@ func newTestServer() *Server {
 	gin.SetMode(gin.TestMode)
 	// db is nil: readyz skips the DB ping, healthz and /api/v1 routes don't touch it.
 	return New(&config.Config{Env: "test"}, nil)
+}
+
+func TestMetrics(t *testing.T) {
+	srv := newTestServer()
+	// Generate one request so a counter sample exists.
+	srv.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/v1/ping", nil))
+
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/metrics status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"marketplace_http_requests_total", "marketplace_http_request_duration_seconds", "go_goroutines"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/metrics missing %q", want)
+		}
+	}
 }
 
 func TestHealthz(t *testing.T) {
