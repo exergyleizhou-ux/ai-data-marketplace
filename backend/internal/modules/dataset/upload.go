@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/quality"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
 )
@@ -93,15 +94,79 @@ func (s *Service) CompleteUpload(ctx context.Context, userID, uploadID string) (
 		SHA256:      obj.SHA256,
 		ContentType: contentTypeOf(obj.Key),
 	}
-	// simhash is computed by the quality stage (PR-09); left empty here.
-	if _, err := s.repo.AddVersion(ctx, d.ID, obj.SHA256, "", file, StatusChecking); err != nil {
+
+	// Read the object once for fingerprinting + checks (capped to bound memory;
+	// production streams via an async worker — docs §6.3).
+	content, err := s.readObject(ctx, obj.Key)
+	if err != nil {
+		return Dataset{}, err
+	}
+	simhash := quality.SimHash(content)
+
+	versionID, err := s.repo.AddVersion(ctx, d.ID, obj.SHA256, simhash, file, StatusChecking)
+	if err != nil {
 		return Dataset{}, err
 	}
 	s.audit.Record(ctx, audit.Entry{
 		ActorID: userID, Action: "dataset.upload_complete", ResourceType: "dataset", ResourceID: d.ID,
 		Detail: map[string]any{"object_key": obj.Key, "size_bytes": obj.Size, "sha256": obj.SHA256},
 	})
+
+	if err := s.runQualityChecks(ctx, d, versionID, content, obj.SHA256, file.ContentType); err != nil {
+		return Dataset{}, err
+	}
 	return s.repo.GetByID(ctx, d.ID)
+}
+
+const maxScanBytes = 64 << 20 // 64 MiB cap for in-request quality scanning
+
+func (s *Service) readObject(ctx context.Context, key string) ([]byte, error) {
+	rc, _, err := s.storage.Open(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(io.LimitReader(rc, maxScanBytes))
+}
+
+// runQualityChecks runs format/stats/PII/dedup, persists each result, records
+// the sample count, and advances the dataset: pass/warn -> reviewing, any
+// fail (e.g. undeclared PII) -> back to draft for the seller to fix (docs §6.3).
+func (s *Service) runQualityChecks(ctx context.Context, d Dataset, versionID string, content []byte, contentSHA256, contentType string) error {
+	declaredPII := d.SourceDeclaration != nil && d.SourceDeclaration.ContainsPII
+
+	fmtChk := quality.Format(content, contentType)
+	statsChk, sample := quality.Stats(content)
+	piiChk := quality.PII(content, declaredPII)
+
+	dedupChk := quality.Check{Type: quality.TypeDedup, Result: quality.ResultPass, Report: map[string]any{}}
+	if dup, err := s.repo.ContentDupExists(ctx, contentSHA256, d.ID); err == nil && dup {
+		dedupChk.Result = quality.ResultWarn
+		dedupChk.Report["duplicate_of_existing_content"] = true
+	}
+
+	failed := false
+	for _, chk := range []quality.Check{fmtChk, statsChk, piiChk, dedupChk} {
+		if err := s.repo.SaveQualityCheck(ctx, d.ID, versionID, chk.Type, chk.Result, chk.Report); err != nil {
+			return err
+		}
+		if chk.Result == quality.ResultFail {
+			failed = true
+		}
+	}
+	if err := s.repo.SetSampleCount(ctx, d.ID, sample); err != nil {
+		return err
+	}
+
+	next := StatusReviewing
+	if failed {
+		next = StatusDraft // bounce back so the seller can de-identify / re-upload
+	}
+	s.audit.Record(ctx, audit.Entry{
+		ActorID: d.SellerID, Action: "dataset.quality_checked", ResourceType: "dataset", ResourceID: d.ID,
+		Detail: map[string]any{"passed": !failed, "next_status": next},
+	})
+	return s.repo.SetStatus(ctx, d.ID, next)
 }
 
 // UploadStatus reports upload progress plus the dataset's current status.

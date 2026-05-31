@@ -72,6 +72,14 @@ func (r *fakeRepo) AddVersion(_ context.Context, datasetID, contentSHA256, _ str
 	r.items[datasetID] = d
 	return "ver-1", nil
 }
+func (r *fakeRepo) SaveQualityCheck(_ context.Context, _, _, _, _ string, _ any) error { return nil }
+func (r *fakeRepo) ContentDupExists(_ context.Context, _, _ string) (bool, error)      { return false, nil }
+func (r *fakeRepo) SetSampleCount(_ context.Context, id string, n int64) error {
+	d := r.items[id]
+	d.SampleCount = n
+	r.items[id] = d
+	return nil
+}
 
 func itoa(n int) string {
 	if n == 0 {
@@ -187,11 +195,37 @@ func TestUploadFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("complete: %v", err)
 	}
-	if done.Status != StatusChecking {
-		t.Fatalf("status = %q, want checking", done.Status)
+	// Clean content passes all checks -> advances to reviewing.
+	if done.Status != StatusReviewing {
+		t.Fatalf("status = %q, want reviewing", done.Status)
 	}
 	if done.TotalSizeBytes != int64(len(body)) {
 		t.Fatalf("size = %d, want %d", done.TotalSizeBytes, len(body))
+	}
+	if done.SampleCount != 3 {
+		t.Fatalf("sample_count = %d, want 3", done.SampleCount)
+	}
+}
+
+func TestUploadWithUndeclaredPIIBouncesToDraft(t *testing.T) {
+	ctx := context.Background()
+	store, _ := storage.NewLocal(t.TempDir())
+	id := fakeIdentity{status: map[string]string{"owner": kycVerified}}
+	svc := NewService(newFakeRepo(), id, nil, WithStorage(store))
+
+	// Declaration says no PII (contains_pii=false).
+	d, _ := svc.Create(ctx, "owner", CreateInput{Title: "t", DataType: "text", LicenseType: "commercial", SourceDeclaration: validDecl()})
+	_, _ = svc.SignSource(ctx, "owner", d.ID)
+	sess, _ := svc.InitUpload(ctx, "owner", d.ID, "data.txt")
+	_, _ = svc.UploadPart(ctx, "owner", sess.UploadID, 1, strings.NewReader("联系电话 13800138000 身份证 11010119900101123X\n"))
+
+	done, err := svc.CompleteUpload(ctx, "owner", sess.UploadID)
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	// Undeclared PII is a hard fail -> bounced back to draft.
+	if done.Status != StatusDraft {
+		t.Fatalf("status = %q, want draft (PII bounce)", done.Status)
 	}
 }
 

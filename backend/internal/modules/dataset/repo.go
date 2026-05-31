@@ -22,6 +22,13 @@ type Repository interface {
 	// AddVersion creates a version + file row and points the dataset at it,
 	// updating size/status — all in one transaction. Returns the version id.
 	AddVersion(ctx context.Context, datasetID, contentSHA256, simhash string, f FileInput, newStatus string) (string, error)
+	// SaveQualityCheck persists one quality_check row.
+	SaveQualityCheck(ctx context.Context, datasetID, versionID, checkType, result string, report any) error
+	// ContentDupExists reports whether another dataset already has a version
+	// with the same content hash (exact resale / duplicate upload).
+	ContentDupExists(ctx context.Context, contentSHA256, excludeDatasetID string) (bool, error)
+	// SetSampleCount records the dataset's sample (non-empty line) count.
+	SetSampleCount(ctx context.Context, id string, n int64) error
 }
 
 // FileInput describes one stored object to attach to a dataset version.
@@ -180,6 +187,36 @@ func (r *pgRepo) AddVersion(ctx context.Context, datasetID, contentSHA256, simha
 		return "", fmt.Errorf("commit: %w", err)
 	}
 	return versionID, nil
+}
+
+func (r *pgRepo) SaveQualityCheck(ctx context.Context, datasetID, versionID, checkType, result string, report any) error {
+	rep, _ := json.Marshal(report)
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO quality_checks (dataset_id, version_id, type, result, report) VALUES ($1,$2,$3,$4,$5::jsonb)`,
+		datasetID, versionID, checkType, result, string(rep))
+	if err != nil {
+		return fmt.Errorf("save quality check: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepo) ContentDupExists(ctx context.Context, contentSHA256, excludeDatasetID string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM dataset_versions WHERE content_sha256=$1 AND dataset_id<>$2)`,
+		contentSHA256, excludeDatasetID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("content dup check: %w", err)
+	}
+	return exists, nil
+}
+
+func (r *pgRepo) SetSampleCount(ctx context.Context, id string, n int64) error {
+	_, err := r.pool.Exec(ctx, `UPDATE datasets SET sample_count=$2, updated_at=now() WHERE id=$1`, id, n)
+	if err != nil {
+		return fmt.Errorf("set sample count: %w", err)
+	}
+	return nil
 }
 
 func (r *pgRepo) SignSource(ctx context.Context, id string) (Dataset, error) {
