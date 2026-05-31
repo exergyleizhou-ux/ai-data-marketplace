@@ -39,6 +39,14 @@ func (r *fakeRepo) CreateSettlement(_ context.Context, orderID, _ string, _, _ i
 	return true, nil
 }
 func (r *fakeRepo) MarkSettlementSuccess(_ context.Context, _, _ string) error { return nil }
+func (r *fakeRepo) ChannelTxnByOrder(_ context.Context, orderID string) (string, error) {
+	for txn, oid := range r.txnToOrder {
+		if oid == orderID {
+			return txn, nil
+		}
+	}
+	return "", errors.New("no payment")
+}
 
 type fakeOrders struct {
 	info        OrderInfo

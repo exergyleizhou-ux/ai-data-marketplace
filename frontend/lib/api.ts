@@ -1,0 +1,268 @@
+// Typed client for the marketplace backend. Handles the uniform response
+// envelope { code, message, data, request_id }, Bearer auth, and one automatic
+// access-token refresh on 401.
+
+const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
+// Origin without the /api/v1 suffix — for absolute links the API returns (e.g. download_url).
+export const API_ORIGIN = BASE.replace(/\/api\/v1\/?$/, "");
+
+const ACCESS_KEY = "adm_access";
+const REFRESH_KEY = "adm_refresh";
+
+export type Tokens = { access_token: string; refresh_token: string; expires_in: number };
+export type User = {
+  id: string;
+  account: string;
+  account_type: string;
+  role: string;
+  kyc_status: string;
+  status: string;
+};
+export type AuthResult = { user: User; tokens: Tokens };
+
+export type SourceDeclaration = {
+  source: string;
+  collection_method: string;
+  contains_pii: boolean;
+  license_scope: string;
+  commitment: boolean;
+};
+export type Dataset = {
+  id: string;
+  seller_id: string;
+  title: string;
+  description: string;
+  data_type: string;
+  domain?: string;
+  license_type: string;
+  suggested_price_cents?: number;
+  final_price_cents?: number;
+  status: string;
+  total_size_bytes: number;
+  sample_count: number;
+  source_declaration?: SourceDeclaration;
+  source_signed_at?: string;
+  current_version_id?: string;
+  created_at?: string;
+};
+export type Order = {
+  id: string;
+  buyer_id: string;
+  seller_id: string;
+  dataset_id: string;
+  license_type: string;
+  amount_cents: number;
+  platform_fee_cents: number;
+  seller_amount_cents: number;
+  status: string;
+  created_at?: string;
+};
+export type Earnings = {
+  settled_cents: number;
+  pending_cents: number;
+  withdrawable_cents: number;
+  settled_orders: number;
+  pending_orders: number;
+};
+export type Review = {
+  id: string;
+  dataset_id: string;
+  score: number;
+  comment?: string;
+  issue_flag: boolean;
+  created_at?: string;
+};
+export type KYC = {
+  id: string;
+  type: string;
+  real_name?: string;
+  company_name?: string;
+  verify_status: string;
+  material_urls?: string[];
+};
+export type Preview = {
+  lines: string[];
+  line_count: number;
+  dataset_sample_count: number;
+  truncated: boolean;
+};
+
+export class ApiError extends Error {
+  code: number;
+  status: number;
+  constructor(code: number, status: number, message: string) {
+    super(message);
+    this.code = code;
+    this.status = status;
+  }
+}
+
+// --- token storage ---
+export const tokenStore = {
+  get access() {
+    return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
+  },
+  get refresh() {
+    return typeof window === "undefined" ? null : localStorage.getItem(REFRESH_KEY);
+  },
+  set(t: Tokens) {
+    localStorage.setItem(ACCESS_KEY, t.access_token);
+    localStorage.setItem(REFRESH_KEY, t.refresh_token);
+  },
+  clear() {
+    localStorage.removeItem(ACCESS_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+  },
+};
+
+type ReqOpts = {
+  method?: string;
+  body?: unknown;
+  auth?: boolean;
+  raw?: BodyInit; // raw body (e.g. upload part), skips JSON encoding
+  query?: Record<string, string | number | undefined>;
+  _retried?: boolean;
+};
+
+function buildURL(path: string, query?: ReqOpts["query"]): string {
+  const url = new URL(BASE + path);
+  if (query) {
+    for (const [k, v] of Object.entries(query)) {
+      if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
+    }
+  }
+  return url.toString();
+}
+
+async function request<T>(path: string, opts: ReqOpts = {}): Promise<T> {
+  const headers: Record<string, string> = {};
+  const access = tokenStore.access;
+  if (opts.auth !== false && access) headers["Authorization"] = `Bearer ${access}`;
+
+  let body: BodyInit | undefined;
+  if (opts.raw !== undefined) {
+    body = opts.raw;
+  } else if (opts.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(opts.body);
+  }
+
+  const res = await fetch(buildURL(path, opts.query), {
+    method: opts.method ?? (body ? "POST" : "GET"),
+    headers,
+    body,
+  });
+
+  // Try a single refresh on auth failure, then retry the original request.
+  if (res.status === 401 && opts.auth !== false && !opts._retried && tokenStore.refresh) {
+    const refreshed = await tryRefresh();
+    if (refreshed) return request<T>(path, { ...opts, _retried: true });
+  }
+
+  let json: { code: number; message: string; data: T } | null = null;
+  try {
+    json = await res.json();
+  } catch {
+    /* non-JSON (e.g. file download handled elsewhere) */
+  }
+  if (!res.ok || (json && json.code !== 0)) {
+    throw new ApiError(json?.code ?? -1, res.status, json?.message ?? res.statusText);
+  }
+  return (json as { data: T }).data;
+}
+
+let refreshing: Promise<boolean> | null = null;
+function tryRefresh(): Promise<boolean> {
+  if (refreshing) return refreshing;
+  refreshing = (async () => {
+    try {
+      const data = await request<AuthResult>("/auth/refresh", {
+        method: "POST",
+        body: { refresh_token: tokenStore.refresh },
+        auth: false,
+      });
+      tokenStore.set(data.tokens);
+      return true;
+    } catch {
+      tokenStore.clear();
+      return false;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
+// --- typed API surface ---
+export const api = {
+  // auth
+  register: (account: string, account_type: string, password: string) =>
+    request<AuthResult>("/auth/register", { body: { account, account_type, password }, auth: false }),
+  login: (account: string, password: string) =>
+    request<AuthResult>("/auth/login", { body: { account, password }, auth: false }),
+  me: () => request<User>("/users/me"),
+  updateRole: (role: string) => request<User>("/users/me", { method: "PUT", body: { role } }),
+  getKYC: () => request<KYC>("/users/me/kyc"),
+  submitKYC: (b: { type: string; real_name?: string; company_name?: string; id_no?: string; material_urls?: string[] }) =>
+    request<KYC>("/users/me/kyc", { body: b }),
+
+  // datasets
+  listDatasets: (q: Record<string, string | number | undefined>) =>
+    request<{ items: Dataset[] }>("/datasets", { auth: false, query: q }),
+  getDataset: (id: string) => request<Dataset>(`/datasets/${id}`, { auth: false }),
+  preview: (id: string) => request<Preview>(`/datasets/${id}/preview`),
+  datasetReviews: (id: string) => request<{ items: Review[] }>(`/datasets/${id}/reviews`, { auth: false }),
+  myDatasets: () => request<{ items: Dataset[] }>("/users/me/datasets"),
+  createDataset: (b: Record<string, unknown>) => request<Dataset>("/datasets", { body: b }),
+  signSource: (id: string) => request<Dataset>(`/datasets/${id}/source-declaration/sign`, { method: "POST" }),
+
+  // upload
+  uploadInit: (id: string, filename: string) =>
+    request<{ upload_id: string; object_key: string; suggested_part_size: number }>(
+      `/datasets/${id}/upload/init`,
+      { body: { filename } },
+    ),
+  uploadPart: (id: string, uploadId: string, partNumber: number, chunk: Blob) =>
+    request<{ part_number: number; bytes: number }>(`/datasets/${id}/upload/part`, {
+      method: "PUT",
+      raw: chunk,
+      query: { upload_id: uploadId, part_number: partNumber },
+    }),
+  uploadComplete: (id: string, uploadId: string) =>
+    request<Dataset>(`/datasets/${id}/upload/complete`, { method: "POST", query: { upload_id: uploadId } }),
+
+  // orders
+  createOrder: (dataset_id: string, license_type: string) =>
+    request<Order>("/orders", { body: { dataset_id, license_type } }),
+  listOrders: (role?: string) => request<{ items: Order[] }>("/orders", { query: { role } }),
+  getOrder: (id: string) => request<Order>(`/orders/${id}`),
+  confirmDelivery: (id: string) => request<Order>(`/orders/${id}/confirm-delivery`, { method: "POST" }),
+  dispute: (id: string, reason: string) => request<Order>(`/orders/${id}/dispute`, { body: { reason } }),
+  review: (id: string, score: number, comment: string, issue_flag: boolean) =>
+    request<Review>(`/orders/${id}/review`, { body: { score, comment, issue_flag } }),
+
+  // payment + delivery
+  createPayment: (order_id: string) =>
+    request<{ pay_url: string; channel_txn_id: string; amount_cents: number; channel: string }>(
+      "/payments/create",
+      { body: { order_id } },
+    ),
+  devMarkPaid: (order_id: string) => request<{ status: string }>("/payments/dev/mark-paid", { body: { order_id } }),
+  requestDownload: (id: string) =>
+    request<{ download_url: string; expires_at: string }>(`/orders/${id}/download`, {
+      body: { license_agreed: true },
+    }),
+
+  // seller / ops
+  earnings: () => request<Earnings>("/sellers/me/earnings"),
+  adminTransactions: () => request<{ items: Order[] }>("/admin/transactions"),
+  adminReviewDataset: (id: string, approve: boolean, note: string) =>
+    request<Dataset>(`/admin/datasets/${id}/review`, { body: { approve, note } }),
+  adminResolveDispute: (id: string, refund: boolean, note: string) =>
+    request<Order>(`/admin/orders/${id}/resolve`, { body: { refund, note } }),
+};
+
+export function yuan(cents?: number): string {
+  if (cents === undefined || cents === null) return "—";
+  return "¥" + (cents / 100).toFixed(2);
+}

@@ -42,6 +42,20 @@ func (h *handler) webhook(c *gin.Context) {
 	httpx.OK(c, gin.H{"received": true})
 }
 
+// devMarkPaid simulates a paid callback (sandbox/dev only).
+func (h *handler) devMarkPaid(c *gin.Context) {
+	var req createRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.OrderID == "" {
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("order_id is required"))
+		return
+	}
+	if err := h.svc.DevMarkPaid(c.Request.Context(), req.OrderID); err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"order_id": req.OrderID, "status": "paid"})
+}
+
 func fail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrForbidden):

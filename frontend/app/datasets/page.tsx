@@ -1,0 +1,85 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { api, yuan, type Dataset } from "@/lib/api";
+import { Badge, Button, Card, Empty, Input, Select, Spinner } from "@/components/ui";
+
+const DATA_TYPES = ["", "text", "code", "structured"];
+
+export default function DatasetsPage() {
+  const [items, setItems] = useState<Dataset[] | null>(null);
+  const [q, setQ] = useState("");
+  const [dataType, setDataType] = useState("");
+  const [sort, setSort] = useState("newest");
+
+  const load = useCallback(async () => {
+    setItems(null);
+    const res = await api.listDatasets({ q, data_type: dataType, sort, limit: 50 });
+    setItems(res.items);
+  }, [q, dataType, sort]);
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">数据市场</h1>
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void load();
+        }}
+        className="flex flex-wrap items-end gap-3"
+      >
+        <div className="min-w-[14rem] flex-1">
+          <Input placeholder="搜索标题 / 描述…" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+        <Select value={dataType} onChange={(e) => setDataType(e.target.value)} className="w-36">
+          {DATA_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t === "" ? "全部类型" : t}
+            </option>
+          ))}
+        </Select>
+        <Select value={sort} onChange={(e) => setSort(e.target.value)} className="w-36">
+          <option value="newest">最新</option>
+          <option value="price_asc">价格从低</option>
+          <option value="price_desc">价格从高</option>
+        </Select>
+        <Button type="submit">筛选</Button>
+      </form>
+
+      {items === null ? (
+        <Spinner />
+      ) : items.length === 0 ? (
+        <Empty>暂无符合条件的数据集</Empty>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {items.map((d) => (
+            <Link key={d.id} href={`/datasets/${d.id}`}>
+              <Card className="h-full transition hover:shadow-md">
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-semibold leading-snug">{d.title}</h3>
+                  <Badge>{d.data_type}</Badge>
+                </div>
+                <p className="mt-2 line-clamp-2 min-h-[2.5rem] text-sm text-neutral-500">
+                  {d.description || "（无描述）"}
+                </p>
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-lg font-semibold">{yuan(d.final_price_cents ?? d.suggested_price_cents)}</span>
+                  <span className="text-xs text-neutral-400">{d.sample_count} 条样本</span>
+                </div>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

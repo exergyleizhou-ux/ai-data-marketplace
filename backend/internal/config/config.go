@@ -29,6 +29,8 @@ type Config struct {
 
 	PaymentProvider   string // mock (sandbox) | wechat | alipay (real = Spike-2 + 法务)
 	PaymentMockSecret string // HMAC secret for the sandbox provider's callbacks
+
+	CORSAllowOrigin string // browser origin allowed to call the API ("*" in dev)
 }
 
 // Load reads configuration from the environment, applying sane local-dev
@@ -54,6 +56,8 @@ func Load() (*Config, error) {
 
 		PaymentProvider:   getenv("PAYMENT_PROVIDER", "mock"),
 		PaymentMockSecret: getenv("PAYMENT_MOCK_SECRET", "dev-pay-secret"),
+
+		CORSAllowOrigin: getenv("CORS_ALLOW_ORIGIN", "*"),
 	}
 	// Validate that any provided PORT-style override parses, to fail fast.
 	if v := os.Getenv("HTTP_PORT"); v != "" {

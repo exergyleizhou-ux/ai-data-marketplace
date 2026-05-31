@@ -19,6 +19,9 @@ type Repository interface {
 	// MarkPaidByChannelTxn flips created->paid (escrow frozen) exactly once.
 	// newlyPaid is false if the callback was already processed.
 	MarkPaidByChannelTxn(ctx context.Context, channelTxnID string) (orderID string, newlyPaid bool, err error)
+	// ChannelTxnByOrder returns the payment's channel txn id for an order
+	// (used by the dev-only simulate-paid helper).
+	ChannelTxnByOrder(ctx context.Context, orderID string) (string, error)
 	// CreateSettlement inserts a pending settlement; created=false if one
 	// already exists (unique order_id / idempotency_key) — the double-split guard.
 	CreateSettlement(ctx context.Context, orderID, idempotencyKey string, platformFeeCents, sellerAmountCents int64) (created bool, err error)
@@ -72,6 +75,18 @@ func (r *pgRepo) MarkPaidByChannelTxn(ctx context.Context, channelTxnID string) 
 		return "", false, fmt.Errorf("lookup payment: %w", err)
 	}
 	return orderID, false, nil // already handled
+}
+
+func (r *pgRepo) ChannelTxnByOrder(ctx context.Context, orderID string) (string, error) {
+	var txn string
+	err := r.pool.QueryRow(ctx, `SELECT COALESCE(channel_txn_id,'') FROM payments WHERE order_id=$1`, orderID).Scan(&txn)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("no payment for order")
+	}
+	if err != nil {
+		return "", fmt.Errorf("channel txn by order: %w", err)
+	}
+	return txn, nil
 }
 
 func (r *pgRepo) CreateSettlement(ctx context.Context, orderID, idempotencyKey string, platformFeeCents, sellerAmountCents int64) (bool, error) {

@@ -80,19 +80,36 @@ func (s *Service) HandleCallback(ctx context.Context, channel string, payload []
 	if !cb.Paid {
 		return nil // non-success notification; nothing to do
 	}
-	orderID, newlyPaid, err := s.repo.MarkPaidByChannelTxn(ctx, cb.ChannelTxnID)
+	return s.markPaid(ctx, cb.ChannelTxnID)
+}
+
+// markPaid flips the payment + order to paid exactly once (idempotent on
+// channel_txn_id). Shared by the verified webhook and the dev helper.
+func (s *Service) markPaid(ctx context.Context, channelTxnID string) error {
+	orderID, newlyPaid, err := s.repo.MarkPaidByChannelTxn(ctx, channelTxnID)
 	if err != nil {
 		return err
 	}
 	if !newlyPaid {
-		return nil // duplicate webhook — already handled
+		return nil // already handled
 	}
 	if err := s.orders.MarkPaid(ctx, orderID); err != nil {
 		return err
 	}
 	s.audit.Record(ctx, audit.Entry{Action: "payment.paid", ResourceType: "order", ResourceID: orderID,
-		Detail: map[string]any{"channel": channel, "channel_txn_id": cb.ChannelTxnID}})
+		Detail: map[string]any{"channel_txn_id": channelTxnID}})
 	return nil
+}
+
+// DevMarkPaid simulates a successful provider callback for an order. SANDBOX/DEV
+// ONLY — it bypasses signature verification and must never be mounted in
+// production. It lets the UI demo the full loop without a real payment gateway.
+func (s *Service) DevMarkPaid(ctx context.Context, orderID string) error {
+	txn, err := s.repo.ChannelTxnByOrder(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	return s.markPaid(ctx, txn)
 }
 
 // Settle executes split-settlement for a confirmed order: seller share +

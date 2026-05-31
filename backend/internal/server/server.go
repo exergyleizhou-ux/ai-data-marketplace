@@ -40,8 +40,13 @@ func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	engine := gin.New()
-	// RequestID first so logger/recovery can correlate; Recovery wraps handlers.
-	engine.Use(middleware.RequestID(), middleware.Logger(), middleware.Recovery())
+	// CORS first (handles preflight); then RequestID so logger/recovery correlate.
+	engine.Use(
+		middleware.CORS(cfg.CORSAllowOrigin),
+		middleware.RequestID(),
+		middleware.Logger(),
+		middleware.Recovery(),
+	)
 
 	s := &Server{cfg: cfg, db: db, engine: engine}
 	s.routes()
@@ -170,7 +175,7 @@ func (s *Server) routes() {
 		}
 		mock := payment.MockProvider{Secret: s.cfg.PaymentMockSecret}
 		paySvc := payment.NewService(payment.NewRepository(s.db), orderPaymentAdapter{o: orderSvc}, mock, mock, rec)
-		payment.Register(api, paySvc, authMW)
+		payment.Register(api, paySvc, authMW, s.cfg.Env != "production")
 		orderSvc.SetSettlementTrigger(paySvc) // confirm-delivery -> auto settle
 
 		if store != nil {
