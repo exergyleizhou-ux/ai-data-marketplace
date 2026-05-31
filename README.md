@@ -80,4 +80,5 @@ cd frontend && npm install && npm run build && npm run start   # :3000
 **尚需外部介入（外部墙，代码已留可插拔适配点）**：
 - **支付分账真集成**：替换 `payment.MockProvider` 前必须完成 **Spike-2 + 法务**（资金二清是刑事红线，docs §2.1）。
 - **对象存储**：用云凭证实现 `storage/oss.go`（生产为浏览器直传预签名）。
-- 中文检索：当前 `ILIKE` 子串匹配；规模化接 `zhparser`/ES+IK。
+
+**中文检索已升级**：应用层结巴分词（`go-ego/gse`，纯 Go 无 cgo）+ PG `simple` `tsvector` + GIN 索引，词级全文检索 + `ts_rank` 排序（见 `platform/textseg`、migration 000003）。规模化时可平替 `zhparser` / ES+IK。
