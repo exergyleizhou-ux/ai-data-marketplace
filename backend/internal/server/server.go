@@ -16,6 +16,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/dataset"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/order"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
@@ -59,6 +60,24 @@ func (s *Server) limiter() ratelimit.Limiter {
 		slog.Warn("redis unavailable; using in-memory rate limiter", "err", err)
 	}
 	return ratelimit.NewInMemory()
+}
+
+// datasetPurchaseAdapter bridges dataset.Service to the order module's
+// DatasetReader interface, converting between the two packages' value types so
+// neither imports the other.
+type datasetPurchaseAdapter struct{ ds *dataset.Service }
+
+func (a datasetPurchaseAdapter) ForPurchase(ctx context.Context, id string) (order.Purchasable, error) {
+	p, err := a.ds.ForPurchase(ctx, id)
+	if err != nil {
+		return order.Purchasable{}, err
+	}
+	return order.Purchasable{
+		SellerID:   p.SellerID,
+		VersionID:  p.VersionID,
+		PriceCents: p.PriceCents,
+		Published:  p.Published,
+	}, nil
 }
 
 // objectStorage builds the configured object-storage driver. Returns nil (and
@@ -113,5 +132,8 @@ func (s *Server) routes() {
 		}
 		dsSvc := dataset.NewService(dataset.NewRepository(s.db), authSvc, rec, dsOpts...)
 		dataset.Register(api, dsSvc, authMW, auth.RequireRole("ops", "admin"))
+
+		orderSvc := order.NewService(order.NewRepository(s.db), authSvc, datasetPurchaseAdapter{ds: dsSvc}, rec)
+		order.Register(api, orderSvc, authMW)
 	}
 }

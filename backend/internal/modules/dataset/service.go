@@ -103,6 +103,37 @@ func (s *Service) Get(ctx context.Context, id string) (Dataset, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
+// Purchasable is the purchase-relevant view of a dataset (consumed by the order
+// module via its own interface, so order never imports dataset internals).
+type Purchasable struct {
+	SellerID   string
+	VersionID  string
+	PriceCents int64
+	Published  bool
+}
+
+// ForPurchase returns purchase info: effective price (final overrides
+// suggested), current version, and whether it is published.
+func (s *Service) ForPurchase(ctx context.Context, id string) (Purchasable, error) {
+	d, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return Purchasable{}, err
+	}
+	var price int64
+	switch {
+	case d.FinalPriceCents != nil:
+		price = *d.FinalPriceCents
+	case d.SuggestedPriceCents != nil:
+		price = *d.SuggestedPriceCents
+	}
+	return Purchasable{
+		SellerID:   d.SellerID,
+		VersionID:  d.CurrentVersionID,
+		PriceCents: price,
+		Published:  d.Status == StatusPublished,
+	}, nil
+}
+
 // ListMine returns the caller's datasets.
 func (s *Service) ListMine(ctx context.Context, sellerID string, limit, offset int) ([]Dataset, error) {
 	if limit <= 0 || limit > 100 {
