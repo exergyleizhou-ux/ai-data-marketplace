@@ -85,6 +85,82 @@ func (h *handler) dispute(c *gin.Context) {
 	httpx.OK(c, o)
 }
 
+func (h *handler) earnings(c *gin.Context) {
+	e, err := h.svc.Earnings(c.Request.Context(), httpx.UserID(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, e)
+}
+
+type reviewRequest struct {
+	Score     int    `json:"score"`
+	Comment   string `json:"comment"`
+	IssueFlag bool   `json:"issue_flag"`
+}
+
+func (h *handler) createReview(c *gin.Context) {
+	var req reviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	rv, err := h.svc.CreateReview(c.Request.Context(), httpx.UserID(c), c.Param("id"), req.Score, req.Comment, req.IssueFlag)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, rv)
+}
+
+func (h *handler) listReviews(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	items, err := h.svc.ListReviews(c.Request.Context(), c.Param("id"), limit, offset)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	if items == nil {
+		items = []Review{}
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+func (h *handler) adminTransactions(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	items, err := h.svc.AdminTransactions(c.Request.Context(), limit, offset)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	if items == nil {
+		items = []Order{}
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+type resolveRequest struct {
+	Refund bool   `json:"refund"`
+	Note   string `json:"note"`
+}
+
+func (h *handler) resolveDispute(c *gin.Context) {
+	var req resolveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	o, err := h.svc.ResolveDispute(c.Request.Context(), httpx.UserID(c), c.Param("id"), req.Refund, req.Note)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, o)
+}
+
 func fail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrValidation):
@@ -103,6 +179,12 @@ func fail(c *gin.Context, err error) {
 		httpx.Fail(c, httpx.ErrConflict.WithMessage("an active order for this dataset already exists"))
 	case errors.Is(err, ErrBadTransition):
 		httpx.Fail(c, httpx.ErrConflict.WithMessage("illegal order status transition"))
+	case errors.Is(err, ErrReviewExists):
+		httpx.Fail(c, httpx.ErrConflict.WithMessage("order already reviewed"))
+	case errors.Is(err, ErrNotSettled):
+		httpx.Fail(c, httpx.ErrConflict.WithMessage("can only review a settled order"))
+	case errors.Is(err, ErrNotDisputed):
+		httpx.Fail(c, httpx.ErrConflict.WithMessage("order is not in dispute"))
 	default:
 		httpx.Fail(c, httpx.ErrInternal)
 	}

@@ -161,7 +161,7 @@ func (s *Server) routes() {
 		dataset.Register(api, dsSvc, authMW, auth.RequireRole("ops", "admin"), lim)
 
 		orderSvc := order.NewService(order.NewRepository(s.db), authSvc, datasetPurchaseAdapter{ds: dsSvc}, rec)
-		order.Register(api, orderSvc, authMW)
+		order.Register(api, orderSvc, authMW, auth.RequireRole("ops", "admin"))
 
 		// Payment + split-settlement. SANDBOX provider only — real WeChat/Alipay
 		// + split requires Spike-2 + 法务 before touching production funds.

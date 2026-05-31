@@ -7,8 +7,9 @@ import (
 )
 
 type fakeRepo struct {
-	orders map[string]Order
-	seq    int
+	orders  map[string]Order
+	reviews map[string]Review
+	seq     int
 }
 
 func newFakeRepo() *fakeRepo { return &fakeRepo{orders: map[string]Order{}} }
@@ -61,7 +62,53 @@ func (r *fakeRepo) Transition(_ context.Context, id, from, to string, setAutoCon
 	r.orders[id] = o
 	return o, nil
 }
-func (r *fakeRepo) CreateDispute(_ context.Context, _, _, _ string) error { return nil }
+func (r *fakeRepo) CreateDispute(_ context.Context, _, _, _ string) error     { return nil }
+func (r *fakeRepo) ResolveDispute(_ context.Context, _, _, _, _ string) error { return nil }
+func (r *fakeRepo) SellerEarnings(_ context.Context, sellerID string) (Earnings, error) {
+	var e Earnings
+	for _, o := range r.orders {
+		if o.SellerID != sellerID {
+			continue
+		}
+		switch o.Status {
+		case StatusSettled:
+			e.SettledCents += o.SellerAmountCents
+			e.SettledOrders++
+		case StatusPaid, StatusDelivered, StatusConfirmed:
+			e.PendingCents += o.SellerAmountCents
+			e.PendingOrders++
+		}
+	}
+	e.WithdrawableCents = e.SettledCents
+	return e, nil
+}
+func (r *fakeRepo) CreateReview(_ context.Context, rv Review) (Review, error) {
+	if r.reviews == nil {
+		r.reviews = map[string]Review{}
+	}
+	if _, ok := r.reviews[rv.OrderID]; ok {
+		return Review{}, ErrReviewExists
+	}
+	rv.ID = "rev-" + rv.OrderID
+	r.reviews[rv.OrderID] = rv
+	return rv, nil
+}
+func (r *fakeRepo) ListReviewsByDataset(_ context.Context, datasetID string, _, _ int) ([]Review, error) {
+	var out []Review
+	for _, rv := range r.reviews {
+		if rv.DatasetID == datasetID {
+			out = append(out, rv)
+		}
+	}
+	return out, nil
+}
+func (r *fakeRepo) AdminList(_ context.Context, _, _ int) ([]Order, error) {
+	var out []Order
+	for _, o := range r.orders {
+		out = append(out, o)
+	}
+	return out, nil
+}
 
 func itoa(n int) string {
 	if n == 0 {
@@ -171,6 +218,75 @@ func TestStateMachineHappyPath(t *testing.T) {
 	settled, err := svc.MarkSettled(ctx, o.ID)
 	if err != nil || settled.Status != StatusSettled {
 		t.Fatalf("settle: %v status=%q", err, settled.Status)
+	}
+}
+
+func TestReviewRequiresSettled(t *testing.T) {
+	ctx := context.Background()
+	svc, repo := newSvc(true, published())
+	o, _ := svc.Create(ctx, "buyer", "ds1", "commercial")
+
+	// Not settled yet -> rejected.
+	if _, err := svc.CreateReview(ctx, "buyer", o.ID, 5, "great", false); !errors.Is(err, ErrNotSettled) {
+		t.Fatalf("want ErrNotSettled, got %v", err)
+	}
+	// Drive to settled.
+	_, _ = svc.MarkPaid(ctx, o.ID)
+	_, _ = svc.MarkDelivered(ctx, o.ID)
+	_, _ = svc.ConfirmDelivery(ctx, "buyer", o.ID)
+	_, _ = svc.MarkSettled(ctx, o.ID)
+
+	if _, err := svc.CreateReview(ctx, "buyer", o.ID, 6, "", false); !errors.Is(err, ErrValidation) {
+		t.Fatalf("want ErrValidation for out-of-range score, got %v", err)
+	}
+	rv, err := svc.CreateReview(ctx, "buyer", o.ID, 5, "干净好用", false)
+	if err != nil {
+		t.Fatalf("review: %v", err)
+	}
+	if rv.DatasetID != "ds1" {
+		t.Fatalf("review dataset = %q, want ds1", rv.DatasetID)
+	}
+	// One review per order.
+	if _, err := svc.CreateReview(ctx, "buyer", o.ID, 4, "", false); !errors.Is(err, ErrReviewExists) {
+		t.Fatalf("want ErrReviewExists, got %v", err)
+	}
+	_ = repo
+}
+
+func TestEarnings(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSvc(true, published()) // price 100000 -> seller 90000
+	o, _ := svc.Create(ctx, "buyer", "ds1", "commercial")
+	_, _ = svc.MarkPaid(ctx, o.ID) // pending
+
+	e, _ := svc.Earnings(ctx, "seller")
+	if e.PendingCents != 90000 || e.SettledCents != 0 {
+		t.Fatalf("pending earnings wrong: %+v", e)
+	}
+	_, _ = svc.MarkDelivered(ctx, o.ID)
+	_, _ = svc.ConfirmDelivery(ctx, "buyer", o.ID)
+	_, _ = svc.MarkSettled(ctx, o.ID)
+	e, _ = svc.Earnings(ctx, "seller")
+	if e.SettledCents != 90000 || e.WithdrawableCents != 90000 || e.PendingCents != 0 {
+		t.Fatalf("settled earnings wrong: %+v", e)
+	}
+}
+
+func TestResolveDispute(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSvc(true, published())
+	o, _ := svc.Create(ctx, "buyer", "ds1", "commercial")
+	_, _ = svc.MarkPaid(ctx, o.ID)
+	_, _ = svc.Dispute(ctx, "buyer", o.ID, "质量问题")
+
+	// Resolve as refund.
+	got, err := svc.ResolveDispute(ctx, "ops", o.ID, true, "确认退款")
+	if err != nil || got.Status != StatusRefunded {
+		t.Fatalf("resolve refund: %v status=%q", err, got.Status)
+	}
+	// Cannot resolve a non-disputed order.
+	if _, err := svc.ResolveDispute(ctx, "ops", o.ID, true, ""); !errors.Is(err, ErrNotDisputed) {
+		t.Fatalf("want ErrNotDisputed, got %v", err)
 	}
 }
 

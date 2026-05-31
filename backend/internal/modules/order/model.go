@@ -43,7 +43,31 @@ var (
 	ErrSelfPurchase   = errors.New("cannot buy your own dataset")
 	ErrDuplicateOrder = errors.New("an active order for this dataset already exists")
 	ErrBadTransition  = errors.New("illegal order status transition")
+	ErrReviewExists   = errors.New("order already reviewed")
+	ErrNotSettled     = errors.New("can only review a settled order")
+	ErrNotDisputed    = errors.New("order is not in dispute")
 )
+
+// Review is a buyer's rating of a completed purchase.
+type Review struct {
+	ID        string `json:"id"`
+	OrderID   string `json:"order_id"`
+	DatasetID string `json:"dataset_id"`
+	BuyerID   string `json:"buyer_id"`
+	Score     int    `json:"score"`
+	Comment   string `json:"comment,omitempty"`
+	IssueFlag bool   `json:"issue_flag"`
+	CreatedAt string `json:"created_at,omitempty"`
+}
+
+// Earnings summarizes a seller's money across orders (integer cents).
+type Earnings struct {
+	SettledCents      int64 `json:"settled_cents"`      // realized (settled orders)
+	PendingCents      int64 `json:"pending_cents"`      // paid/delivered/confirmed, not yet settled
+	WithdrawableCents int64 `json:"withdrawable_cents"` // == settled in MVP (funds at provider)
+	SettledOrders     int   `json:"settled_orders"`
+	PendingOrders     int   `json:"pending_orders"`
+}
 
 // platformFee splits an amount into (platformFee, sellerAmount) by basis points.
 func platformFee(amount int64) (fee, seller int64) {

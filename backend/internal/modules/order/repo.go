@@ -23,6 +23,11 @@ type Repository interface {
 	// when moving to delivered.
 	Transition(ctx context.Context, id, from, to string, setAutoConfirm bool) (Order, error)
 	CreateDispute(ctx context.Context, orderID, raisedBy, reason string) error
+	ResolveDispute(ctx context.Context, orderID, status, note, handledBy string) error
+	SellerEarnings(ctx context.Context, sellerID string) (Earnings, error)
+	CreateReview(ctx context.Context, r Review) (Review, error)
+	ListReviewsByDataset(ctx context.Context, datasetID string, limit, offset int) ([]Review, error)
+	AdminList(ctx context.Context, limit, offset int) ([]Order, error)
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }
@@ -125,4 +130,87 @@ func (r *pgRepo) CreateDispute(ctx context.Context, orderID, raisedBy, reason st
 		return fmt.Errorf("create dispute: %w", err)
 	}
 	return nil
+}
+
+func (r *pgRepo) ResolveDispute(ctx context.Context, orderID, status, note, handledBy string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE disputes SET status=$2, resolution_note=$3, handled_by=$4, resolved_at=now()
+		 WHERE order_id=$1 AND status IN ('open','reviewing')`,
+		orderID, status, note, handledBy)
+	if err != nil {
+		return fmt.Errorf("resolve dispute: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepo) SellerEarnings(ctx context.Context, sellerID string) (Earnings, error) {
+	const q = `
+		SELECT
+		  COALESCE(SUM(seller_amount_cents) FILTER (WHERE status='settled'),0),
+		  COALESCE(SUM(seller_amount_cents) FILTER (WHERE status IN ('paid','delivered','confirmed')),0),
+		  COUNT(*) FILTER (WHERE status='settled'),
+		  COUNT(*) FILTER (WHERE status IN ('paid','delivered','confirmed'))
+		FROM orders WHERE seller_id=$1`
+	var e Earnings
+	if err := r.pool.QueryRow(ctx, q, sellerID).
+		Scan(&e.SettledCents, &e.PendingCents, &e.SettledOrders, &e.PendingOrders); err != nil {
+		return Earnings{}, fmt.Errorf("seller earnings: %w", err)
+	}
+	e.WithdrawableCents = e.SettledCents
+	return e, nil
+}
+
+func (r *pgRepo) CreateReview(ctx context.Context, rv Review) (Review, error) {
+	const q = `
+		INSERT INTO reviews (order_id, dataset_id, buyer_id, score, comment, issue_flag)
+		VALUES ($1,$2,$3,$4,NULLIF($5,''),$6)
+		RETURNING id, created_at::text`
+	err := r.pool.QueryRow(ctx, q, rv.OrderID, rv.DatasetID, rv.BuyerID, rv.Score, rv.Comment, rv.IssueFlag).
+		Scan(&rv.ID, &rv.CreatedAt)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+			return Review{}, ErrReviewExists
+		}
+		return Review{}, fmt.Errorf("create review: %w", err)
+	}
+	return rv, nil
+}
+
+func (r *pgRepo) ListReviewsByDataset(ctx context.Context, datasetID string, limit, offset int) ([]Review, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, order_id, dataset_id, buyer_id, score, COALESCE(comment,''), issue_flag, created_at::text
+		 FROM reviews WHERE dataset_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		datasetID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list reviews: %w", err)
+	}
+	defer rows.Close()
+	var out []Review
+	for rows.Next() {
+		var rv Review
+		if err := rows.Scan(&rv.ID, &rv.OrderID, &rv.DatasetID, &rv.BuyerID, &rv.Score, &rv.Comment, &rv.IssueFlag, &rv.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, rv)
+	}
+	return out, rows.Err()
+}
+
+func (r *pgRepo) AdminList(ctx context.Context, limit, offset int) ([]Order, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+orderCols+` FROM orders ORDER BY created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("admin list orders: %w", err)
+	}
+	defer rows.Close()
+	var out []Order
+	for rows.Next() {
+		o, err := scanOrder(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
 }

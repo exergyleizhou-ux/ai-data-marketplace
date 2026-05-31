@@ -189,6 +189,79 @@ func (s *Service) Dispute(ctx context.Context, userID, id, reason string) (Order
 	return s.transition(ctx, userID, id, o.Status, StatusDisputed, false)
 }
 
+// Earnings returns the seller's money summary.
+func (s *Service) Earnings(ctx context.Context, sellerID string) (Earnings, error) {
+	return s.repo.SellerEarnings(ctx, sellerID)
+}
+
+// AdminTransactions lists all orders (ops view of流水 + commission).
+func (s *Service) AdminTransactions(ctx context.Context, limit, offset int) ([]Order, error) {
+	return s.repo.AdminList(ctx, clampLimit(limit), max0(offset))
+}
+
+// CreateReview lets the buyer rate a settled order (one review per order).
+func (s *Service) CreateReview(ctx context.Context, buyerID, orderID string, score int, comment string, issueFlag bool) (Review, error) {
+	if score < 1 || score > 5 {
+		return Review{}, fmt.Errorf("%w: score must be 1..5", ErrValidation)
+	}
+	o, err := s.repo.GetByID(ctx, orderID)
+	if err != nil {
+		return Review{}, err
+	}
+	if o.BuyerID != buyerID {
+		return Review{}, ErrForbidden
+	}
+	if o.Status != StatusSettled {
+		return Review{}, ErrNotSettled
+	}
+	rv, err := s.repo.CreateReview(ctx, Review{
+		OrderID: orderID, DatasetID: o.DatasetID, BuyerID: buyerID, Score: score, Comment: comment, IssueFlag: issueFlag,
+	})
+	if err != nil {
+		return Review{}, err
+	}
+	s.audit.Record(ctx, audit.Entry{ActorID: buyerID, Action: "review.create", ResourceType: "dataset", ResourceID: o.DatasetID,
+		Detail: map[string]any{"order_id": orderID, "score": score, "issue": issueFlag}})
+	return rv, nil
+}
+
+// ListReviews returns a dataset's reviews.
+func (s *Service) ListReviews(ctx context.Context, datasetID string, limit, offset int) ([]Review, error) {
+	return s.repo.ListReviewsByDataset(ctx, datasetID, clampLimit(limit), max0(offset))
+}
+
+// ResolveDispute is the ops decision on a disputed order: refund (-> refunded)
+// or release (-> confirmed, then auto-settle).
+//
+// NOTE: a real refund / 分账回退 must call the licensed provider (walled,
+// Spike-2). Here we only drive the order/dispute state.
+func (s *Service) ResolveDispute(ctx context.Context, opsID, orderID string, refund bool, note string) (Order, error) {
+	o, err := s.repo.GetByID(ctx, orderID)
+	if err != nil {
+		return Order{}, err
+	}
+	if o.Status != StatusDisputed {
+		return Order{}, ErrNotDisputed
+	}
+	if refund {
+		if err := s.repo.ResolveDispute(ctx, orderID, "resolved_refund", note, opsID); err != nil {
+			return Order{}, err
+		}
+		return s.transition(ctx, opsID, orderID, StatusDisputed, StatusRefunded, false)
+	}
+	if err := s.repo.ResolveDispute(ctx, orderID, "resolved_release", note, opsID); err != nil {
+		return Order{}, err
+	}
+	released, err := s.transition(ctx, opsID, orderID, StatusDisputed, StatusConfirmed, false)
+	if err != nil {
+		return Order{}, err
+	}
+	if s.settle != nil {
+		_ = s.settle.Settle(ctx, orderID)
+	}
+	return s.repo.GetByID(ctx, released.ID)
+}
+
 func clampLimit(l int) int {
 	if l <= 0 || l > 100 {
 		return 20
