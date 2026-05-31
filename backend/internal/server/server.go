@@ -15,6 +15,8 @@ import (
 
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/dataset"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
@@ -81,5 +83,11 @@ func (s *Server) routes() {
 		authSvc := auth.NewService(auth.NewRepository(s.db), tm,
 			auth.WithKYC(verifier, s.cfg.PIISecret))
 		auth.Register(api, authSvc, tm, s.limiter())
+
+		authMW := auth.Middleware(tm)
+		rec := audit.New(s.db)
+
+		dsSvc := dataset.NewService(dataset.NewRepository(s.db), authSvc, rec)
+		dataset.Register(api, dsSvc, authMW)
 	}
 }

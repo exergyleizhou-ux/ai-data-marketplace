@@ -1,0 +1,150 @@
+package dataset
+
+import (
+	"context"
+	"errors"
+	"testing"
+)
+
+type fakeRepo struct {
+	items map[string]Dataset
+	seq   int
+}
+
+func newFakeRepo() *fakeRepo { return &fakeRepo{items: map[string]Dataset{}} }
+
+func (r *fakeRepo) Create(_ context.Context, d Dataset) (Dataset, error) {
+	r.seq++
+	d.ID = "ds-" + itoa(r.seq)
+	d.Status = StatusDraft
+	r.items[d.ID] = d
+	return d, nil
+}
+func (r *fakeRepo) GetByID(_ context.Context, id string) (Dataset, error) {
+	d, ok := r.items[id]
+	if !ok {
+		return Dataset{}, ErrNotFound
+	}
+	return d, nil
+}
+func (r *fakeRepo) UpdateMeta(_ context.Context, d Dataset) (Dataset, error) {
+	if _, ok := r.items[d.ID]; !ok {
+		return Dataset{}, ErrNotFound
+	}
+	r.items[d.ID] = d
+	return d, nil
+}
+func (r *fakeRepo) ListBySeller(_ context.Context, sellerID string, _, _ int) ([]Dataset, error) {
+	var out []Dataset
+	for _, d := range r.items {
+		if d.SellerID == sellerID {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
+func (r *fakeRepo) SignSource(_ context.Context, id string) (Dataset, error) {
+	d := r.items[id]
+	d.SourceSignedAt = "2026-01-01T00:00:00Z"
+	r.items[id] = d
+	return d, nil
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	return string(b)
+}
+
+type fakeIdentity struct{ status map[string]string }
+
+func (f fakeIdentity) KYCStatus(_ context.Context, userID string) (string, error) {
+	return f.status[userID], nil
+}
+
+func newSvc(verified ...string) *Service {
+	id := fakeIdentity{status: map[string]string{}}
+	for _, u := range verified {
+		id.status[u] = kycVerified
+	}
+	return NewService(newFakeRepo(), id, nil)
+}
+
+func validDecl() *SourceDeclaration {
+	return &SourceDeclaration{Source: "internal", CollectionMethod: "scrape", LicenseScope: "commercial", Commitment: true}
+}
+
+func TestCreateRequiresVerifiedSeller(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc() // nobody verified
+	_, err := svc.Create(ctx, "u1", CreateInput{Title: "t", DataType: "text", LicenseType: "commercial"})
+	if !errors.Is(err, ErrNotVerified) {
+		t.Fatalf("want ErrNotVerified, got %v", err)
+	}
+
+	svc = newSvc("u1")
+	d, err := svc.Create(ctx, "u1", CreateInput{Title: "中文语料", DataType: "text", LicenseType: "commercial", SourceDeclaration: validDecl()})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if d.Status != StatusDraft || d.SellerID != "u1" {
+		t.Fatalf("unexpected dataset: %+v", d)
+	}
+}
+
+func TestCreateValidation(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc("u1")
+	bad := []CreateInput{
+		{Title: "", DataType: "text", LicenseType: "commercial"},
+		{Title: "t", DataType: "image", LicenseType: "commercial"},
+		{Title: "t", DataType: "text", LicenseType: "weird"},
+	}
+	for i, in := range bad {
+		if _, err := svc.Create(ctx, "u1", in); !errors.Is(err, ErrValidation) {
+			t.Errorf("case %d: want ErrValidation, got %v", i, err)
+		}
+	}
+}
+
+func TestUpdateOwnershipAndState(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc("owner")
+	d, _ := svc.Create(ctx, "owner", CreateInput{Title: "t", DataType: "text", LicenseType: "commercial", SourceDeclaration: validDecl()})
+
+	// Non-owner cannot edit.
+	if _, err := svc.Update(ctx, "intruder", d.ID, CreateInput{Title: "x", DataType: "text", LicenseType: "commercial"}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("want ErrForbidden, got %v", err)
+	}
+	// Owner can edit a draft.
+	if _, err := svc.Update(ctx, "owner", d.ID, CreateInput{Title: "新标题", DataType: "code", LicenseType: "research"}); err != nil {
+		t.Fatalf("owner update: %v", err)
+	}
+}
+
+func TestSignSourceFlow(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc("owner")
+
+	// Without a declaration/commitment, signing is rejected.
+	d, _ := svc.Create(ctx, "owner", CreateInput{Title: "t", DataType: "text", LicenseType: "commercial"})
+	if _, err := svc.SignSource(ctx, "owner", d.ID); !errors.Is(err, ErrValidation) {
+		t.Fatalf("want ErrValidation without commitment, got %v", err)
+	}
+
+	// With a valid declaration, signing succeeds and is idempotent-guarded.
+	d2, _ := svc.Create(ctx, "owner", CreateInput{Title: "t2", DataType: "text", LicenseType: "commercial", SourceDeclaration: validDecl()})
+	signed, err := svc.SignSource(ctx, "owner", d2.ID)
+	if err != nil || signed.SourceSignedAt == "" {
+		t.Fatalf("sign: %v signedAt=%q", err, signed.SourceSignedAt)
+	}
+	if _, err := svc.SignSource(ctx, "owner", d2.ID); !errors.Is(err, ErrAlreadySigned) {
+		t.Fatalf("want ErrAlreadySigned, got %v", err)
+	}
+}

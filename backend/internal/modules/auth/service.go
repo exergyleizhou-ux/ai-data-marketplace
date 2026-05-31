@@ -101,6 +101,17 @@ func (s *Service) Me(ctx context.Context, userID string) (User, error) {
 	return s.repo.GetUserByID(ctx, userID)
 }
 
+// KYCStatus returns the user's real-name verification status. It satisfies the
+// identity-check interface other modules (e.g. dataset) depend on, so they can
+// gate seller actions without importing auth internals or the users table.
+func (s *Service) KYCStatus(ctx context.Context, userID string) (string, error) {
+	u, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	return u.KYCStatus, nil
+}
+
 func (s *Service) issue(user User) (AuthResult, error) {
 	tokens, err := s.tokens.Issue(user.ID, user.Role)
 	if err != nil {
