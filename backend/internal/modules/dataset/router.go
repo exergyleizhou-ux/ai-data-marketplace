@@ -18,4 +18,11 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW gin.HandlerFunc) {
 	authed.PUT("/datasets/:id", h.update)
 	authed.POST("/datasets/:id/source-declaration/sign", h.signSource)
 	authed.GET("/users/me/datasets", h.listMine) // separate path to avoid /datasets/:id conflict
+
+	// Chunked upload (PR-08). part/complete/status resolve the dataset from the
+	// upload id, so the :id segment is only meaningful for init.
+	authed.POST("/datasets/:id/upload/init", h.initUpload)
+	authed.PUT("/datasets/:id/upload/part", h.uploadPart)
+	authed.POST("/datasets/:id/upload/complete", h.completeUpload)
+	authed.GET("/datasets/:id/upload/status", h.uploadStatus)
 }

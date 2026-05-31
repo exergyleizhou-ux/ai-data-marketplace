@@ -3,7 +3,10 @@ package dataset
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
 )
 
 type fakeRepo struct {
@@ -48,6 +51,26 @@ func (r *fakeRepo) SignSource(_ context.Context, id string) (Dataset, error) {
 	d.SourceSignedAt = "2026-01-01T00:00:00Z"
 	r.items[id] = d
 	return d, nil
+}
+func (r *fakeRepo) SetStatus(_ context.Context, id, status string) error {
+	d, ok := r.items[id]
+	if !ok {
+		return ErrNotFound
+	}
+	d.Status = status
+	r.items[id] = d
+	return nil
+}
+func (r *fakeRepo) AddVersion(_ context.Context, datasetID, contentSHA256, _ string, f FileInput, newStatus string) (string, error) {
+	d, ok := r.items[datasetID]
+	if !ok {
+		return "", ErrNotFound
+	}
+	d.Status = newStatus
+	d.TotalSizeBytes = f.SizeBytes
+	d.CurrentVersionID = "ver-1"
+	r.items[datasetID] = d
+	return "ver-1", nil
 }
 
 func itoa(n int) string {
@@ -125,6 +148,50 @@ func TestUpdateOwnershipAndState(t *testing.T) {
 	// Owner can edit a draft.
 	if _, err := svc.Update(ctx, "owner", d.ID, CreateInput{Title: "新标题", DataType: "code", LicenseType: "research"}); err != nil {
 		t.Fatalf("owner update: %v", err)
+	}
+}
+
+func TestUploadFlow(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+	id := fakeIdentity{status: map[string]string{"owner": kycVerified}}
+	svc := NewService(newFakeRepo(), id, nil, WithStorage(store))
+
+	d, _ := svc.Create(ctx, "owner", CreateInput{Title: "t", DataType: "text", LicenseType: "commercial", SourceDeclaration: validDecl()})
+
+	// Cannot upload before signing the source declaration.
+	if _, err := svc.InitUpload(ctx, "owner", d.ID, "data.txt"); !errors.Is(err, ErrNotSigned) {
+		t.Fatalf("want ErrNotSigned, got %v", err)
+	}
+	if _, err := svc.SignSource(ctx, "owner", d.ID); err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	sess, err := svc.InitUpload(ctx, "owner", d.ID, "data.txt")
+	if err != nil {
+		t.Fatalf("init upload: %v", err)
+	}
+	body := "line1\nline2\nline3\n"
+	if _, err := svc.UploadPart(ctx, "owner", sess.UploadID, 1, strings.NewReader(body)); err != nil {
+		t.Fatalf("upload part: %v", err)
+	}
+	// Another user cannot drive this upload.
+	if _, err := svc.UploadPart(ctx, "intruder", sess.UploadID, 2, strings.NewReader("x")); !errors.Is(err, ErrUploadForbidden) {
+		t.Fatalf("want ErrUploadForbidden, got %v", err)
+	}
+
+	done, err := svc.CompleteUpload(ctx, "owner", sess.UploadID)
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if done.Status != StatusChecking {
+		t.Fatalf("status = %q, want checking", done.Status)
+	}
+	if done.TotalSizeBytes != int64(len(body)) {
+		t.Fatalf("size = %d, want %d", done.TotalSizeBytes, len(body))
 	}
 }
 

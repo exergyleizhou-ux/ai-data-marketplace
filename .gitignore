@@ -18,6 +18,7 @@ Thumbs.db
 # =========================
 backend/bin/
 backend/tmp/
+backend/data/
 *.test
 *.out
 coverage.out

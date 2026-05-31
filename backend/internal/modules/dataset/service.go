@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
 )
 
 // IdentityChecker lets the dataset module ask the identity module (auth)
@@ -20,13 +21,24 @@ type Service struct {
 	repo     Repository
 	identity IdentityChecker
 	audit    audit.Recorder
+	storage  storage.Storage
 }
 
-func NewService(repo Repository, identity IdentityChecker, rec audit.Recorder) *Service {
+// Option configures optional Service dependencies.
+type Option func(*Service)
+
+// WithStorage wires the object store used by the upload endpoints.
+func WithStorage(s storage.Storage) Option { return func(svc *Service) { svc.storage = s } }
+
+func NewService(repo Repository, identity IdentityChecker, rec audit.Recorder, opts ...Option) *Service {
 	if rec == nil {
 		rec = audit.Noop{}
 	}
-	return &Service{repo: repo, identity: identity, audit: rec}
+	s := &Service{repo: repo, identity: identity, audit: rec}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // CreateInput is the metadata for a new dataset draft.

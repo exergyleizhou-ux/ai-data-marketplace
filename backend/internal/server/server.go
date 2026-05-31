@@ -21,6 +21,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
 	redispkg "github.com/lei/ai-data-marketplace/backend/internal/platform/redis"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
 )
 
 type Server struct {
@@ -60,6 +61,25 @@ func (s *Server) limiter() ratelimit.Limiter {
 	return ratelimit.NewInMemory()
 }
 
+// objectStorage builds the configured object-storage driver. Returns nil (and
+// logs) on failure so upload endpoints degrade to "storage unavailable" rather
+// than crashing the whole server.
+func (s *Server) objectStorage() storage.Storage {
+	switch s.cfg.StorageDriver {
+	case "oss":
+		slog.Warn("OSS storage driver is a stub; uploads will return not-implemented")
+		return &storage.OSS{}
+	default:
+		store, err := storage.NewLocal(s.cfg.StorageDir)
+		if err != nil {
+			slog.Error("failed to init local storage", "err", err)
+			return nil
+		}
+		slog.Info("object storage backend", "type", "local", "dir", s.cfg.StorageDir)
+		return store
+	}
+}
+
 func (s *Server) routes() {
 	// Liveness / readiness — used by Docker Compose healthchecks and CI.
 	s.engine.GET("/healthz", s.handleHealthz)
@@ -87,7 +107,11 @@ func (s *Server) routes() {
 		authMW := auth.Middleware(tm)
 		rec := audit.New(s.db)
 
-		dsSvc := dataset.NewService(dataset.NewRepository(s.db), authSvc, rec)
+		dsOpts := []dataset.Option{}
+		if store := s.objectStorage(); store != nil {
+			dsOpts = append(dsOpts, dataset.WithStorage(store))
+		}
+		dsSvc := dataset.NewService(dataset.NewRepository(s.db), authSvc, rec, dsOpts...)
 		dataset.Register(api, dsSvc, authMW)
 	}
 }

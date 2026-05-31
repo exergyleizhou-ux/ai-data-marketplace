@@ -23,6 +23,9 @@ type Config struct {
 
 	PIISecret      string // keyed-hash secret for sensitive fields (e.g. ID numbers)
 	KYCAutoApprove bool   // dev only: auto-verify KYC submissions instead of manual review
+
+	StorageDriver string // local | oss
+	StorageDir    string // base dir for the local storage driver
 }
 
 // Load reads configuration from the environment, applying sane local-dev
@@ -42,6 +45,9 @@ func Load() (*Config, error) {
 
 		PIISecret:      getenv("PII_SECRET", "dev-pii-secret"),
 		KYCAutoApprove: getenv("KYC_AUTO_APPROVE", "false") == "true",
+
+		StorageDriver: getenv("STORAGE_DRIVER", "local"),
+		StorageDir:    getenv("STORAGE_DIR", "./data/storage"),
 	}
 	// Validate that any provided PORT-style override parses, to fail fast.
 	if v := os.Getenv("HTTP_PORT"); v != "" {

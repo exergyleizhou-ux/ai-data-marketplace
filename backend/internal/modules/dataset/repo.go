@@ -18,6 +18,18 @@ type Repository interface {
 	UpdateMeta(ctx context.Context, d Dataset) (Dataset, error)
 	ListBySeller(ctx context.Context, sellerID string, limit, offset int) ([]Dataset, error)
 	SignSource(ctx context.Context, id string) (Dataset, error)
+	SetStatus(ctx context.Context, id, status string) error
+	// AddVersion creates a version + file row and points the dataset at it,
+	// updating size/status — all in one transaction. Returns the version id.
+	AddVersion(ctx context.Context, datasetID, contentSHA256, simhash string, f FileInput, newStatus string) (string, error)
+}
+
+// FileInput describes one stored object to attach to a dataset version.
+type FileInput struct {
+	ObjectKey   string
+	SizeBytes   int64
+	SHA256      string
+	ContentType string
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }
@@ -114,6 +126,60 @@ func (r *pgRepo) ListBySeller(ctx context.Context, sellerID string, limit, offse
 		out = append(out, d)
 	}
 	return out, rows.Err()
+}
+
+func (r *pgRepo) SetStatus(ctx context.Context, id, status string) error {
+	ct, err := r.pool.Exec(ctx, `UPDATE datasets SET status=$2, updated_at=now() WHERE id=$1`, id, status)
+	if err != nil {
+		return fmt.Errorf("set status: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *pgRepo) AddVersion(ctx context.Context, datasetID, contentSHA256, simhash string, f FileInput, newStatus string) (string, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+
+	var versionNo int
+	if err := tx.QueryRow(ctx,
+		`SELECT COALESCE(MAX(version_no),0)+1 FROM dataset_versions WHERE dataset_id=$1`, datasetID,
+	).Scan(&versionNo); err != nil {
+		return "", fmt.Errorf("next version_no: %w", err)
+	}
+
+	var versionID string
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO dataset_versions (dataset_id, version_no, content_sha256, simhash)
+		 VALUES ($1,$2,$3,NULLIF($4,'')) RETURNING id`,
+		datasetID, versionNo, contentSHA256, simhash,
+	).Scan(&versionID); err != nil {
+		return "", fmt.Errorf("insert version: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO dataset_files (dataset_id, version_id, object_key, size_bytes, sha256, content_type)
+		 VALUES ($1,$2,$3,$4,$5,NULLIF($6,''))`,
+		datasetID, versionID, f.ObjectKey, f.SizeBytes, f.SHA256, f.ContentType,
+	); err != nil {
+		return "", fmt.Errorf("insert file: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE datasets SET current_version_id=$2, total_size_bytes=$3, status=$4, updated_at=now() WHERE id=$1`,
+		datasetID, versionID, f.SizeBytes, newStatus,
+	); err != nil {
+		return "", fmt.Errorf("update dataset: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("commit: %w", err)
+	}
+	return versionID, nil
 }
 
 func (r *pgRepo) SignSource(ctx context.Context, id string) (Dataset, error) {

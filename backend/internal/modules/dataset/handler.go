@@ -90,6 +90,67 @@ func (h *handler) signSource(c *gin.Context) {
 	httpx.OK(c, d)
 }
 
+type initUploadRequest struct {
+	Filename string `json:"filename"`
+}
+
+func (h *handler) initUpload(c *gin.Context) {
+	var req initUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Filename == "" {
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("filename is required"))
+		return
+	}
+	sess, err := h.svc.InitUpload(c.Request.Context(), httpx.UserID(c), c.Param("id"), req.Filename)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, sess)
+}
+
+func (h *handler) uploadPart(c *gin.Context) {
+	uploadID := c.Query("upload_id")
+	partNumber, err := strconv.Atoi(c.Query("part_number"))
+	if uploadID == "" || err != nil || partNumber < 1 {
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("upload_id and part_number (>=1) are required"))
+		return
+	}
+	n, err := h.svc.UploadPart(c.Request.Context(), httpx.UserID(c), uploadID, partNumber, c.Request.Body)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"part_number": partNumber, "bytes": n})
+}
+
+func (h *handler) completeUpload(c *gin.Context) {
+	uploadID := c.Query("upload_id")
+	if uploadID == "" {
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("upload_id is required"))
+		return
+	}
+	d, err := h.svc.CompleteUpload(c.Request.Context(), httpx.UserID(c), uploadID)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, d)
+}
+
+func (h *handler) uploadStatus(c *gin.Context) {
+	uploadID := c.Query("upload_id")
+	if uploadID == "" {
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("upload_id is required"))
+		return
+	}
+	st, status, err := h.svc.UploadStatus(c.Request.Context(), httpx.UserID(c), uploadID)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"upload": st, "dataset_status": status})
+}
+
 func fail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrValidation):
@@ -106,6 +167,10 @@ func fail(c *gin.Context, err error) {
 		httpx.Fail(c, httpx.ErrConflict.WithMessage("source declaration already signed"))
 	case errors.Is(err, ErrNotSigned):
 		httpx.Fail(c, httpx.ErrConflict.WithMessage("source declaration must be signed first"))
+	case errors.Is(err, ErrUploadForbidden):
+		httpx.Fail(c, httpx.ErrForbidden.WithMessage("upload does not belong to caller"))
+	case errors.Is(err, ErrStorageUnavailable):
+		httpx.Fail(c, httpx.ErrInternal.WithMessage("storage not configured"))
 	default:
 		httpx.Fail(c, httpx.ErrInternal)
 	}
