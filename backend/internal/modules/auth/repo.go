@@ -29,6 +29,13 @@ type Repository interface {
 	ReviewKYC(ctx context.Context, kycID, newStatus, reviewerID string) (KYCRecord, error)
 	// ListPendingKYC returns KYC submissions awaiting ops review (oldest first).
 	ListPendingKYC(ctx context.Context, limit, offset int) ([]KYCRecord, error)
+
+	// GetPayoutAccountRef returns the channel-side payout (split-receiving)
+	// account ref for a user, or ErrPayoutAccountNotFound if none is active.
+	GetPayoutAccountRef(ctx context.Context, userID, channel string) (string, error)
+	// SavePayoutAccount upserts a user's active payout account for a channel
+	// (one per user+channel). Used to persist Stripe Connect account ids (H1).
+	SavePayoutAccount(ctx context.Context, userID, channel, accountRef string) error
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }
@@ -225,6 +232,33 @@ func (r *pgRepo) ReviewKYC(ctx context.Context, kycID, newStatus, reviewerID str
 	}
 	_ = json.Unmarshal(materials, &rec.MaterialURLs)
 	return rec, nil
+}
+
+func (r *pgRepo) GetPayoutAccountRef(ctx context.Context, userID, channel string) (string, error) {
+	const q = `
+		SELECT account_ref FROM payout_accounts
+		WHERE user_id = $1 AND channel = $2 AND status = 'active'`
+	var ref string
+	err := r.pool.QueryRow(ctx, q, userID, channel).Scan(&ref)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrPayoutAccountNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("get payout account: %w", err)
+	}
+	return ref, nil
+}
+
+func (r *pgRepo) SavePayoutAccount(ctx context.Context, userID, channel, accountRef string) error {
+	const q = `
+		INSERT INTO payout_accounts (user_id, channel, account_ref, status, authorized_at)
+		VALUES ($1, $2, $3, 'active', now())
+		ON CONFLICT (user_id, channel)
+		DO UPDATE SET account_ref = EXCLUDED.account_ref, status = 'active', authorized_at = now()`
+	if _, err := r.pool.Exec(ctx, q, userID, channel, accountRef); err != nil {
+		return fmt.Errorf("save payout account: %w", err)
+	}
+	return nil
 }
 
 // nullify maps an empty string to nil so it lands as SQL NULL.

@@ -7,6 +7,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -97,6 +98,23 @@ func (a datasetPurchaseAdapter) ForPurchase(ctx context.Context, id string) (ord
 		PriceCents: p.PriceCents,
 		Published:  p.Published,
 	}, nil
+}
+
+// stripePayoutStore bridges auth.Service to payment.PayoutAccountStore so the
+// Stripe provider can persist connected-account ids without importing auth. It
+// translates auth's not-found sentinel into the store contract's empty string.
+type stripePayoutStore struct{ auth *auth.Service }
+
+func (s stripePayoutStore) PayoutAccountRef(ctx context.Context, sellerID, channel string) (string, error) {
+	ref, err := s.auth.PayoutAccountRef(ctx, sellerID, channel)
+	if errors.Is(err, auth.ErrPayoutAccountNotFound) {
+		return "", nil
+	}
+	return ref, err
+}
+
+func (s stripePayoutStore) SavePayoutAccount(ctx context.Context, sellerID, channel, accountRef string) error {
+	return s.auth.SavePayoutAccount(ctx, sellerID, channel, accountRef)
 }
 
 // orderPaymentAdapter bridges order.Service to payment.OrderGateway, converting
@@ -203,7 +221,8 @@ func (s *Server) routes() {
 		var provider payment.PaymentProvider
 		var split payment.SplitProvider
 		if s.cfg.PaymentProvider == "stripe" && s.cfg.StripeSecretKey != "" {
-			sp := payment.NewStripeProvider(s.cfg.StripeSecretKey, s.cfg.StripeWebhookSecret, s.cfg.StripeCurrency)
+			sp := payment.NewStripeProvider(s.cfg.StripeSecretKey, s.cfg.StripeWebhookSecret, s.cfg.StripeCurrency,
+				stripePayoutStore{auth: authSvc})
 			provider, split = sp, sp
 			slog.Info("payment provider", "type", "stripe", "currency", s.cfg.StripeCurrency)
 		} else {

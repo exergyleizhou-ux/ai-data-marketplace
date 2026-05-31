@@ -12,8 +12,24 @@ type fakeRepo struct {
 	byAccount map[string]userWithHash
 	byID      map[string]User
 	kyc       map[string]KYCRecord // by kyc id
+	payouts   map[string]string    // "userID|channel" -> account_ref
 	seq       int
 	kycSeq    int
+}
+
+func (r *fakeRepo) GetPayoutAccountRef(_ context.Context, userID, channel string) (string, error) {
+	if ref, ok := r.payouts[userID+"|"+channel]; ok {
+		return ref, nil
+	}
+	return "", ErrPayoutAccountNotFound
+}
+
+func (r *fakeRepo) SavePayoutAccount(_ context.Context, userID, channel, accountRef string) error {
+	if r.payouts == nil {
+		r.payouts = map[string]string{}
+	}
+	r.payouts[userID+"|"+channel] = accountRef
+	return nil
 }
 
 type userWithHash struct {
