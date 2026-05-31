@@ -77,8 +77,8 @@ cd frontend && npm install && npm run build && npm run start   # :3000
 
 **已完成 PR-01 ~ 18 全部可做范围 + 前端 Web 应用**，每个 PR 真库 e2e + GitHub CI 验证。
 
-**尚需外部介入（外部墙，代码已留可插拔适配点）**：
-- **支付分账真集成**：替换 `payment.MockProvider` 前必须完成 **Spike-2 + 法务**（资金二清是刑事红线，docs §2.1）。
-- **对象存储**：用云凭证实现 `storage/oss.go`（生产为浏览器直传预签名）。
+**对象存储已落地（免费、生产可用）**：S3 兼容驱动 `platform/storage/s3.go`（`minio-go`）—— 一份驱动通吃免费自建 **MinIO** 与 AWS S3 / 阿里云 OSS / 腾讯云 COS。下载走**预签名 URL**(字节不经应用服务器)。`make up` 自带 MinIO；切云只改 `S3_ENDPOINT` 等环境变量。已对真实 MinIO 做单段 + 6MB 多段上传 + 预签名下载的字节级 e2e。
 
 **中文检索已升级**：应用层结巴分词（`go-ego/gse`，纯 Go 无 cgo）+ PG `simple` `tsvector` + GIN 索引，词级全文检索 + `ts_rank` 排序（见 `platform/textseg`、migration 000003）。规模化时可平替 `zhparser` / ES+IK。
+
+**唯一剩余外部墙**：**支付分账真集成** —— 替换 `payment.MockProvider` 前必须完成 **Spike-2 + 法务**（资金二清是刑事红线，docs §2.1）。免费可跑的真支付是 Stripe 测试模式（Connect destination charges = 平台分账标准模式），需提供 Stripe 测试 key。其余全部本地可跑、零付费。
