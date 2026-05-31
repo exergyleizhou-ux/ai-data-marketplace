@@ -40,6 +40,11 @@ func (h *handler) download(c *gin.Context) {
 		fail(c, err)
 		return
 	}
+	if res.RedirectURL != "" {
+		// Object storage serves the bytes directly via a short-lived URL.
+		c.Redirect(http.StatusFound, res.RedirectURL)
+		return
+	}
 	defer res.Body.Close()
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Content-Disposition", "attachment")

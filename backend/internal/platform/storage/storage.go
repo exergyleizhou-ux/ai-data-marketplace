@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
 )
 
 // Object identifies stored bytes plus integrity metadata.
@@ -46,6 +47,14 @@ type Storage interface {
 	Stat(ctx context.Context, uploadID string) (UploadStat, error)
 	// Open returns a reader for a completed object.
 	Open(ctx context.Context, objectKey string) (io.ReadCloser, int64, error)
+}
+
+// PresignedGetter is an OPTIONAL capability: drivers that can hand out a
+// short-lived direct-download URL implement it, so the delivery module can
+// redirect buyers to object storage instead of streaming bytes through the app
+// server (the production best practice). Drivers without it (Local) are streamed.
+type PresignedGetter interface {
+	PresignGet(ctx context.Context, objectKey string, ttl time.Duration) (string, error)
 }
 
 // ErrNotImplemented is returned by driver stubs awaiting real integration.

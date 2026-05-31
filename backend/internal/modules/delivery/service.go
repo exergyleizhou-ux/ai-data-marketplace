@@ -85,10 +85,13 @@ func (s *Service) RequestDownload(ctx context.Context, buyerID, orderID string, 
 	return raw, expiresAt, nil
 }
 
-// DownloadResult carries the object stream + metadata for the HTTP layer.
+// DownloadResult carries either a redirect URL (object storage hands out a
+// short-lived presigned link — production best practice, bytes bypass the app)
+// or a byte stream (Local driver). Exactly one is set.
 type DownloadResult struct {
-	Body io.ReadCloser
-	Size int64
+	RedirectURL string
+	Body        io.ReadCloser
+	Size        int64
 }
 
 // Download validates the token (expiry/quota), records the download (with
@@ -116,12 +119,23 @@ func (s *Service) Download(ctx context.Context, token, ip string) (DownloadResul
 	if !ok {
 		return DownloadResult{}, ErrTokenInvalid // raced to the quota / expiry
 	}
+	s.audit.Record(ctx, audit.Entry{ActorID: o.BuyerID, Action: "delivery.download", ResourceType: "order", ResourceID: o.ID, IP: ip,
+		Detail: map[string]any{"fingerprint": g.Fingerprint, "object_key": key}})
+
+	// If the driver can presign (S3/MinIO/OSS), hand out a short-lived direct
+	// URL so the bytes don't transit the app server.
+	if pg, ok := s.storage.(storage.PresignedGetter); ok {
+		url, err := pg.PresignGet(ctx, key, tokenTTL)
+		if err != nil {
+			return DownloadResult{}, err
+		}
+		return DownloadResult{RedirectURL: url}, nil
+	}
+
 	rc, size, err := s.storage.Open(ctx, key)
 	if err != nil {
 		return DownloadResult{}, err
 	}
-	s.audit.Record(ctx, audit.Entry{ActorID: o.BuyerID, Action: "delivery.download", ResourceType: "order", ResourceID: o.ID, IP: ip,
-		Detail: map[string]any{"fingerprint": g.Fingerprint, "object_key": key}})
 	return DownloadResult{Body: rc, Size: size}, nil
 }
 

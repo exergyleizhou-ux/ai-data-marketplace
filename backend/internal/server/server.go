@@ -115,9 +115,21 @@ func (a orderPaymentAdapter) MarkSettled(ctx context.Context, id string) error {
 // than crashing the whole server.
 func (s *Server) objectStorage() storage.Storage {
 	switch s.cfg.StorageDriver {
-	case "oss":
-		slog.Warn("OSS storage driver is a stub; uploads will return not-implemented")
-		return &storage.OSS{}
+	case "s3":
+		store, err := storage.NewS3(context.Background(), storage.S3Config{
+			Endpoint:  s.cfg.S3Endpoint,
+			Bucket:    s.cfg.S3Bucket,
+			AccessKey: s.cfg.S3AccessKey,
+			SecretKey: s.cfg.S3SecretKey,
+			UseSSL:    s.cfg.S3UseSSL,
+			Region:    s.cfg.S3Region,
+		})
+		if err != nil {
+			slog.Error("failed to init S3 storage", "err", err)
+			return nil
+		}
+		slog.Info("object storage backend", "type", "s3", "endpoint", s.cfg.S3Endpoint, "bucket", s.cfg.S3Bucket)
+		return store
 	default:
 		store, err := storage.NewLocal(s.cfg.StorageDir)
 		if err != nil {

@@ -24,8 +24,14 @@ type Config struct {
 	PIISecret      string // keyed-hash secret for sensitive fields (e.g. ID numbers)
 	KYCAutoApprove bool   // dev only: auto-verify KYC submissions instead of manual review
 
-	StorageDriver string // local | oss
+	StorageDriver string // local | s3  (s3 = MinIO / AWS S3 / Aliyun OSS / Tencent COS)
 	StorageDir    string // base dir for the local storage driver
+	S3Endpoint    string // host:port (no scheme)
+	S3Bucket      string
+	S3AccessKey   string
+	S3SecretKey   string
+	S3UseSSL      bool
+	S3Region      string
 
 	PaymentProvider   string // mock (sandbox) | wechat | alipay (real = Spike-2 + 法务)
 	PaymentMockSecret string // HMAC secret for the sandbox provider's callbacks
@@ -53,6 +59,12 @@ func Load() (*Config, error) {
 
 		StorageDriver: getenv("STORAGE_DRIVER", "local"),
 		StorageDir:    getenv("STORAGE_DIR", "./data/storage"),
+		S3Endpoint:    getenv("S3_ENDPOINT", "localhost:9000"),
+		S3Bucket:      getenv("S3_BUCKET", "ai-data-marketplace"),
+		S3AccessKey:   getenv("S3_ACCESS_KEY", "minioadmin"),
+		S3SecretKey:   getenv("S3_SECRET_KEY", "minioadmin"),
+		S3UseSSL:      getenv("S3_USE_SSL", "false") == "true",
+		S3Region:      getenv("S3_REGION", "us-east-1"),
 
 		PaymentProvider:   getenv("PAYMENT_PROVIDER", "mock"),
 		PaymentMockSecret: getenv("PAYMENT_MOCK_SECRET", "dev-pay-secret"),

@@ -1,6 +1,7 @@
 # Local development stack. MVP runs on Docker Compose — no Kubernetes (see docs §7).
-# Object storage (OSS/COS) and the licensed payment/split provider are external
-# managed services and are NOT mocked here; wire them via env in later PRs.
+# Object storage is MinIO (free, S3-compatible — same driver as AWS S3 / Aliyun
+# OSS / Tencent COS in prod). The licensed payment/split provider stays external
+# (sandbox mock by default; real integration needs Spike-2 + 法务, docs §2.1).
 
 services:
   postgres:
@@ -31,6 +32,23 @@ services:
       timeout: 3s
       retries: 10
 
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build: ./backend
     environment:
@@ -39,12 +57,20 @@ services:
       DATABASE_URL: postgres://app:app@postgres:5432/ai_data_marketplace?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       AUTO_MIGRATE: "true"   # dev convenience; in prod run migrations as a deploy step
+      STORAGE_DRIVER: s3
+      S3_ENDPOINT: minio:9000
+      S3_BUCKET: ai-data-marketplace
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_USE_SSL: "false"
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "/api", "--healthcheck"]
@@ -65,3 +91,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  miniodata:
