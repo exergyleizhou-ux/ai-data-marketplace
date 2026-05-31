@@ -3,6 +3,7 @@ package order
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 )
@@ -152,9 +153,11 @@ func (s *Service) ConfirmDelivery(ctx context.Context, buyerID, id string) (Orde
 	}
 	// Trigger split-settlement. It is idempotent and retriable, so a failure
 	// here leaves the order confirmed (settlement can be re-run) rather than
-	// blocking the buyer's confirmation.
+	// blocking the buyer's confirmation — but log it (don't swallow silently).
 	if s.settle != nil {
-		_ = s.settle.Settle(ctx, id)
+		if err := s.settle.Settle(ctx, id); err != nil {
+			slog.Error("settlement failed (order left confirmed, retriable)", "order_id", id, "err", err)
+		}
 	}
 	return s.repo.GetByID(ctx, id)
 }

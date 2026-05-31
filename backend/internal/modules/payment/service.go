@@ -132,7 +132,7 @@ func (s *Service) Settle(ctx context.Context, orderID string) error {
 	if !created {
 		return nil // already settling/settled — idempotent
 	}
-	splitTxnID, err := s.split.ExecuteSplit(orderID, o.SellerAmountCents, o.PlatformFeeCents)
+	splitTxnID, err := s.split.ExecuteSplit(ctx, orderID, o.SellerID, o.SellerAmountCents, o.PlatformFeeCents)
 	if err != nil {
 		return fmt.Errorf("execute split: %w", err)
 	}

@@ -33,8 +33,11 @@ type Config struct {
 	S3UseSSL      bool
 	S3Region      string
 
-	PaymentProvider   string // mock (sandbox) | wechat | alipay (real = Spike-2 + 法务)
-	PaymentMockSecret string // HMAC secret for the sandbox provider's callbacks
+	PaymentProvider     string // mock (sandbox) | stripe | wechat | alipay (wechat/alipay real = Spike-2 + 法务)
+	PaymentMockSecret   string // HMAC secret for the sandbox provider's callbacks
+	StripeSecretKey     string // sk_test_… (test mode is free, no real money)
+	StripeWebhookSecret string // whsec_… from `stripe listen` / dashboard endpoint
+	StripeCurrency      string // settlement currency for Stripe (test default usd)
 
 	CORSAllowOrigin string // browser origin allowed to call the API ("*" in dev)
 }
@@ -66,8 +69,11 @@ func Load() (*Config, error) {
 		S3UseSSL:      getenv("S3_USE_SSL", "false") == "true",
 		S3Region:      getenv("S3_REGION", "us-east-1"),
 
-		PaymentProvider:   getenv("PAYMENT_PROVIDER", "mock"),
-		PaymentMockSecret: getenv("PAYMENT_MOCK_SECRET", "dev-pay-secret"),
+		PaymentProvider:     getenv("PAYMENT_PROVIDER", "mock"),
+		PaymentMockSecret:   getenv("PAYMENT_MOCK_SECRET", "dev-pay-secret"),
+		StripeSecretKey:     getenv("STRIPE_SECRET_KEY", ""),
+		StripeWebhookSecret: getenv("STRIPE_WEBHOOK_SECRET", ""),
+		StripeCurrency:      getenv("STRIPE_CURRENCY", "usd"),
 
 		CORSAllowOrigin: getenv("CORS_ALLOW_ORIGIN", "*"),
 	}

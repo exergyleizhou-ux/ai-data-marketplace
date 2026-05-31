@@ -1,6 +1,7 @@
 package payment
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -34,10 +35,12 @@ type PaymentProvider interface {
 }
 
 // SplitProvider executes the split-settlement instruction at the licensed
-// provider: it moves the seller's share + platform commission out of escrow.
-// The platform never holds the funds — it only instructs (docs §2.1).
+// provider: it moves the seller's share to the seller and keeps the platform
+// commission. sellerRef identifies the seller at the provider (e.g. a Stripe
+// connected-account owner key / WeChat sub-merchant). The platform only
+// instructs — it never holds the funds (docs §2.1).
 type SplitProvider interface {
-	ExecuteSplit(orderID string, sellerAmountCents, platformFeeCents int64) (splitTxnID string, err error)
+	ExecuteSplit(ctx context.Context, orderID, sellerRef string, sellerAmountCents, platformFeeCents int64) (splitTxnID string, err error)
 }
 
 // MockProvider is a SANDBOX implementation for local/dev only. It does NOT move
@@ -68,7 +71,7 @@ func (m MockProvider) VerifyCallback(payload []byte, signature string) (Callback
 	return CallbackResult{OrderID: parts[0], ChannelTxnID: parts[1], Paid: parts[2] == "true"}, nil
 }
 
-func (m MockProvider) ExecuteSplit(orderID string, _, _ int64) (string, error) {
+func (m MockProvider) ExecuteSplit(_ context.Context, orderID, _ string, _, _ int64) (string, error) {
 	return "split-" + Sign(m.Secret, "split:"+orderID)[:16], nil
 }
 

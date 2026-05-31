@@ -195,13 +195,25 @@ func (s *Server) routes() {
 		orderSvc := order.NewService(order.NewRepository(s.db), authSvc, datasetPurchaseAdapter{ds: dsSvc}, rec)
 		order.Register(api, orderSvc, authMW, auth.RequireRole("ops", "admin"))
 
-		// Payment + split-settlement. SANDBOX provider only — real WeChat/Alipay
-		// + split requires Spike-2 + 法务 before touching production funds.
-		if s.cfg.PaymentProvider != "mock" {
-			slog.Warn("only the sandbox payment provider is implemented; using mock", "requested", s.cfg.PaymentProvider)
+		// Payment + split-settlement provider selection.
+		//  - stripe: REAL Stripe Connect (test mode = free). Separate charges &
+		//    transfers = escrow-then-settle (docs §2.1).
+		//  - mock: in-process sandbox (default; no real gateway).
+		// WeChat/Alipay real integration still requires Spike-2 + 法务.
+		var provider payment.PaymentProvider
+		var split payment.SplitProvider
+		if s.cfg.PaymentProvider == "stripe" && s.cfg.StripeSecretKey != "" {
+			sp := payment.NewStripeProvider(s.cfg.StripeSecretKey, s.cfg.StripeWebhookSecret, s.cfg.StripeCurrency)
+			provider, split = sp, sp
+			slog.Info("payment provider", "type", "stripe", "currency", s.cfg.StripeCurrency)
+		} else {
+			if s.cfg.PaymentProvider != "mock" {
+				slog.Warn("payment provider unavailable; falling back to sandbox mock", "requested", s.cfg.PaymentProvider)
+			}
+			mock := payment.MockProvider{Secret: s.cfg.PaymentMockSecret}
+			provider, split = mock, mock
 		}
-		mock := payment.MockProvider{Secret: s.cfg.PaymentMockSecret}
-		paySvc := payment.NewService(payment.NewRepository(s.db), orderPaymentAdapter{o: orderSvc}, mock, mock, rec)
+		paySvc := payment.NewService(payment.NewRepository(s.db), orderPaymentAdapter{o: orderSvc}, provider, split, rec)
 		payment.Register(api, paySvc, authMW, s.cfg.Env != "production")
 		orderSvc.SetSettlementTrigger(paySvc) // confirm-delivery -> auto settle
 

@@ -34,7 +34,11 @@ func (h *handler) create(c *gin.Context) {
 // JWT) — authenticity comes from signature verification inside the service.
 func (h *handler) webhook(c *gin.Context) {
 	payload, _ := io.ReadAll(c.Request.Body)
-	signature := c.GetHeader("X-Signature")
+	// Stripe signs with the Stripe-Signature header; the mock uses X-Signature.
+	signature := c.GetHeader("Stripe-Signature")
+	if signature == "" {
+		signature = c.GetHeader("X-Signature")
+	}
 	if err := h.svc.HandleCallback(c.Request.Context(), c.Param("channel"), payload, signature); err != nil {
 		fail(c, err)
 		return
