@@ -9,7 +9,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/textseg"
 )
+
+// searchText builds the segmented text indexed for full-text search.
+func searchText(d Dataset) string {
+	return textseg.Segment(d.Title + " " + d.Description + " " + d.Domain)
+}
 
 // Repository abstracts dataset persistence (owns dataset/dataset_version/
 // dataset_file). Service logic is unit-tested against an in-memory fake.
@@ -93,12 +100,12 @@ func (r *pgRepo) Create(ctx context.Context, d Dataset) (Dataset, error) {
 	decl, _ := json.Marshal(d.SourceDeclaration)
 	const q = `
 		INSERT INTO datasets (seller_id, title, description, data_type, domain,
-			license_type, suggested_price_cents, status, source_declaration)
-		VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,$7,'draft',$8::jsonb)
+			license_type, suggested_price_cents, status, source_declaration, search_vector)
+		VALUES ($1,$2,$3,$4,NULLIF($5,''),$6,$7,'draft',$8::jsonb, to_tsvector('simple',$9))
 		RETURNING ` + datasetCols
 	out, err := scanDataset(r.pool.QueryRow(ctx, q,
 		d.SellerID, d.Title, d.Description, d.DataType, d.Domain,
-		d.LicenseType, d.SuggestedPriceCents, string(decl)))
+		d.LicenseType, d.SuggestedPriceCents, string(decl), searchText(d)))
 	if err != nil {
 		return Dataset{}, fmt.Errorf("create dataset: %w", err)
 	}
@@ -120,12 +127,13 @@ func (r *pgRepo) UpdateMeta(ctx context.Context, d Dataset) (Dataset, error) {
 	decl, _ := json.Marshal(d.SourceDeclaration)
 	const q = `
 		UPDATE datasets SET title=$2, description=$3, data_type=$4, domain=NULLIF($5,''),
-			license_type=$6, suggested_price_cents=$7, source_declaration=$8::jsonb, updated_at=now()
+			license_type=$6, suggested_price_cents=$7, source_declaration=$8::jsonb,
+			search_vector=to_tsvector('simple',$9), updated_at=now()
 		WHERE id=$1
 		RETURNING ` + datasetCols
 	out, err := scanDataset(r.pool.QueryRow(ctx, q,
 		d.ID, d.Title, d.Description, d.DataType, d.Domain,
-		d.LicenseType, d.SuggestedPriceCents, string(decl)))
+		d.LicenseType, d.SuggestedPriceCents, string(decl), searchText(d)))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Dataset{}, ErrNotFound
 	}
@@ -262,9 +270,13 @@ func (r *pgRepo) ListPublished(ctx context.Context, f ListFilter) ([]Dataset, er
 	if f.MaxPriceCents > 0 {
 		add(effPrice+" <= $%d", f.MaxPriceCents)
 	}
+	// Keyword search: segment the query (Chinese word tokens) and match the
+	// GIN-indexed tsvector, ranking by relevance unless an explicit sort wins.
+	kwArg := 0
 	if f.Keyword != "" {
-		args = append(args, "%"+f.Keyword+"%")
-		conds = append(conds, fmt.Sprintf("(title ILIKE $%d OR description ILIKE $%d)", len(args), len(args)))
+		args = append(args, textseg.Segment(f.Keyword))
+		kwArg = len(args)
+		conds = append(conds, fmt.Sprintf("search_vector @@ plainto_tsquery('simple', $%d)", kwArg))
 	}
 
 	order := "created_at DESC"
@@ -273,6 +285,10 @@ func (r *pgRepo) ListPublished(ctx context.Context, f ListFilter) ([]Dataset, er
 		order = effPrice + " ASC, created_at DESC"
 	case "price_desc":
 		order = effPrice + " DESC, created_at DESC"
+	default:
+		if kwArg > 0 {
+			order = fmt.Sprintf("ts_rank(search_vector, plainto_tsquery('simple', $%d)) DESC, created_at DESC", kwArg)
+		}
 	}
 
 	limit := f.Limit
