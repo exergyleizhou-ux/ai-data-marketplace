@@ -9,22 +9,30 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
 )
 
 type Server struct {
 	cfg    *config.Config
+	db     *pgxpool.Pool
 	engine *gin.Engine
 }
 
-func New(cfg *config.Config) *Server {
+// New builds the server. db may be nil in tests that exercise only routes that
+// don't touch the database.
+func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	engine := gin.New()
-	engine.Use(gin.Recovery())
+	// RequestID first so logger/recovery can correlate; Recovery wraps handlers.
+	engine.Use(middleware.RequestID(), middleware.Logger(), middleware.Recovery())
 
-	s := &Server{cfg: cfg, engine: engine}
+	s := &Server{cfg: cfg, db: db, engine: engine}
 	s.routes()
 	return s
 }
@@ -39,5 +47,8 @@ func (s *Server) routes() {
 
 	// Versioned API surface. Module routers register under this group in
 	// later PRs, e.g. auth.Register(api), dataset.Register(api), ...
-	_ = s.engine.Group("/api/v1")
+	api := s.engine.Group("/api/v1")
+	api.GET("/ping", func(c *gin.Context) {
+		httpx.OK(c, gin.H{"pong": true, "env": s.cfg.Env})
+	})
 }

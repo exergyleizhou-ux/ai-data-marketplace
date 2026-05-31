@@ -38,6 +38,7 @@ services:
       HTTP_ADDR: ":8080"
       DATABASE_URL: postgres://app:app@postgres:5432/ai_data_marketplace?sslmode=disable
       REDIS_URL: redis://redis:6379/0
+      AUTO_MIGRATE: "true"   # dev convenience; in prod run migrations as a deploy step
     ports:
       - "8080:8080"
     depends_on:

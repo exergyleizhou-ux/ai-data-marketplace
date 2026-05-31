@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/db"
 	"github.com/lei/ai-data-marketplace/backend/internal/server"
 )
 
@@ -35,7 +36,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv := server.New(cfg)
+	if cfg.AutoMigrate {
+		slog.Info("running database migrations")
+		if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
+			slog.Error("migrations failed", "err", err)
+			os.Exit(1)
+		}
+	}
+
+	ctx := context.Background()
+	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
+	if err != nil {
+		slog.Error("failed to connect database", "err", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	srv := server.New(cfg, pool)
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           srv.Handler(),

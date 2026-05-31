@@ -37,7 +37,7 @@ ai-data-marketplace/
 
 ## 本地运行
 
-前置：Docker（或本机装好 Go 1.23 / Node 20 + 本地 Postgres/Redis）。
+前置：Docker（或本机装好 Go 1.25 / Node 20 + 本地 Postgres/Redis）。
 
 ```bash
 # 全栈一键起（推荐）
@@ -47,14 +47,17 @@ make up                      # 等价 docker compose up --build
 
 # 或分别在宿主机跑
 make backend-tidy            # 生成 go.sum
+make migrate-up              # 建表（需 golang-migrate CLI；或设 AUTO_MIGRATE=true 让进程自迁移）
 make backend-run
 make frontend-dev
 ```
 
 > 注意：首次构建后端需联网拉取 Go 依赖并生成 `go.sum`（`make backend-tidy`）；前端需 `npm install`。
+> 数据库迁移：`make migrate-up`/`migrate-down`/`migrate-create name=xxx`；进程内自迁移设 `AUTO_MIGRATE=true`（compose 已默认开启）。迁移文件在 [`backend/migrations/`](backend/migrations/) 并编译进二进制。
 
 ## 开发路线（PR 计划见 docs §9）
 
-当前：**PR-01 脚手架**。下一步：PR-02 数据库初始化 + 迁移、PR-03 统一响应/错误码/中间件。
+已完成：**PR-01 脚手架** · **PR-02 数据库 + 迁移** · **PR-03 统一响应/错误码/中间件**。
+下一步：PR-04 注册登录 + JWT（依赖 PR-02/03）。
 
 正式编码前必须完成 **Spike-2（分账/担保支付闭环可行性）** —— 拉法务 + 持牌方一起做，确认可行再写支付代码。

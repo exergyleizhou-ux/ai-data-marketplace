@@ -14,6 +14,7 @@ type Config struct {
 	HTTPAddr    string // e.g. ":8080"
 	DatabaseURL string // postgres DSN
 	RedisURL    string // redis URL
+	AutoMigrate bool   // run DB migrations on startup (handy for dev/CI)
 }
 
 // Load reads configuration from the environment, applying sane local-dev
@@ -24,6 +25,7 @@ func Load() (*Config, error) {
 		HTTPAddr:    getenv("HTTP_ADDR", ":8080"),
 		DatabaseURL: getenv("DATABASE_URL", "postgres://app:app@localhost:5432/ai_data_marketplace?sslmode=disable"),
 		RedisURL:    getenv("REDIS_URL", "redis://localhost:6379/0"),
+		AutoMigrate: getenv("AUTO_MIGRATE", "false") == "true",
 	}
 	// Validate that any provided PORT-style override parses, to fail fast.
 	if v := os.Getenv("HTTP_PORT"); v != "" {
