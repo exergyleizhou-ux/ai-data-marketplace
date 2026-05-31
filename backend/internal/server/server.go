@@ -146,7 +146,8 @@ func (s *Server) routes() {
 		}
 		authSvc := auth.NewService(auth.NewRepository(s.db), tm,
 			auth.WithKYC(verifier, s.cfg.PIISecret))
-		auth.Register(api, authSvc, tm, s.limiter())
+		lim := s.limiter() // shared rate limiter (auth credential routes + dataset preview)
+		auth.Register(api, authSvc, tm, lim)
 
 		authMW := auth.Middleware(tm)
 		rec := audit.New(s.db)
@@ -157,7 +158,7 @@ func (s *Server) routes() {
 			dsOpts = append(dsOpts, dataset.WithStorage(store))
 		}
 		dsSvc := dataset.NewService(dataset.NewRepository(s.db), authSvc, rec, dsOpts...)
-		dataset.Register(api, dsSvc, authMW, auth.RequireRole("ops", "admin"))
+		dataset.Register(api, dsSvc, authMW, auth.RequireRole("ops", "admin"), lim)
 
 		orderSvc := order.NewService(order.NewRepository(s.db), authSvc, datasetPurchaseAdapter{ds: dsSvc}, rec)
 		order.Register(api, orderSvc, authMW)

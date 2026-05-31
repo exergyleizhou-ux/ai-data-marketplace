@@ -61,6 +61,40 @@ func (h *handler) update(c *gin.Context) {
 	httpx.OK(c, d)
 }
 
+func (h *handler) list(c *gin.Context) {
+	atoi := func(q string) int64 { n, _ := strconv.ParseInt(c.Query(q), 10, 64); return n }
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	items, err := h.svc.List(c.Request.Context(), ListFilter{
+		Keyword:       c.Query("q"),
+		DataType:      c.Query("data_type"),
+		LicenseType:   c.Query("license_type"),
+		Domain:        c.Query("domain"),
+		MinPriceCents: atoi("min_price"),
+		MaxPriceCents: atoi("max_price"),
+		Sort:          c.Query("sort"),
+		Limit:         limit,
+		Offset:        offset,
+	})
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	if items == nil {
+		items = []Dataset{} // serialize empty result as [] not null
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+func (h *handler) preview(c *gin.Context) {
+	res, err := h.svc.Preview(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, res)
+}
+
 func (h *handler) get(c *gin.Context) {
 	d, err := h.svc.Get(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -77,6 +111,9 @@ func (h *handler) listMine(c *gin.Context) {
 	if err != nil {
 		fail(c, err)
 		return
+	}
+	if list == nil {
+		list = []Dataset{}
 	}
 	httpx.OK(c, gin.H{"items": list})
 }

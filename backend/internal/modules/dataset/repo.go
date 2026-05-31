@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,6 +33,21 @@ type Repository interface {
 	// CurrentObjectKey returns the object key of the dataset's current version
 	// file (single-file MVP) — used by delivery to stream the bytes.
 	CurrentObjectKey(ctx context.Context, datasetID string) (string, error)
+	// ListPublished returns published datasets matching the filter (browse/search).
+	ListPublished(ctx context.Context, f ListFilter) ([]Dataset, error)
+}
+
+// ListFilter is the public catalog query (only published datasets are returned).
+type ListFilter struct {
+	Keyword       string // substring match on title/description (CJK-safe via ILIKE)
+	DataType      string
+	LicenseType   string
+	Domain        string
+	MinPriceCents int64
+	MaxPriceCents int64  // 0 = no upper bound
+	Sort          string // newest | price_asc | price_desc
+	Limit         int
+	Offset        int
 }
 
 // FileInput describes one stored object to attach to a dataset version.
@@ -220,6 +236,73 @@ func (r *pgRepo) SetSampleCount(ctx context.Context, id string, n int64) error {
 		return fmt.Errorf("set sample count: %w", err)
 	}
 	return nil
+}
+
+func (r *pgRepo) ListPublished(ctx context.Context, f ListFilter) ([]Dataset, error) {
+	// effPrice = COALESCE(final, suggested, 0)
+	const effPrice = `COALESCE(final_price_cents, suggested_price_cents, 0)`
+	conds := []string{"status = 'published'"}
+	args := []any{}
+	add := func(cond string, v any) {
+		args = append(args, v)
+		conds = append(conds, fmt.Sprintf(cond, len(args)))
+	}
+	if f.DataType != "" {
+		add("data_type = $%d", f.DataType)
+	}
+	if f.LicenseType != "" {
+		add("license_type = $%d", f.LicenseType)
+	}
+	if f.Domain != "" {
+		add("domain = $%d", f.Domain)
+	}
+	if f.MinPriceCents > 0 {
+		add(effPrice+" >= $%d", f.MinPriceCents)
+	}
+	if f.MaxPriceCents > 0 {
+		add(effPrice+" <= $%d", f.MaxPriceCents)
+	}
+	if f.Keyword != "" {
+		args = append(args, "%"+f.Keyword+"%")
+		conds = append(conds, fmt.Sprintf("(title ILIKE $%d OR description ILIKE $%d)", len(args), len(args)))
+	}
+
+	order := "created_at DESC"
+	switch f.Sort {
+	case "price_asc":
+		order = effPrice + " ASC, created_at DESC"
+	case "price_desc":
+		order = effPrice + " DESC, created_at DESC"
+	}
+
+	limit := f.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	args = append(args, limit, offset)
+	q := `SELECT ` + datasetCols + ` FROM datasets WHERE ` +
+		strings.Join(conds, " AND ") +
+		` ORDER BY ` + order +
+		fmt.Sprintf(` LIMIT $%d OFFSET $%d`, len(args)-1, len(args))
+
+	rows, err := r.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list published: %w", err)
+	}
+	defer rows.Close()
+	var out []Dataset
+	for rows.Next() {
+		d, err := scanDataset(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 func (r *pgRepo) CurrentObjectKey(ctx context.Context, datasetID string) (string, error) {

@@ -86,6 +86,22 @@ func (r *fakeRepo) CurrentObjectKey(_ context.Context, datasetID string) (string
 	}
 	return "datasets/" + datasetID + "/data.txt", nil
 }
+func (r *fakeRepo) ListPublished(_ context.Context, f ListFilter) ([]Dataset, error) {
+	var out []Dataset
+	for _, d := range r.items {
+		if d.Status != StatusPublished {
+			continue
+		}
+		if f.DataType != "" && d.DataType != f.DataType {
+			continue
+		}
+		if f.Keyword != "" && !strings.Contains(d.Title, f.Keyword) {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
 
 func itoa(n int) string {
 	if n == 0 {
@@ -232,6 +248,56 @@ func TestUploadWithUndeclaredPIIBouncesToDraft(t *testing.T) {
 	// Undeclared PII is a hard fail -> bounced back to draft.
 	if done.Status != StatusDraft {
 		t.Fatalf("status = %q, want draft (PII bounce)", done.Status)
+	}
+}
+
+func TestListAndPreview(t *testing.T) {
+	ctx := context.Background()
+	store, _ := storage.NewLocal(t.TempDir())
+	repo := newFakeRepo()
+	svc := NewService(repo, fakeIdentity{status: map[string]string{"owner": kycVerified}}, nil, WithStorage(store))
+
+	// Seed one published dataset with a stored object that contains PII.
+	d, _ := svc.Create(ctx, "owner", CreateInput{Title: "中文医疗语料", DataType: "text", LicenseType: "commercial", SourceDeclaration: validDecl()})
+	_ = repo.SetStatus(ctx, d.ID, StatusPublished)
+	d2 := repo.items[d.ID]
+	d2.SampleCount = 100
+	repo.items[d.ID] = d2
+	up, _ := store.InitMultipart(ctx, "datasets/"+d.ID+"/data.txt")
+	_, _ = store.PutPart(ctx, up, 1, strings.NewReader("患者张三 电话13800138000 主诉头痛\n第二行正常文本\n"))
+	_, _ = store.CompleteMultipart(ctx, up)
+
+	// List finds it; keyword filter works.
+	if items, _ := svc.List(ctx, ListFilter{}); len(items) != 1 {
+		t.Fatalf("list returned %d, want 1", len(items))
+	}
+	if items, _ := svc.List(ctx, ListFilter{Keyword: "医疗"}); len(items) != 1 {
+		t.Fatalf("keyword list returned %d, want 1", len(items))
+	}
+	if items, _ := svc.List(ctx, ListFilter{Keyword: "不存在"}); len(items) != 0 {
+		t.Fatalf("non-matching keyword returned %d, want 0", len(items))
+	}
+
+	// Preview masks PII and caps lines.
+	prev, err := svc.Preview(ctx, d.ID)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if len(prev.Lines) != 2 || prev.SampleCount != 100 || !prev.Truncated {
+		t.Fatalf("unexpected preview: %+v", prev)
+	}
+	if strings.Contains(prev.Lines[0], "13800138000") {
+		t.Fatalf("preview leaked phone number: %q", prev.Lines[0])
+	}
+}
+
+func TestPreviewUnpublished(t *testing.T) {
+	ctx := context.Background()
+	store, _ := storage.NewLocal(t.TempDir())
+	svc := NewService(newFakeRepo(), fakeIdentity{status: map[string]string{"owner": kycVerified}}, nil, WithStorage(store))
+	d, _ := svc.Create(ctx, "owner", CreateInput{Title: "draft", DataType: "text", LicenseType: "commercial", SourceDeclaration: validDecl()})
+	if _, err := svc.Preview(ctx, d.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("preview of unpublished should be ErrNotFound, got %v", err)
 	}
 }
 

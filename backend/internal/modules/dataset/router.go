@@ -1,15 +1,31 @@
 package dataset
 
-import "github.com/gin-gonic/gin"
+import (
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
+)
 
 // Register mounts dataset routes. authMW protects seller mutations; opsGate
-// guards the admin review endpoints. The server supplies both (built from the
-// auth module) so this package stays decoupled from auth.
-func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc) {
+// guards the admin review endpoints; limiter throttles the preview endpoint.
+// The server supplies these (built from auth/platform) so this package stays
+// decoupled.
+func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc, limiter ratelimit.Limiter) {
 	h := &handler{svc: svc}
 
-	// Public read.
+	// Public browse/search + detail.
+	rg.GET("/datasets", h.list)
 	rg.GET("/datasets/:id", h.get)
+
+	// Sample preview: login required + rate-limited (anti-scrape, docs §2.3/§6.4).
+	preview := rg.Group("")
+	preview.Use(authMW, middleware.RateLimit(limiter, middleware.RateLimitConfig{
+		Name: "preview", Limit: 30, Window: time.Minute,
+	}))
+	preview.GET("/datasets/:id/preview", h.preview)
 
 	// Authenticated routes (service enforces KYC + ownership).
 	authed := rg.Group("")

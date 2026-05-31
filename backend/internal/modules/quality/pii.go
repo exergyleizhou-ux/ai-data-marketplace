@@ -16,6 +16,16 @@ var piiPatterns = []struct {
 	{"ipv4", regexp.MustCompile(`(?:^|[^0-9])((?:\d{1,3}\.){3}\d{1,3})(?:[^0-9]|$)`)},
 }
 
+// MaskPII replaces detected personal data with "***" so it can be shown in
+// previews without leaking PII (defense-in-depth — published data should
+// already be clean, but previews are public/semi-public).
+func MaskPII(s string) string {
+	for _, p := range piiPatterns {
+		s = p.re.ReplaceAllString(s, "***")
+	}
+	return s
+}
+
 // PII scans content for personal data. declaredPII reflects the seller's source
 // declaration: if they declared NO personal info but we find some, that is a
 // hard fail (the declaration is false); if they declared PII, it is a warning

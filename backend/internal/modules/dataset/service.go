@@ -3,8 +3,10 @@ package dataset
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/quality"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
 )
@@ -176,6 +178,75 @@ func (s *Service) SignSource(ctx context.Context, userID, id string) (Dataset, e
 // (consumed by the delivery module via its own interface).
 func (s *Service) CurrentObjectKey(ctx context.Context, datasetID string) (string, error) {
 	return s.repo.CurrentObjectKey(ctx, datasetID)
+}
+
+// List returns published datasets matching the filter (browse/search).
+func (s *Service) List(ctx context.Context, f ListFilter) ([]Dataset, error) {
+	return s.repo.ListPublished(ctx, f)
+}
+
+// PreviewResult is a limited, PII-masked sample for the detail page.
+type PreviewResult struct {
+	Lines       []string `json:"lines"`
+	LineCount   int      `json:"line_count"`
+	SampleCount int64    `json:"dataset_sample_count"`
+	Truncated   bool     `json:"truncated"`
+}
+
+const (
+	previewMaxBytes = 64 << 10 // read at most 64KiB for a preview
+	previewMaxLines = 20       // show at most 20 sampled lines
+	previewLineCap  = 500      // truncate each line to 500 chars
+)
+
+// Preview returns a masked, capped sample of a published dataset (docs §6.4):
+// limited rows, PII masked, long lines truncated. Rate-limited at the router.
+func (s *Service) Preview(ctx context.Context, datasetID string) (PreviewResult, error) {
+	d, err := s.repo.GetByID(ctx, datasetID)
+	if err != nil {
+		return PreviewResult{}, err
+	}
+	if d.Status != StatusPublished {
+		return PreviewResult{}, ErrNotFound // only published datasets are previewable
+	}
+	if s.storage == nil {
+		return PreviewResult{}, ErrStorageUnavailable
+	}
+	key, err := s.repo.CurrentObjectKey(ctx, datasetID)
+	if err != nil {
+		return PreviewResult{}, err
+	}
+	rc, _, err := s.storage.Open(ctx, key)
+	if err != nil {
+		return PreviewResult{}, err
+	}
+	defer rc.Close()
+	buf, err := io.ReadAll(io.LimitReader(rc, previewMaxBytes))
+	if err != nil {
+		return PreviewResult{}, err
+	}
+
+	raw := strings.Split(string(buf), "\n")
+	lines := make([]string, 0, previewMaxLines)
+	for _, ln := range raw {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		masked := quality.MaskPII(ln)
+		if len(masked) > previewLineCap {
+			masked = masked[:previewLineCap] + "…"
+		}
+		lines = append(lines, masked)
+		if len(lines) >= previewMaxLines {
+			break
+		}
+	}
+	return PreviewResult{
+		Lines:       lines,
+		LineCount:   len(lines),
+		SampleCount: d.SampleCount,
+		Truncated:   int64(len(lines)) < d.SampleCount,
+	}, nil
 }
 
 func (s *Service) requireVerified(ctx context.Context, userID string) error {
