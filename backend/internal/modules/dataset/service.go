@@ -172,6 +172,12 @@ func (s *Service) SignSource(ctx context.Context, userID, id string) (Dataset, e
 	return signed, nil
 }
 
+// CurrentObjectKey returns the object key of the dataset's current version file
+// (consumed by the delivery module via its own interface).
+func (s *Service) CurrentObjectKey(ctx context.Context, datasetID string) (string, error) {
+	return s.repo.CurrentObjectKey(ctx, datasetID)
+}
+
 func (s *Service) requireVerified(ctx context.Context, userID string) error {
 	status, err := s.identity.KYCStatus(ctx, userID)
 	if err != nil {

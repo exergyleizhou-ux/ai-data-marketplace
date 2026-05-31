@@ -80,6 +80,12 @@ func (r *fakeRepo) SetSampleCount(_ context.Context, id string, n int64) error {
 	r.items[id] = d
 	return nil
 }
+func (r *fakeRepo) CurrentObjectKey(_ context.Context, datasetID string) (string, error) {
+	if _, ok := r.items[datasetID]; !ok {
+		return "", ErrNotFound
+	}
+	return "datasets/" + datasetID + "/data.txt", nil
+}
 
 func itoa(n int) string {
 	if n == 0 {

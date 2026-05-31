@@ -16,6 +16,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/dataset"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/delivery"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/order"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/payment"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
@@ -149,9 +150,10 @@ func (s *Server) routes() {
 
 		authMW := auth.Middleware(tm)
 		rec := audit.New(s.db)
+		store := s.objectStorage() // shared by dataset (upload) and delivery (download)
 
 		dsOpts := []dataset.Option{}
-		if store := s.objectStorage(); store != nil {
+		if store != nil {
 			dsOpts = append(dsOpts, dataset.WithStorage(store))
 		}
 		dsSvc := dataset.NewService(dataset.NewRepository(s.db), authSvc, rec, dsOpts...)
@@ -169,5 +171,34 @@ func (s *Server) routes() {
 		paySvc := payment.NewService(payment.NewRepository(s.db), orderPaymentAdapter{o: orderSvc}, mock, mock, rec)
 		payment.Register(api, paySvc, authMW)
 		orderSvc.SetSettlementTrigger(paySvc) // confirm-delivery -> auto settle
+
+		if store != nil {
+			delSvc := delivery.NewService(delivery.NewRepository(s.db),
+				orderDeliveryAdapter{o: orderSvc}, datasetDeliveryAdapter{ds: dsSvc},
+				store, s.cfg.PIISecret, rec)
+			delivery.Register(api, delSvc, authMW)
+		}
 	}
+}
+
+// orderDeliveryAdapter bridges order.Service to delivery.OrderGateway.
+type orderDeliveryAdapter struct{ o *order.Service }
+
+func (a orderDeliveryAdapter) GetSystem(ctx context.Context, id string) (delivery.OrderInfo, error) {
+	o, err := a.o.GetSystem(ctx, id)
+	if err != nil {
+		return delivery.OrderInfo{}, err
+	}
+	return delivery.OrderInfo{ID: o.ID, BuyerID: o.BuyerID, Status: o.Status, DatasetID: o.DatasetID}, nil
+}
+func (a orderDeliveryAdapter) MarkDelivered(ctx context.Context, id string) error {
+	_, err := a.o.MarkDelivered(ctx, id)
+	return err
+}
+
+// datasetDeliveryAdapter bridges dataset.Service to delivery.DatasetReader.
+type datasetDeliveryAdapter struct{ ds *dataset.Service }
+
+func (a datasetDeliveryAdapter) CurrentObjectKey(ctx context.Context, datasetID string) (string, error) {
+	return a.ds.CurrentObjectKey(ctx, datasetID)
 }

@@ -29,6 +29,9 @@ type Repository interface {
 	ContentDupExists(ctx context.Context, contentSHA256, excludeDatasetID string) (bool, error)
 	// SetSampleCount records the dataset's sample (non-empty line) count.
 	SetSampleCount(ctx context.Context, id string, n int64) error
+	// CurrentObjectKey returns the object key of the dataset's current version
+	// file (single-file MVP) — used by delivery to stream the bytes.
+	CurrentObjectKey(ctx context.Context, datasetID string) (string, error)
 }
 
 // FileInput describes one stored object to attach to a dataset version.
@@ -217,6 +220,22 @@ func (r *pgRepo) SetSampleCount(ctx context.Context, id string, n int64) error {
 		return fmt.Errorf("set sample count: %w", err)
 	}
 	return nil
+}
+
+func (r *pgRepo) CurrentObjectKey(ctx context.Context, datasetID string) (string, error) {
+	const q = `
+		SELECT f.object_key
+		FROM datasets d JOIN dataset_files f ON f.version_id = d.current_version_id
+		WHERE d.id=$1 LIMIT 1`
+	var key string
+	err := r.pool.QueryRow(ctx, q, datasetID).Scan(&key)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("current object key: %w", err)
+	}
+	return key, nil
 }
 
 func (r *pgRepo) SignSource(ctx context.Context, id string) (Dataset, error) {

@@ -9,7 +9,7 @@ type Dataset struct {
 	SellerID            string             `json:"seller_id"`
 	Title               string             `json:"title"`
 	Description         string             `json:"description"`
-	DataType            string             `json:"data_type"`    // text | code | structured
+	DataType            string             `json:"data_type"` // text | code | structured
 	Domain              string             `json:"domain,omitempty"`
 	LicenseType         string             `json:"license_type"` // commercial | research | train_only
 	SuggestedPriceCents *int64             `json:"suggested_price_cents,omitempty"`
