@@ -44,6 +44,8 @@ type Repository interface {
 	ListPublished(ctx context.Context, f ListFilter) ([]Dataset, error)
 	// SetVersionSimhash stores the near-dup fingerprint computed by the quality worker.
 	SetVersionSimhash(ctx context.Context, versionID, simhash string) error
+	// ListByStatus returns datasets in a given lifecycle status (ops queues).
+	ListByStatus(ctx context.Context, status string, limit, offset int) ([]Dataset, error)
 }
 
 // ListFilter is the public catalog query (only published datasets are returned).
@@ -310,6 +312,25 @@ func (r *pgRepo) ListPublished(ctx context.Context, f ListFilter) ([]Dataset, er
 	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list published: %w", err)
+	}
+	defer rows.Close()
+	var out []Dataset
+	for rows.Next() {
+		d, err := scanDataset(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func (r *pgRepo) ListByStatus(ctx context.Context, status string, limit, offset int) ([]Dataset, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+datasetCols+` FROM datasets WHERE status=$1 ORDER BY updated_at ASC LIMIT $2 OFFSET $3`,
+		status, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list by status: %w", err)
 	}
 	defer rows.Close()
 	var out []Dataset

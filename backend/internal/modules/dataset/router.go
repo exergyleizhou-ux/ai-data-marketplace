@@ -45,6 +45,7 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	// Ops review / takedown.
 	admin := rg.Group("/admin/datasets")
 	admin.Use(authMW, opsGate)
+	admin.GET("", h.adminList) // ops queue: /admin/datasets?status=reviewing
 	admin.POST("/:id/review", h.review)
 	admin.POST("/:id/delist", h.delist)
 }

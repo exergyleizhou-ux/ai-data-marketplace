@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -129,6 +130,20 @@ func (h *handler) getKYC(c *gin.Context) {
 type reviewKYCRequest struct {
 	KYCID   string `json:"kyc_id"`
 	Approve bool   `json:"approve"`
+}
+
+func (h *handler) adminListKYC(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	items, err := h.svc.ListPendingKYC(c.Request.Context(), limit, offset)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	if items == nil {
+		items = []KYCRecord{}
+	}
+	httpx.OK(c, gin.H{"items": items})
 }
 
 func (h *handler) adminReviewKYC(c *gin.Context) {

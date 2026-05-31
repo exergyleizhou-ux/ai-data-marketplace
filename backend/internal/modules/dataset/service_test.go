@@ -87,6 +87,15 @@ func (r *fakeRepo) CurrentObjectKey(_ context.Context, datasetID string) (string
 	return "datasets/" + datasetID + "/data.txt", nil
 }
 func (r *fakeRepo) SetVersionSimhash(_ context.Context, _, _ string) error { return nil }
+func (r *fakeRepo) ListByStatus(_ context.Context, status string, _, _ int) ([]Dataset, error) {
+	var out []Dataset
+	for _, d := range r.items {
+		if d.Status == status {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
 func (r *fakeRepo) ListPublished(_ context.Context, f ListFilter) ([]Dataset, error) {
 	var out []Dataset
 	for _, d := range r.items {

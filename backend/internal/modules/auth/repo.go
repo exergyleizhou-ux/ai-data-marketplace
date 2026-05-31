@@ -27,6 +27,8 @@ type Repository interface {
 	// ReviewKYC sets a record's verify_status and syncs the owner's kyc_status,
 	// atomically. Returns the updated record.
 	ReviewKYC(ctx context.Context, kycID, newStatus, reviewerID string) (KYCRecord, error)
+	// ListPendingKYC returns KYC submissions awaiting ops review (oldest first).
+	ListPendingKYC(ctx context.Context, limit, offset int) ([]KYCRecord, error)
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }
@@ -162,6 +164,30 @@ func (r *pgRepo) GetLatestKYC(ctx context.Context, userID string) (KYCRecord, er
 	}
 	_ = json.Unmarshal(materials, &rec.MaterialURLs)
 	return rec, nil
+}
+
+func (r *pgRepo) ListPendingKYC(ctx context.Context, limit, offset int) ([]KYCRecord, error) {
+	const q = `
+		SELECT id, user_id, type, COALESCE(real_name,''), COALESCE(company_name,''),
+		       material_urls, verify_status, created_at::text
+		FROM kyc_records WHERE verify_status='pending' ORDER BY created_at ASC LIMIT $1 OFFSET $2`
+	rows, err := r.pool.Query(ctx, q, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list pending kyc: %w", err)
+	}
+	defer rows.Close()
+	var out []KYCRecord
+	for rows.Next() {
+		var rec KYCRecord
+		var materials []byte
+		if err := rows.Scan(&rec.ID, &rec.UserID, &rec.Type, &rec.RealName, &rec.CompanyName,
+			&materials, &rec.VerifyStatus, &rec.CreatedAt); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal(materials, &rec.MaterialURLs)
+		out = append(out, rec)
+	}
+	return out, rows.Err()
 }
 
 func (r *pgRepo) ReviewKYC(ctx context.Context, kycID, newStatus, reviewerID string) (KYCRecord, error) {

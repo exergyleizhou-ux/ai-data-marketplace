@@ -73,6 +73,17 @@ func (s *Service) GetKYC(ctx context.Context, userID string) (KYCRecord, error) 
 	return s.repo.GetLatestKYC(ctx, userID)
 }
 
+// ListPendingKYC returns submissions awaiting ops review (ops-gated at router).
+func (s *Service) ListPendingKYC(ctx context.Context, limit, offset int) ([]KYCRecord, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.repo.ListPendingKYC(ctx, limit, offset)
+}
+
 // ReviewKYC is the ops action approving or rejecting a submission.
 func (s *Service) ReviewKYC(ctx context.Context, kycID string, approve bool, reviewerID string) (KYCRecord, error) {
 	status := kycRejected

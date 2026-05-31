@@ -73,6 +73,15 @@ func (r *fakeRepo) GetLatestKYC(_ context.Context, userID string) (KYCRecord, er
 	return latest, nil
 }
 
+func (r *fakeRepo) ListPendingKYC(_ context.Context, _, _ int) ([]KYCRecord, error) {
+	var out []KYCRecord
+	for _, rec := range r.kyc {
+		if rec.VerifyStatus == kycPending {
+			out = append(out, rec)
+		}
+	}
+	return out, nil
+}
 func (r *fakeRepo) ReviewKYC(_ context.Context, kycID, newStatus, _ string) (KYCRecord, error) {
 	rec, ok := r.kyc[kycID]
 	if !ok {

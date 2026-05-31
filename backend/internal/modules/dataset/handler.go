@@ -193,6 +193,24 @@ type reviewRequest struct {
 	Note    string `json:"note"`
 }
 
+func (h *handler) adminList(c *gin.Context) {
+	status := c.Query("status")
+	if status == "" {
+		status = StatusReviewing
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	items, err := h.svc.AdminListByStatus(c.Request.Context(), status, limit, offset)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	if items == nil {
+		items = []Dataset{}
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
 func (h *handler) review(c *gin.Context) {
 	var req reviewRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

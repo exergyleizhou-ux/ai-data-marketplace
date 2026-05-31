@@ -248,6 +248,23 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Dataset, error) {
 	return s.repo.ListPublished(ctx, f)
 }
 
+// AdminListByStatus powers ops queues (e.g. status=reviewing). Ops-gated at the
+// router; the status must be a known lifecycle state.
+func (s *Service) AdminListByStatus(ctx context.Context, status string, limit, offset int) ([]Dataset, error) {
+	switch status {
+	case StatusDraft, StatusUploading, StatusChecking, StatusReviewing, StatusPublished, StatusRejected, StatusDelisted:
+	default:
+		return nil, fmt.Errorf("%w: unknown status %q", ErrValidation, status)
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.repo.ListByStatus(ctx, status, limit, offset)
+}
+
 // PreviewResult is a limited, PII-masked sample for the detail page.
 type PreviewResult struct {
 	Lines       []string `json:"lines"`

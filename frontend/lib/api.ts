@@ -74,11 +74,13 @@ export type Review = {
 };
 export type KYC = {
   id: string;
+  user_id?: string;
   type: string;
   real_name?: string;
   company_name?: string;
   verify_status: string;
   material_urls?: string[];
+  created_at?: string;
 };
 export type Preview = {
   lines: string[];
@@ -256,8 +258,13 @@ export const api = {
   // seller / ops
   earnings: () => request<Earnings>("/sellers/me/earnings"),
   adminTransactions: () => request<{ items: Order[] }>("/admin/transactions"),
+  adminListDatasets: (status: string) =>
+    request<{ items: Dataset[] }>("/admin/datasets", { query: { status } }),
   adminReviewDataset: (id: string, approve: boolean, note: string) =>
     request<Dataset>(`/admin/datasets/${id}/review`, { body: { approve, note } }),
+  adminListKYC: () => request<{ items: KYC[] }>("/admin/kyc/pending"),
+  adminReviewKYC: (kyc_id: string, approve: boolean) =>
+    request<KYC>("/admin/kyc/review", { body: { kyc_id, approve } }),
   adminResolveDispute: (id: string, refund: boolean, note: string) =>
     request<Order>(`/admin/orders/${id}/resolve`, { body: { refund, note } }),
 };

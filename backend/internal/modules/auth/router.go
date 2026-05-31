@@ -38,5 +38,6 @@ func Register(rg *gin.RouterGroup, svc *Service, tm *TokenManager, limiter ratel
 	// Ops-only review of KYC submissions.
 	admin := rg.Group("/admin")
 	admin.Use(Middleware(tm), RequireRole(roleOps, roleAdmin))
+	admin.GET("/kyc/pending", h.adminListKYC)
 	admin.POST("/kyc/review", h.adminReviewKYC)
 }
