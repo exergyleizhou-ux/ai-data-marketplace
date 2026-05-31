@@ -29,9 +29,18 @@ import (
 )
 
 type Server struct {
-	cfg    *config.Config
-	db     *pgxpool.Pool
-	engine *gin.Engine
+	cfg     *config.Config
+	db      *pgxpool.Pool
+	engine  *gin.Engine
+	closers []func() // background components to drain on shutdown
+}
+
+// Close drains background components (e.g. the async quality workers). Call it
+// after the HTTP server has stopped accepting requests.
+func (s *Server) Close() {
+	for _, c := range s.closers {
+		c()
+	}
 }
 
 // New builds the server. db may be nil in tests that exercise only routes that
@@ -175,11 +184,12 @@ func (s *Server) routes() {
 		rec := audit.New(s.db)
 		store := s.objectStorage() // shared by dataset (upload) and delivery (download)
 
-		dsOpts := []dataset.Option{}
+		dsOpts := []dataset.Option{dataset.WithAsyncQuality(2, 128)}
 		if store != nil {
 			dsOpts = append(dsOpts, dataset.WithStorage(store))
 		}
 		dsSvc := dataset.NewService(dataset.NewRepository(s.db), authSvc, rec, dsOpts...)
+		s.closers = append(s.closers, dsSvc.Close)
 		dataset.Register(api, dsSvc, authMW, auth.RequireRole("ops", "admin"), lim)
 
 		orderSvc := order.NewService(order.NewRepository(s.db), authSvc, datasetPurchaseAdapter{ds: dsSvc}, rec)

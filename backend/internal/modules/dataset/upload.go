@@ -11,6 +11,7 @@ import (
 
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/quality"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/metrics"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
 )
 
@@ -95,15 +96,10 @@ func (s *Service) CompleteUpload(ctx context.Context, userID, uploadID string) (
 		ContentType: contentTypeOf(obj.Key),
 	}
 
-	// Read the object once for fingerprinting + checks (capped to bound memory;
-	// production streams via an async worker — docs §6.3).
-	content, err := s.readObject(ctx, obj.Key)
-	if err != nil {
-		return Dataset{}, err
-	}
-	simhash := quality.SimHash(content)
-
-	versionID, err := s.repo.AddVersion(ctx, d.ID, obj.SHA256, simhash, file, StatusChecking)
+	// SimHash + quality checks are deferred to the quality queue (async worker
+	// in production, inline in tests) so a large upload doesn't block the HTTP
+	// response (docs §6.3). The dataset stays "checking" until the worker runs.
+	versionID, err := s.repo.AddVersion(ctx, d.ID, obj.SHA256, "", file, StatusChecking)
 	if err != nil {
 		return Dataset{}, err
 	}
@@ -112,13 +108,11 @@ func (s *Service) CompleteUpload(ctx context.Context, userID, uploadID string) (
 		Detail: map[string]any{"object_key": obj.Key, "size_bytes": obj.Size, "sha256": obj.SHA256},
 	})
 
-	if err := s.runQualityChecks(ctx, d, versionID, content, obj.SHA256, file.ContentType); err != nil {
-		return Dataset{}, err
-	}
+	s.enqueueQuality(qualityJob{DatasetID: d.ID, VersionID: versionID, ContentSHA256: obj.SHA256})
 	return s.repo.GetByID(ctx, d.ID)
 }
 
-const maxScanBytes = 64 << 20 // 64 MiB cap for in-request quality scanning
+const maxScanBytes = 64 << 20 // 64 MiB cap for quality scanning
 
 func (s *Service) readObject(ctx context.Context, key string) ([]byte, error) {
 	rc, _, err := s.storage.Open(ctx, key)
@@ -129,25 +123,43 @@ func (s *Service) readObject(ctx context.Context, key string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(rc, maxScanBytes))
 }
 
-// runQualityChecks runs format/stats/PII/dedup, persists each result, records
-// the sample count, and advances the dataset: pass/warn -> reviewing, any
-// fail (e.g. undeclared PII) -> back to draft for the seller to fix (docs §6.3).
-func (s *Service) runQualityChecks(ctx context.Context, d Dataset, versionID string, content []byte, contentSHA256, contentType string) error {
-	declaredPII := d.SourceDeclaration != nil && d.SourceDeclaration.ContainsPII
+// processQuality reads the object, computes the SimHash, runs format/stats/PII/
+// dedup, persists each result + sample count, and advances the dataset:
+// pass/warn -> reviewing, any fail (e.g. undeclared PII) -> back to draft for
+// the seller to fix (docs §6.3). Self-contained from the job so it can run in a
+// background worker. Errors leave the dataset "checking" (retriable).
+func (s *Service) processQuality(ctx context.Context, job qualityJob) error {
+	d, err := s.repo.GetByID(ctx, job.DatasetID)
+	if err != nil {
+		return err
+	}
+	key, err := s.repo.CurrentObjectKey(ctx, job.DatasetID)
+	if err != nil {
+		return err
+	}
+	content, err := s.readObject(ctx, key)
+	if err != nil {
+		return err
+	}
 
-	fmtChk := quality.Format(content, contentType)
+	if err := s.repo.SetVersionSimhash(ctx, job.VersionID, quality.SimHash(content)); err != nil {
+		return err
+	}
+
+	declaredPII := d.SourceDeclaration != nil && d.SourceDeclaration.ContainsPII
+	fmtChk := quality.Format(content, contentTypeOf(key))
 	statsChk, sample := quality.Stats(content)
 	piiChk := quality.PII(content, declaredPII)
 
 	dedupChk := quality.Check{Type: quality.TypeDedup, Result: quality.ResultPass, Report: map[string]any{}}
-	if dup, err := s.repo.ContentDupExists(ctx, contentSHA256, d.ID); err == nil && dup {
+	if dup, err := s.repo.ContentDupExists(ctx, job.ContentSHA256, d.ID); err == nil && dup {
 		dedupChk.Result = quality.ResultWarn
 		dedupChk.Report["duplicate_of_existing_content"] = true
 	}
 
 	failed := false
 	for _, chk := range []quality.Check{fmtChk, statsChk, piiChk, dedupChk} {
-		if err := s.repo.SaveQualityCheck(ctx, d.ID, versionID, chk.Type, chk.Result, chk.Report); err != nil {
+		if err := s.repo.SaveQualityCheck(ctx, d.ID, job.VersionID, chk.Type, chk.Result, chk.Report); err != nil {
 			return err
 		}
 		if chk.Result == quality.ResultFail {
@@ -166,6 +178,7 @@ func (s *Service) runQualityChecks(ctx context.Context, d Dataset, versionID str
 		ActorID: d.SellerID, Action: "dataset.quality_checked", ResourceType: "dataset", ResourceID: d.ID,
 		Detail: map[string]any{"passed": !failed, "next_status": next},
 	})
+	metrics.RecordQualityJob(next)
 	return s.repo.SetStatus(ctx, d.ID, next)
 }
 

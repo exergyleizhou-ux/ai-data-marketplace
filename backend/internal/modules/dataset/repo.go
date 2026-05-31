@@ -42,6 +42,8 @@ type Repository interface {
 	CurrentObjectKey(ctx context.Context, datasetID string) (string, error)
 	// ListPublished returns published datasets matching the filter (browse/search).
 	ListPublished(ctx context.Context, f ListFilter) ([]Dataset, error)
+	// SetVersionSimhash stores the near-dup fingerprint computed by the quality worker.
+	SetVersionSimhash(ctx context.Context, versionID, simhash string) error
 }
 
 // ListFilter is the public catalog query (only published datasets are returned).
@@ -319,6 +321,14 @@ func (r *pgRepo) ListPublished(ctx context.Context, f ListFilter) ([]Dataset, er
 		out = append(out, d)
 	}
 	return out, rows.Err()
+}
+
+func (r *pgRepo) SetVersionSimhash(ctx context.Context, versionID, simhash string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE dataset_versions SET simhash=NULLIF($2,'') WHERE id=$1`, versionID, simhash)
+	if err != nil {
+		return fmt.Errorf("set version simhash: %w", err)
+	}
+	return nil
 }
 
 func (r *pgRepo) CurrentObjectKey(ctx context.Context, datasetID string) (string, error) {

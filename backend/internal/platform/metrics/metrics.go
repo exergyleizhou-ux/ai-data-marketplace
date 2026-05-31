@@ -25,11 +25,19 @@ var (
 		Name: "request_duration_seconds", Help: "HTTP request latency by method and route.",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "route"})
+
+	qualityJobs = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "marketplace", Subsystem: "quality",
+		Name: "jobs_total", Help: "Quality-check jobs by resulting dataset status (reviewing/draft).",
+	}, []string{"outcome"})
 )
 
 func init() {
-	prometheus.MustRegister(httpRequests, httpDuration)
+	prometheus.MustRegister(httpRequests, httpDuration, qualityJobs)
 }
+
+// RecordQualityJob counts a completed quality check by its outcome status.
+func RecordQualityJob(outcome string) { qualityJobs.WithLabelValues(outcome).Inc() }
 
 // Middleware records request count and latency. Place it early in the chain so
 // it times the whole handler stack.

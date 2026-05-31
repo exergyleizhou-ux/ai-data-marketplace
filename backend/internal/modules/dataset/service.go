@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/quality"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
@@ -18,12 +20,26 @@ type IdentityChecker interface {
 	KYCStatus(ctx context.Context, userID string) (string, error)
 }
 
+// qualityJob is a unit of deferred quality work for one uploaded version.
+type qualityJob struct {
+	DatasetID     string
+	VersionID     string
+	ContentSHA256 string
+}
+
 // Service holds dataset business logic.
 type Service struct {
 	repo     Repository
 	identity IdentityChecker
 	audit    audit.Recorder
 	storage  storage.Storage
+
+	// Quality queue: when qCh is non-nil, upload-complete enqueues quality
+	// checks to background workers (async); otherwise they run inline (used in
+	// tests for determinism). The interface is queue-agnostic — swap the
+	// in-process worker for Asynq/Redis at scale without touching call sites.
+	qCh chan qualityJob
+	wg  sync.WaitGroup
 }
 
 // Option configures optional Service dependencies.
@@ -31,6 +47,32 @@ type Option func(*Service)
 
 // WithStorage wires the object store used by the upload endpoints.
 func WithStorage(s storage.Storage) Option { return func(svc *Service) { svc.storage = s } }
+
+// WithAsyncQuality starts `workers` background goroutines draining a buffered
+// queue so quality checks don't block the upload response. Call Close on
+// shutdown to drain in-flight jobs.
+func WithAsyncQuality(workers, buffer int) Option {
+	return func(svc *Service) {
+		if workers < 1 {
+			workers = 1
+		}
+		if buffer < 1 {
+			buffer = 1
+		}
+		svc.qCh = make(chan qualityJob, buffer)
+		for i := 0; i < workers; i++ {
+			svc.wg.Add(1)
+			go func() {
+				defer svc.wg.Done()
+				for job := range svc.qCh {
+					if err := svc.processQuality(context.Background(), job); err != nil {
+						slog.Error("quality job failed", "dataset_id", job.DatasetID, "version_id", job.VersionID, "err", err)
+					}
+				}
+			}()
+		}
+	}
+}
 
 func NewService(repo Repository, identity IdentityChecker, rec audit.Recorder, opts ...Option) *Service {
 	if rec == nil {
@@ -41,6 +83,27 @@ func NewService(repo Repository, identity IdentityChecker, rec audit.Recorder, o
 		o(s)
 	}
 	return s
+}
+
+// enqueueQuality dispatches a quality job: to the worker pool if async is
+// enabled, otherwise inline (synchronous) so callers/tests see the result
+// immediately.
+func (s *Service) enqueueQuality(job qualityJob) {
+	if s.qCh != nil {
+		s.qCh <- job
+		return
+	}
+	if err := s.processQuality(context.Background(), job); err != nil {
+		slog.Error("inline quality job failed", "dataset_id", job.DatasetID, "err", err)
+	}
+}
+
+// Close drains and stops the quality workers (no-op if async wasn't enabled).
+func (s *Service) Close() {
+	if s.qCh != nil {
+		close(s.qCh)
+		s.wg.Wait()
+	}
 }
 
 // CreateInput is the metadata for a new dataset draft.

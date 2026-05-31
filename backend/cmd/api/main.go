@@ -78,6 +78,7 @@ func main() {
 		slog.Error("graceful shutdown failed", "err", err)
 		os.Exit(1)
 	}
+	srv.Close() // drain background workers (async quality) after connections close
 	slog.Info("server stopped cleanly")
 }
 
