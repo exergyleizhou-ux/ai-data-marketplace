@@ -6,6 +6,8 @@
 package server
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -15,6 +17,8 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
+	redispkg "github.com/lei/ai-data-marketplace/backend/internal/platform/redis"
 )
 
 type Server struct {
@@ -41,6 +45,19 @@ func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 // Handler exposes the underlying http.Handler for the server runner and tests.
 func (s *Server) Handler() http.Handler { return s.engine }
 
+// limiter returns a shared Redis-backed limiter, falling back to an in-memory
+// one if Redis is unreachable so a Redis outage degrades to single-instance
+// limiting rather than a hard failure.
+func (s *Server) limiter() ratelimit.Limiter {
+	if client, err := redispkg.New(context.Background(), s.cfg.RedisURL); err == nil {
+		slog.Info("rate limiter backend", "type", "redis")
+		return ratelimit.NewRedis(client)
+	} else {
+		slog.Warn("redis unavailable; using in-memory rate limiter", "err", err)
+	}
+	return ratelimit.NewInMemory()
+}
+
 func (s *Server) routes() {
 	// Liveness / readiness — used by Docker Compose healthchecks and CI.
 	s.engine.GET("/healthz", s.handleHealthz)
@@ -63,6 +80,6 @@ func (s *Server) routes() {
 		}
 		authSvc := auth.NewService(auth.NewRepository(s.db), tm,
 			auth.WithKYC(verifier, s.cfg.PIISecret))
-		auth.Register(api, authSvc, tm)
+		auth.Register(api, authSvc, tm, s.limiter())
 	}
 }
