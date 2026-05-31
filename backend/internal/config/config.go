@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -15,6 +16,10 @@ type Config struct {
 	DatabaseURL string // postgres DSN
 	RedisURL    string // redis URL
 	AutoMigrate bool   // run DB migrations on startup (handy for dev/CI)
+
+	JWTSecret      string        // HMAC signing secret for JWTs
+	JWTAccessTTL   time.Duration // access-token lifetime
+	JWTRefreshTTL  time.Duration // refresh-token lifetime
 }
 
 // Load reads configuration from the environment, applying sane local-dev
@@ -26,6 +31,11 @@ func Load() (*Config, error) {
 		DatabaseURL: getenv("DATABASE_URL", "postgres://app:app@localhost:5432/ai_data_marketplace?sslmode=disable"),
 		RedisURL:    getenv("REDIS_URL", "redis://localhost:6379/0"),
 		AutoMigrate: getenv("AUTO_MIGRATE", "false") == "true",
+
+		// Dev default secret — MUST be overridden in staging/production.
+		JWTSecret:     getenv("JWT_SECRET", "dev-insecure-change-me"),
+		JWTAccessTTL:  15 * time.Minute,
+		JWTRefreshTTL: 30 * 24 * time.Hour,
 	}
 	// Validate that any provided PORT-style override parses, to fail fast.
 	if v := os.Getenv("HTTP_PORT"); v != "" {
@@ -33,6 +43,10 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("invalid HTTP_PORT %q: %w", v, err)
 		}
 		cfg.HTTPAddr = ":" + v
+	}
+	// Never run production with the insecure dev secret.
+	if cfg.Env == "production" && cfg.JWTSecret == "dev-insecure-change-me" {
+		return nil, fmt.Errorf("JWT_SECRET must be set in production")
 	}
 	return cfg, nil
 }

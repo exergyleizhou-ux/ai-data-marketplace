@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
 )
@@ -51,4 +52,12 @@ func (s *Server) routes() {
 	api.GET("/ping", func(c *gin.Context) {
 		httpx.OK(c, gin.H{"pong": true, "env": s.cfg.Env})
 	})
+
+	// --- module wiring (modular monolith) ---
+	// db may be nil in route-only tests; modules needing it are skipped then.
+	if s.db != nil {
+		tm := auth.NewTokenManager(s.cfg.JWTSecret, s.cfg.JWTAccessTTL, s.cfg.JWTRefreshTTL)
+		authSvc := auth.NewService(auth.NewRepository(s.db), tm)
+		auth.Register(api, authSvc, tm)
+	}
 }
