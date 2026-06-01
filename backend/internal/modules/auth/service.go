@@ -57,8 +57,10 @@ type AuthResult struct {
 
 const minPasswordLen = 8
 
-// Register creates an account and returns an initial token pair.
-func (s *Service) Register(ctx context.Context, account, accountType, password string) (AuthResult, error) {
+// Register creates an account and returns an initial token pair. Any agreements
+// passed (e.g. terms/privacy accepted at sign-up) are recorded as consent so a
+// later policy update can require re-consent against an auditable trail.
+func (s *Service) Register(ctx context.Context, account, accountType, password string, agreements ...Agreement) (AuthResult, error) {
 	account = strings.TrimSpace(account)
 	if err := validateCredentials(account, accountType, password); err != nil {
 		return AuthResult{}, err
@@ -71,7 +73,23 @@ func (s *Service) Register(ctx context.Context, account, accountType, password s
 	if err != nil {
 		return AuthResult{}, err // ErrAccountExists or wrapped internal
 	}
+	if len(agreements) > 0 {
+		if err := s.repo.RecordAgreements(ctx, user.ID, agreements); err != nil {
+			return AuthResult{}, fmt.Errorf("record agreements: %w", err)
+		}
+	}
 	return s.issue(user)
+}
+
+// RecordAgreements appends consent records for a user (e.g. re-consent after a
+// policy version bump).
+func (s *Service) RecordAgreements(ctx context.Context, userID string, ags []Agreement) error {
+	return s.repo.RecordAgreements(ctx, userID, ags)
+}
+
+// ListAgreements returns a user's consent history, most recent first.
+func (s *Service) ListAgreements(ctx context.Context, userID string) ([]Agreement, error) {
+	return s.repo.ListAgreements(ctx, userID)
 }
 
 // Login verifies credentials and returns a token pair.

@@ -7,7 +7,12 @@ type AuthState = {
   user: User | null;
   loading: boolean;
   login: (account: string, password: string) => Promise<void>;
-  register: (account: string, accountType: string, password: string) => Promise<void>;
+  register: (
+    account: string,
+    accountType: string,
+    password: string,
+    agreements?: { doc: string; version: string }[],
+  ) => Promise<void>;
   logout: () => void;
   refresh: () => Promise<void>;
 };
@@ -43,11 +48,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(res.user);
   }, []);
 
-  const register = useCallback(async (account: string, accountType: string, password: string) => {
-    const res = await api.register(account, accountType, password);
-    tokenStore.set(res.tokens);
-    setUser(res.user);
-  }, []);
+  const register = useCallback(
+    async (account: string, accountType: string, password: string, agreements?: { doc: string; version: string }[]) => {
+      const res = await api.register(account, accountType, password, agreements);
+      tokenStore.set(res.tokens);
+      setUser(res.user);
+    },
+    [],
+  );
 
   const logout = useCallback(() => {
     tokenStore.clear();

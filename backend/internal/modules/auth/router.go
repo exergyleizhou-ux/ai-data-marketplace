@@ -35,6 +35,8 @@ func Register(rg *gin.RouterGroup, svc *Service, tm *TokenManager, limiter ratel
 	authed.PUT("/users/me", h.updateProfile)
 	authed.POST("/users/me/kyc", h.submitKYC)
 	authed.GET("/users/me/kyc", h.getKYC)
+	authed.GET("/users/me/agreements", h.listAgreements)
+	authed.POST("/users/me/agreements", h.recordAgreements)
 
 	// Ops-only review of KYC submissions.
 	admin := rg.Group("/admin")

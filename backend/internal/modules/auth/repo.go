@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -36,6 +37,12 @@ type Repository interface {
 	// SavePayoutAccount upserts a user's active payout account for a channel
 	// (one per user+channel). Used to persist Stripe Connect account ids (H1).
 	SavePayoutAccount(ctx context.Context, userID, channel, accountRef string) error
+
+	// RecordAgreements appends consent records (doc+version) for a user. Each
+	// call inserts one row per agreement (append-only audit trail).
+	RecordAgreements(ctx context.Context, userID string, ags []Agreement) error
+	// ListAgreements returns a user's consent records, most recent first.
+	ListAgreements(ctx context.Context, userID string) ([]Agreement, error)
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }
@@ -259,6 +266,45 @@ func (r *pgRepo) SavePayoutAccount(ctx context.Context, userID, channel, account
 		return fmt.Errorf("save payout account: %w", err)
 	}
 	return nil
+}
+
+func (r *pgRepo) RecordAgreements(ctx context.Context, userID string, ags []Agreement) error {
+	if len(ags) == 0 {
+		return nil
+	}
+	batch := &pgx.Batch{}
+	const q = `INSERT INTO user_agreements (user_id, doc, version) VALUES ($1, $2, $3)`
+	for _, a := range ags {
+		batch.Queue(q, userID, a.Doc, a.Version)
+	}
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for range ags {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("record agreement: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *pgRepo) ListAgreements(ctx context.Context, userID string) ([]Agreement, error) {
+	const q = `SELECT doc, version, agreed_at FROM user_agreements WHERE user_id = $1 ORDER BY agreed_at DESC`
+	rows, err := r.pool.Query(ctx, q, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list agreements: %w", err)
+	}
+	defer rows.Close()
+	var out []Agreement
+	for rows.Next() {
+		var a Agreement
+		var at time.Time
+		if err := rows.Scan(&a.Doc, &a.Version, &at); err != nil {
+			return nil, fmt.Errorf("scan agreement: %w", err)
+		}
+		a.AgreedAt = at.Format(time.RFC3339)
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }
 
 // nullify maps an empty string to nil so it lands as SQL NULL.
