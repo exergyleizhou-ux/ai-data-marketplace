@@ -12,9 +12,9 @@ import (
 
 // RateLimitConfig configures one rate-limited route group.
 type RateLimitConfig struct {
-	Name    string                     // namespace for the key (e.g. "login")
-	Limit   int                        // max requests per window
-	Window  time.Duration              // window length
+	Name    string                      // namespace for the key (e.g. "login")
+	Limit   int                         // max requests per window
+	Window  time.Duration               // window length
 	KeyFunc func(c *gin.Context) string // identity within the namespace (e.g. IP)
 }
 

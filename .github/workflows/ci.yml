@@ -11,6 +11,20 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -19,12 +33,22 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Resolve dependencies
         run: go mod tidy
+      - name: Gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "These files are not gofmt-formatted:"
+            echo "$out"
+            exit 1
+          fi
       - name: Vet
         run: go vet ./...
       - name: Build
         run: go build ./...
-      - name: Test
-        run: go test ./...
+      - name: Test (race + real-DB integration)
+        env:
+          DATABASE_URL: postgres://app:app@localhost:5432/app?sslmode=disable
+        run: go test -race ./...
 
   frontend:
     runs-on: ubuntu-latest
