@@ -44,6 +44,10 @@ export type Dataset = {
   source_signed_at?: string;
   current_version_id?: string;
   created_at?: string;
+  // Browse-time quality signal (present on catalog listings).
+  quality_verified?: boolean;
+  authenticity_band?: "clean" | "review" | "suspect" | string;
+  authenticity_score?: number;
 };
 export type Order = {
   id: string;

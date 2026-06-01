@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, yuan, type Dataset } from "@/lib/api";
 import { Badge, Button, Card, Empty, Input, Select, Spinner } from "@/components/ui";
+import { QualityBadge } from "@/components/QualityReport";
 
 const DATA_TYPES = ["", "text", "code", "structured"];
 
@@ -71,7 +72,10 @@ export default function DatasetsPage() {
                 <p className="mt-2 line-clamp-2 min-h-[2.5rem] text-sm text-neutral-500">
                   {d.description || "（无描述）"}
                 </p>
-                <div className="mt-3 flex items-center justify-between">
+                <div className="mt-2 min-h-[1.25rem]">
+                  <QualityBadge band={d.authenticity_band} verified={d.quality_verified} />
+                </div>
+                <div className="mt-2 flex items-center justify-between">
                   <span className="text-lg font-semibold">{yuan(d.final_price_cents ?? d.suggested_price_cents)}</span>
                   <span className="text-xs text-neutral-400">{d.sample_count} 条样本</span>
                 </div>

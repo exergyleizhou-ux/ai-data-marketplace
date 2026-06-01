@@ -22,6 +22,14 @@ type Dataset struct {
 	CurrentVersionID    string             `json:"current_version_id,omitempty"`
 	CreatedAt           string             `json:"created_at,omitempty"`
 	UpdatedAt           string             `json:"updated_at,omitempty"`
+
+	// Browse-time quality summary (populated by ListPublished only, so buyers see
+	// a trust signal on catalog cards — cf. Kaggle's usability score). Empty
+	// elsewhere. AuthenticityBand/Score are set only for tabular datasets that
+	// were actually statistically screened (report applicable=true).
+	QualityVerified   *bool  `json:"quality_verified,omitempty"`
+	AuthenticityBand  string `json:"authenticity_band,omitempty"`
+	AuthenticityScore *int   `json:"authenticity_score,omitempty"`
 }
 
 // QualityCheck is one persisted quality_check row, surfaced read-only on the

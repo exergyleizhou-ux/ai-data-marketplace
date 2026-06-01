@@ -326,7 +326,81 @@ func (r *pgRepo) ListPublished(ctx context.Context, f ListFilter) ([]Dataset, er
 		}
 		out = append(out, d)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := r.attachQualitySummaries(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// attachQualitySummaries batch-loads a browse-time quality signal for the given
+// datasets and sets QualityVerified / AuthenticityBand / AuthenticityScore in
+// place. One round-trip for the whole page. AuthenticityBand/Score are only set
+// for datasets whose authenticity check was actually applicable (tabular).
+func (r *pgRepo) attachQualitySummaries(ctx context.Context, datasets []Dataset) error {
+	versionIDs := make([]string, 0, len(datasets))
+	for _, d := range datasets {
+		if d.CurrentVersionID != "" {
+			versionIDs = append(versionIDs, d.CurrentVersionID)
+		}
+	}
+	if len(versionIDs) == 0 {
+		return nil
+	}
+	const q = `
+		SELECT version_id::text,
+		       count(*)                  AS n_checks,
+		       bool_or(result = 'fail')  AS any_fail,
+		       max((report->>'score')::int) FILTER (
+		           WHERE type = 'authenticity' AND report->>'applicable' = 'true') AS auth_score,
+		       max(report->>'band')         FILTER (
+		           WHERE type = 'authenticity' AND report->>'applicable' = 'true') AS auth_band
+		FROM quality_checks
+		WHERE version_id = ANY($1)
+		GROUP BY version_id`
+	rows, err := r.pool.Query(ctx, q, versionIDs)
+	if err != nil {
+		return fmt.Errorf("quality summaries: %w", err)
+	}
+	defer rows.Close()
+
+	type summary struct {
+		verified bool
+		score    *int
+		band     string
+	}
+	byVersion := map[string]summary{}
+	for rows.Next() {
+		var (
+			vid     string
+			n       int
+			anyFail *bool
+			score   *int
+			band    *string
+		)
+		if err := rows.Scan(&vid, &n, &anyFail, &score, &band); err != nil {
+			return fmt.Errorf("scan quality summary: %w", err)
+		}
+		s := summary{verified: n > 0 && (anyFail == nil || !*anyFail), score: score}
+		if band != nil {
+			s.band = *band
+		}
+		byVersion[vid] = s
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range datasets {
+		if s, ok := byVersion[datasets[i].CurrentVersionID]; ok {
+			v := s.verified
+			datasets[i].QualityVerified = &v
+			datasets[i].AuthenticityScore = s.score
+			datasets[i].AuthenticityBand = s.band
+		}
+	}
+	return nil
 }
 
 func (r *pgRepo) ListByStatus(ctx context.Context, status string, limit, offset int) ([]Dataset, error) {
