@@ -82,6 +82,17 @@ func (s *Server) limiter() ratelimit.Limiter {
 	return ratelimit.NewInMemory()
 }
 
+// denylist returns a shared Redis-backed refresh-token denylist, falling back
+// to an in-memory one when Redis is unreachable (same degradation as limiter).
+func (s *Server) denylist() auth.Denylist {
+	if client, err := redispkg.New(context.Background(), s.cfg.RedisURL); err == nil {
+		slog.Info("token denylist backend", "type", "redis")
+		return auth.NewRedisDenylist(client)
+	}
+	slog.Warn("redis unavailable; using in-memory token denylist")
+	return auth.NewInMemoryDenylist()
+}
+
 // datasetPurchaseAdapter bridges dataset.Service to the order module's
 // DatasetReader interface, converting between the two packages' value types so
 // neither imports the other.
@@ -194,7 +205,8 @@ func (s *Server) routes() {
 			verifier = auth.AutoApproveVerifier{}
 		}
 		authSvc := auth.NewService(auth.NewRepository(s.db), tm,
-			auth.WithKYC(verifier, s.cfg.PIISecret))
+			auth.WithKYC(verifier, s.cfg.PIISecret),
+			auth.WithDenylist(s.denylist()))
 		lim := s.limiter() // shared rate limiter (auth credential routes + dataset preview)
 		auth.Register(api, authSvc, tm, lim)
 

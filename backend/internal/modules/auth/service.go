@@ -3,7 +3,9 @@ package auth
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -15,6 +17,7 @@ type Service struct {
 	tokens    *TokenManager
 	verifier  KYCVerifier
 	piiSecret string
+	denylist  Denylist
 }
 
 // Option configures optional Service dependencies.
@@ -29,10 +32,19 @@ func WithKYC(verifier KYCVerifier, piiSecret string) Option {
 	}
 }
 
+// WithDenylist wires a refresh-token revocation backend. Without it the service
+// defaults to a no-op denylist (stateless tokens, no revocation).
+func WithDenylist(dl Denylist) Option {
+	return func(s *Service) { s.denylist = dl }
+}
+
 func NewService(repo Repository, tokens *TokenManager, opts ...Option) *Service {
-	s := &Service{repo: repo, tokens: tokens, verifier: ManualVerifier{}}
+	s := &Service{repo: repo, tokens: tokens, verifier: ManualVerifier{}, denylist: noopDenylist{}}
 	for _, o := range opts {
 		o(s)
+	}
+	if s.denylist == nil {
+		s.denylist = noopDenylist{}
 	}
 	return s
 }
@@ -81,10 +93,23 @@ func (s *Service) Login(ctx context.Context, account, password string) (AuthResu
 
 // Refresh exchanges a valid refresh token for a new token pair, re-checking
 // that the user still exists and is active.
+//
+// Refresh tokens are single-use: a successful refresh revokes the presented
+// token (rotation) and issues a fresh pair. Presenting an already-rotated or
+// logged-out token is rejected (reuse detection). On a transient denylist
+// (Redis) error the check fails open and is logged, consistent with the rate
+// limiter — a structurally valid, signed, unexpired token is still required.
 func (s *Service) Refresh(ctx context.Context, refreshToken string) (AuthResult, error) {
 	claims, err := s.tokens.Parse(refreshToken, tokenTypeRefresh)
 	if err != nil {
 		return AuthResult{}, ErrInvalidToken
+	}
+	if claims.ID != "" {
+		if revoked, err := s.denylist.IsRevoked(ctx, claims.ID); err != nil {
+			slog.Warn("denylist check failed; allowing refresh", "err", err)
+		} else if revoked {
+			return AuthResult{}, ErrInvalidToken
+		}
 	}
 	user, err := s.repo.GetUserByID(ctx, claims.UserID)
 	if err != nil {
@@ -93,7 +118,24 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (AuthResult,
 	if user.Status == statusFrozen {
 		return AuthResult{}, ErrUserFrozen
 	}
+	// Rotation: the presented refresh token is now spent.
+	if claims.ID != "" && claims.ExpiresAt != nil {
+		if err := s.denylist.Revoke(ctx, claims.ID, time.Until(claims.ExpiresAt.Time)); err != nil {
+			slog.Warn("failed to revoke rotated refresh token", "err", err)
+		}
+	}
 	return s.issue(user)
+}
+
+// Logout revokes a refresh token so the session can no longer be renewed; the
+// matching access token expires on its own short TTL. It is idempotent: an
+// invalid or already-expired token is treated as success (nothing to revoke).
+func (s *Service) Logout(ctx context.Context, refreshToken string) error {
+	claims, err := s.tokens.Parse(refreshToken, tokenTypeRefresh)
+	if err != nil || claims.ID == "" || claims.ExpiresAt == nil {
+		return nil
+	}
+	return s.denylist.Revoke(ctx, claims.ID, time.Until(claims.ExpiresAt.Time))
 }
 
 // Me returns the current user's profile by id (used by GET /users/me).
