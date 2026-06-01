@@ -6,6 +6,9 @@ import { API_ORIGIN, api, yuan, type Order } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Protected } from "@/components/Protected";
 import { Alert, Badge, Button, Card, Field, Input, Spinner, Textarea } from "@/components/ui";
+import { StripeCheckout, stripeConfigured } from "@/components/StripeCheckout";
+
+type PayInfo = { pay_url: string; channel_txn_id: string; amount_cents: number; channel: string };
 
 export default function OrderDetailPage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -22,7 +25,7 @@ function OrderInner({ id }: { id: string }) {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
-  const [payTxn, setPayTxn] = useState("");
+  const [pay, setPay] = useState<PayInfo | null>(null);
   const [downloadUrl, setDownloadUrl] = useState("");
 
   const load = useCallback(async () => {
@@ -32,6 +35,24 @@ function OrderInner({ id }: { id: string }) {
       setErr((e as Error).message);
     }
   }, [id]);
+
+  // After a real charge, the webhook (not the client) flips the order to "paid".
+  // Poll getOrder until the status leaves "created", then surface the result.
+  const waitForPaid = useCallback(async () => {
+    for (let i = 0; i < 20; i++) {
+      const fresh = await api.getOrder(id);
+      if (fresh.status !== "created") {
+        setO(fresh);
+        setPay(null);
+        setMsg("支付成功，资金已冻结在持牌方。");
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    // Charge captured at Stripe but the webhook hasn't landed yet; let the user retry the read.
+    await load();
+    setMsg("支付已提交，正在等待结算回调确认，请稍后刷新。");
+  }, [id, load]);
 
   useEffect(() => {
     void load();
@@ -82,29 +103,36 @@ function OrderInner({ id }: { id: string }) {
           <div className="space-y-3">
             {o.status === "created" && (
               <div className="space-y-2">
-                {!payTxn ? (
+                {!pay ? (
                   <Button
                     className="w-full"
                     disabled={!!busy}
                     onClick={() =>
                       act("pay", async () => {
-                        const p = await api.createPayment(o.id);
-                        setPayTxn(p.channel_txn_id);
+                        setPay(await api.createPayment(o.id));
                       })
                     }
                   >
                     {busy === "pay" ? "创建支付…" : "去支付"}
                   </Button>
+                ) : pay.channel === "stripe" && stripeConfigured() ? (
+                  // Real Stripe.js card form bound to the PaymentIntent client secret.
+                  <StripeCheckout
+                    clientSecret={pay.pay_url}
+                    amountLabel={yuan(o.amount_cents)}
+                    onPaid={waitForPaid}
+                  />
                 ) : (
+                  // No real gateway configured (mock channel / missing pk): sandbox shortcut.
                   <>
-                    <Alert kind="info">沙箱支付单已创建（{payTxn}）。真实环境会跳转至微信/支付宝收银台。</Alert>
+                    <Alert kind="info">沙箱支付单已创建（{pay.channel_txn_id}）。真实环境会跳转至收银台。</Alert>
                     <Button
                       className="w-full"
                       disabled={!!busy}
                       onClick={() =>
                         act("paid", async () => {
                           await api.devMarkPaid(o.id);
-                          setPayTxn("");
+                          setPay(null);
                           await load();
                           setMsg("支付成功，资金已冻结在持牌方。");
                         })
