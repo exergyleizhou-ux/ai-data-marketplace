@@ -246,3 +246,8 @@ make migrate-up        # / migrate-down / migrate-create name=add_foo
 - **[H7]** CI 加 `-race` + gofmt 门 + Postgres 服务；新增真库 HTTP 集成测试（`internal/server/integration_test.go`，跑通注册→刷新轮换→重放 401→登出→401，无 `DATABASE_URL` 时自动跳过）。
 
 **剩余仅外部墙（需用户/法务，别动）**：微信支付宝真实分账（资金二清刑事红线）、真实云部署、三份法律文本。
+
+工程侧已为这三条备好对接物料（待资质/法务/部署推进时使用）：
+- 分账合规与接口契约 → [`docs/资金分账合规与集成方案.md`](docs/资金分账合规与集成方案.md)
+- 生产部署 → [`docs/部署手册.md`](docs/部署手册.md) + [`deploy/`](deploy/)（compose / k8s / `api --migrate`）
+- 法律文本**草案**（需律师定稿，非法律意见）→ [`docs/legal/`](docs/legal/)

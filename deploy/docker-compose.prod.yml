@@ -1,0 +1,46 @@
+# Production-ish single-host deployment (one VM).
+#
+# Unlike the dev docker-compose.yml at repo root, this does NOT run Postgres,
+# Redis, or MinIO as containers — in production use MANAGED services (RDS /
+# managed Redis / OSS-COS) and point the env at them. This file runs only the
+# two app images behind your reverse proxy / TLS terminator (nginx, Caddy, or a
+# cloud LB). For multi-instance, use deploy/k8s/ instead.
+#
+# Usage:
+#   1) cp ../.env.production.example .env  &&  fill real values (managed DB/Redis/OSS, secrets)
+#   2) docker compose -f docker-compose.prod.yml --env-file .env run --rm migrate
+#   3) docker compose -f docker-compose.prod.yml --env-file .env up -d
+#
+# Images: build & push to your registry first (see docs/部署手册.md), then set
+# REGISTRY and TAG.
+
+services:
+  migrate:
+    image: ${REGISTRY:-local}/ai-data-marketplace-backend:${TAG:-latest}
+    command: ["--migrate"]
+    env_file: [.env]
+    restart: "no"
+
+  backend:
+    image: ${REGISTRY:-local}/ai-data-marketplace-backend:${TAG:-latest}
+    env_file: [.env]
+    environment:
+      AUTO_MIGRATE: "false" # migrations run via the one-shot `migrate` service above
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "/api", "--healthcheck"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    image: ${REGISTRY:-local}/ai-data-marketplace-frontend:${TAG:-latest}
+    env_file: [.env]
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped

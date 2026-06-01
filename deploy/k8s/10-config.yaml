@@ -1,0 +1,44 @@
+# Non-secret config. Secrets live in the Secret below — in real clusters create
+# it from your KMS / sealed-secrets / external-secrets, NOT from a committed file.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: marketplace
+data:
+  APP_ENV: "production"
+  HTTP_ADDR: ":8080"
+  AUTO_MIGRATE: "false"          # migrations run via the Job (20-migrate-job.yaml)
+  KYC_AUTO_APPROVE: "false"
+  STORAGE_DRIVER: "s3"
+  S3_ENDPOINT: "oss-REGION.aliyuncs.com"
+  S3_BUCKET: "ai-data-marketplace"
+  S3_USE_SSL: "true"
+  S3_REGION: "REGION"
+  PAYMENT_PROVIDER: "stripe"
+  STRIPE_CURRENCY: "usd"
+  CORS_ALLOW_ORIGIN: "https://app.example.com"
+---
+# TEMPLATE ONLY — do not commit real values. Create the real Secret out-of-band:
+#   kubectl -n marketplace create secret generic backend-secrets \
+#     --from-literal=JWT_SECRET=$(openssl rand -hex 32) \
+#     --from-literal=PII_SECRET=$(openssl rand -hex 32) \
+#     --from-literal=DATABASE_URL='postgres://USER:PASS@RDS_HOST:5432/ai_data_marketplace?sslmode=require' \
+#     --from-literal=REDIS_URL='redis://:PASS@REDIS_HOST:6379/0' \
+#     --from-literal=S3_ACCESS_KEY=... --from-literal=S3_SECRET_KEY=... \
+#     --from-literal=STRIPE_SECRET_KEY=sk_... --from-literal=STRIPE_WEBHOOK_SECRET=whsec_...
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-secrets
+  namespace: marketplace
+type: Opaque
+stringData:
+  JWT_SECRET: "__SET_VIA_KMS__"
+  PII_SECRET: "__SET_VIA_KMS__"
+  DATABASE_URL: "__SET_VIA_KMS__"
+  REDIS_URL: "__SET_VIA_KMS__"
+  S3_ACCESS_KEY: "__SET_VIA_KMS__"
+  S3_SECRET_KEY: "__SET_VIA_KMS__"
+  STRIPE_SECRET_KEY: "__SET_VIA_KMS__"
+  STRIPE_WEBHOOK_SECRET: "__SET_VIA_KMS__"

@@ -30,6 +30,13 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
+	// --migrate applies database migrations and exits — intended as a pre-deploy
+	// step / Kubernetes Job so the server Deployment itself need not self-migrate
+	// (avoids every replica racing to migrate on rollout).
+	if len(os.Args) > 1 && os.Args[1] == "--migrate" {
+		os.Exit(runMigrate())
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("failed to load config", "err", err)
@@ -80,6 +87,23 @@ func main() {
 	}
 	srv.Close() // drain background workers (async quality) after connections close
 	slog.Info("server stopped cleanly")
+}
+
+// runMigrate applies all up-migrations against DATABASE_URL and returns a
+// process exit code. Used by `api --migrate` as a one-shot deploy step.
+func runMigrate() int {
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("failed to load config", "err", err)
+		return 1
+	}
+	slog.Info("running database migrations")
+	if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
+		slog.Error("migrations failed", "err", err)
+		return 1
+	}
+	slog.Info("migrations complete")
+	return 0
 }
 
 // runHealthcheck performs a local GET /healthz and returns a process exit code.

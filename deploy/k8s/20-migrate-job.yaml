@@ -1,0 +1,25 @@
+# One-shot migration step. Run BEFORE rolling out the backend Deployment:
+#   kubectl -n marketplace apply -f 20-migrate-job.yaml
+#   kubectl -n marketplace wait --for=condition=complete job/db-migrate --timeout=120s
+# Re-running is safe (golang-migrate is idempotent + locks). Delete & re-apply to
+# run again on the next release (or use `kubectl create job --from`).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  namespace: marketplace
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: REGISTRY/ai-data-marketplace-backend:TAG
+          args: ["--migrate"]
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secrets
