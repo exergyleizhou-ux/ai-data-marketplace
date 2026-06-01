@@ -235,17 +235,14 @@ make migrate-up        # / migrate-down / migrate-create name=add_foo
 - Prometheus `/metrics`、异步质检 worker
 - **真实 Stripe Connect 支付 + 90/10 分账**已端到端验证
 
-**支付/结算硬化已合入 `main`**（H1–H3 后端 + H5 前端 + H6 文档，2026-06 整合）：
+**支付/结算/安全硬化全部合入 `main`**（H1–H7，2026-06 整合）：
 
 - **[H1]** Stripe 连接账户落库：`sellerID→acct` 映射持久化到 `payout_accounts` 表（auth 模块拥有，migration 000004）。
 - **[H2]** 退款 + 分账回退：`order.ResolveDispute` 选「退款」先 Transfer Reversal 再 Refund PI；事务内把 payment→refunded、settlement→reverted。
 - **[H3]** 结算可靠性：`settlement_outbox` 表 + worker（PG 事务级 advisory lock，崩溃自释放/多实例互斥）+ 指数退避重试 + Stripe 幂等 key（migration 000005）。
+- **[H4]** 刷新令牌吊销：每个 JWT 带 `jti`；`Denylist`（Redis 共享 / 内存降级）支持登出 + **刷新令牌单次使用轮换 + 重放检测**；`POST /auth/logout`。访问令牌仍无状态（短期失效，不查 denylist）。
 - **[H5]** 前端真实支付：结账页接 Stripe.js（Payment Element），`pk_test` 真刷卡；未配公钥时回退沙箱按钮。客户端绝不自标支付，靠 webhook 翻 `paid`。
 - **[H6]** 本 README + 无 Docker 本地联调文档。
+- **[H7]** CI 加 `-race` + gofmt 门 + Postgres 服务；新增真库 HTTP 集成测试（`internal/server/integration_test.go`，跑通注册→刷新轮换→重放 401→登出→401，无 `DATABASE_URL` 时自动跳过）。
 
-**待做（不阻塞，每项独立分支）**：
-
-- **[H4]** 刷新令牌吊销：Redis denylist（auth/token）。
-- **[H7]** 更多集成测试 / CI 加 `-race`。
-
-**外部墙（需用户/法务，别动）**：微信支付宝真实分账（资金二清刑事红线）、真实云部署、三份法律文本。
+**剩余仅外部墙（需用户/法务，别动）**：微信支付宝真实分账（资金二清刑事红线）、真实云部署、三份法律文本。
