@@ -176,6 +176,23 @@ func (s *Service) Update(ctx context.Context, userID, id string, in CreateInput)
 	return s.repo.UpdateMeta(ctx, d)
 }
 
+// UpdateDatasheet sets a dataset's structured documentation. Unlike core
+// metadata, the datasheet is documentation and may be edited by the owner at any
+// lifecycle stage (including after publish). A nil datasheet clears it.
+func (s *Service) UpdateDatasheet(ctx context.Context, userID, id string, ds *Datasheet) (Dataset, error) {
+	d, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return Dataset{}, err
+	}
+	if d.SellerID != userID {
+		return Dataset{}, ErrForbidden
+	}
+	if ds != nil && ds.isEmpty() {
+		ds = nil // treat an all-blank submission as clearing the datasheet
+	}
+	return s.repo.SetDatasheet(ctx, id, ds)
+}
+
 // Get returns a dataset by id.
 func (s *Service) Get(ctx context.Context, id string) (Dataset, error) {
 	return s.repo.GetByID(ctx, id)

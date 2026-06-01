@@ -30,6 +30,35 @@ type Dataset struct {
 	QualityVerified   *bool  `json:"quality_verified,omitempty"`
 	AuthenticityBand  string `json:"authenticity_band,omitempty"`
 	AuthenticityScore *int   `json:"authenticity_score,omitempty"`
+
+	// Datasheet is the seller's structured dataset documentation (optional).
+	Datasheet *Datasheet `json:"datasheet,omitempty"`
+}
+
+// Datasheet is structured dataset documentation modeled on "Datasheets for
+// Datasets" (Gebru et al. 2021) and Hugging Face dataset cards. All fields are
+// optional free text (sellers fill what applies; buyers see what's there).
+type Datasheet struct {
+	IntendedUses          string   `json:"intended_uses,omitempty"`          // what the data is for
+	OutOfScopeUses        string   `json:"out_of_scope_uses,omitempty"`      // what NOT to use it for
+	Composition           string   `json:"composition,omitempty"`            // what instances represent, fields, size
+	CollectionProcess     string   `json:"collection_process,omitempty"`     // how/when/where collected
+	Preprocessing         string   `json:"preprocessing,omitempty"`          // cleaning / labeling / filtering
+	Limitations           string   `json:"limitations,omitempty"`            // known gaps, biases, caveats (RAI)
+	EthicalConsiderations string   `json:"ethical_considerations,omitempty"` // sensitive content, consent, risks
+	UpdatePolicy          string   `json:"update_policy,omitempty"`          // maintenance / refresh cadence
+	Languages             []string `json:"languages,omitempty"`              // e.g. ["zh","en"]
+}
+
+// isEmpty reports whether every datasheet field is blank — used to treat an
+// all-blank submission as clearing the datasheet.
+func (d *Datasheet) isEmpty() bool {
+	if d == nil {
+		return true
+	}
+	return d.IntendedUses == "" && d.OutOfScopeUses == "" && d.Composition == "" &&
+		d.CollectionProcess == "" && d.Preprocessing == "" && d.Limitations == "" &&
+		d.EthicalConsiderations == "" && d.UpdatePolicy == "" && len(d.Languages) == 0
 }
 
 // VersionMeta is the current version's file + version info, used to build the

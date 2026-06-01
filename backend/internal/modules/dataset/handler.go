@@ -63,6 +63,20 @@ func (h *handler) update(c *gin.Context) {
 	httpx.OK(c, d)
 }
 
+func (h *handler) setDatasheet(c *gin.Context) {
+	var ds Datasheet
+	if err := c.ShouldBindJSON(&ds); err != nil {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	d, err := h.svc.UpdateDatasheet(c.Request.Context(), httpx.UserID(c), c.Param("id"), &ds)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, d)
+}
+
 func (h *handler) list(c *gin.Context) {
 	atoi := func(q string) int64 { n, _ := strconv.ParseInt(c.Query(q), 10, 64); return n }
 	limit, _ := strconv.Atoi(c.Query("limit"))

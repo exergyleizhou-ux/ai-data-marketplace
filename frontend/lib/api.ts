@@ -48,6 +48,19 @@ export type Dataset = {
   quality_verified?: boolean;
   authenticity_band?: "clean" | "review" | "suspect" | string;
   authenticity_score?: number;
+  datasheet?: Datasheet;
+};
+
+export type Datasheet = {
+  intended_uses?: string;
+  out_of_scope_uses?: string;
+  composition?: string;
+  collection_process?: string;
+  preprocessing?: string;
+  limitations?: string;
+  ethical_considerations?: string;
+  update_policy?: string;
+  languages?: string[];
 };
 export type Order = {
   id: string;
@@ -241,6 +254,8 @@ export const api = {
   myDatasets: () => request<{ items: Dataset[] }>("/users/me/datasets"),
   createDataset: (b: Record<string, unknown>) => request<Dataset>("/datasets", { body: b }),
   signSource: (id: string) => request<Dataset>(`/datasets/${id}/source-declaration/sign`, { method: "POST" }),
+  updateDatasheet: (id: string, ds: Datasheet) =>
+    request<Dataset>(`/datasets/${id}/datasheet`, { method: "PUT", body: ds }),
 
   // upload
   uploadInit: (id: string, filename: string) =>
