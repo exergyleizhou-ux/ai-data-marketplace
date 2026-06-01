@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -195,6 +196,25 @@ func (s *Service) QualityReport(ctx context.Context, id string) ([]QualityCheck,
 		checks = []QualityCheck{}
 	}
 	return checks, nil
+}
+
+// CroissantMetadata returns the dataset's MLCommons Croissant 1.0 JSON-LD — a
+// machine-readable description usable by Croissant-aware ML loaders and dataset
+// search. baseURL is the public site origin (e.g. https://host).
+func (s *Service) CroissantMetadata(ctx context.Context, id, baseURL string) (map[string]any, error) {
+	d, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	vm, err := s.repo.CurrentVersionMeta(ctx, id)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	checks, err := s.repo.ListQualityChecks(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return BuildCroissant(d, vm, checks, baseURL), nil
 }
 
 // Purchasable is the purchase-relevant view of a dataset (consumed by the order

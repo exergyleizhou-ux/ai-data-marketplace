@@ -236,6 +236,8 @@ export const api = {
   datasetReviews: (id: string) => request<{ items: Review[] }>(`/datasets/${id}/reviews`, { auth: false }),
   datasetQuality: (id: string) =>
     request<{ checks: QualityCheck[] }>(`/datasets/${id}/quality`, { auth: false }),
+  // Absolute URL to the dataset's MLCommons Croissant JSON-LD (machine-readable).
+  croissantUrl: (id: string) => `${BASE}/datasets/${id}/croissant`,
   myDatasets: () => request<{ items: Dataset[] }>("/users/me/datasets"),
   createDataset: (b: Record<string, unknown>) => request<Dataset>("/datasets", { body: b }),
   signSource: (id: string) => request<Dataset>(`/datasets/${id}/source-declaration/sign`, { method: "POST" }),
