@@ -1,0 +1,32 @@
+# Routes one domain to both services: /api → backend, everything else → frontend.
+# Assumes an ingress controller (nginx-ingress) + cert-manager for TLS. Adjust
+# annotations to your cluster (cloud LB ingress class, ACME issuer, etc.).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: marketplace
+  namespace: marketplace
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "0" # allow large dataset uploads
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [app.example.com]
+      secretName: marketplace-tls
+  rules:
+    - host: app.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port: { number: 80 }
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port: { number: 80 }
