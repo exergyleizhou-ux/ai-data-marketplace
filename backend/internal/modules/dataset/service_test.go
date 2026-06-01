@@ -89,6 +89,15 @@ func (r *fakeRepo) CurrentVersionMeta(_ context.Context, datasetID string) (Vers
 	}
 	return VersionMeta{VersionNo: 1, ContentType: "text/csv", SizeBytes: 1024, ContentSHA256: "deadbeef", ObjectKey: "datasets/" + datasetID + "/data.csv"}, nil
 }
+func (r *fakeRepo) SetDatasheet(_ context.Context, id string, ds *Datasheet) (Dataset, error) {
+	d, ok := r.items[id]
+	if !ok {
+		return Dataset{}, ErrNotFound
+	}
+	d.Datasheet = ds
+	r.items[id] = d
+	return d, nil
+}
 func (r *fakeRepo) ContentDupExists(_ context.Context, _, _ string) (bool, error) { return false, nil }
 func (r *fakeRepo) SetSampleCount(_ context.Context, id string, n int64) error {
 	d := r.items[id]
@@ -412,5 +421,35 @@ func TestQualityReport(t *testing.T) {
 	c2, err := svc.QualityReport(ctx, "ds-2")
 	if err != nil || c2 == nil || len(c2) != 0 {
 		t.Fatalf("empty report should be [] not nil: err=%v checks=%v", err, c2)
+	}
+}
+
+func TestUpdateDatasheet(t *testing.T) {
+	ctx := context.Background()
+	svc := newSvc("owner")
+	d, err := svc.Create(ctx, "owner", CreateInput{Title: "t", DataType: "text", LicenseType: "commercial", SourceDeclaration: validDecl()})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Non-owner cannot edit the datasheet.
+	if _, err := svc.UpdateDatasheet(ctx, "intruder", d.ID, &Datasheet{IntendedUses: "x"}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("want ErrForbidden, got %v", err)
+	}
+	// Owner sets it.
+	out, err := svc.UpdateDatasheet(ctx, "owner", d.ID, &Datasheet{IntendedUses: "Pretraining", Languages: []string{"zh"}})
+	if err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if out.Datasheet == nil || out.Datasheet.IntendedUses != "Pretraining" {
+		t.Fatalf("datasheet not set: %+v", out.Datasheet)
+	}
+	// An all-blank submission clears it.
+	out, err = svc.UpdateDatasheet(ctx, "owner", d.ID, &Datasheet{})
+	if err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if out.Datasheet != nil {
+		t.Errorf("blank datasheet should clear, got %+v", out.Datasheet)
 	}
 }

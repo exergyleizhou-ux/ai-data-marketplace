@@ -174,3 +174,55 @@ func TestCroissantMetadataIntegration(t *testing.T) {
 		t.Errorf("contentSize = %v", fo["contentSize"])
 	}
 }
+
+// TestDatasheetRoundTripIntegration validates migration 000008 + the JSONB scan
+// against a real Postgres: a datasheet set via SetDatasheet must read back via
+// GetByID, and a nil datasheet must clear it.
+func TestDatasheetRoundTripIntegration(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping real-DB integration test")
+	}
+	if err := db.RunMigrations(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	defer pool.Close()
+	ctx := context.Background()
+	repo := NewRepository(pool)
+
+	uniq := fmt.Sprintf("%d", time.Now().UnixNano())
+	var sellerID string
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO users (account, account_type, password_hash, role)
+		 VALUES ($1,'email','x','seller') RETURNING id::text`,
+		"sheet-"+uniq+"@example.com").Scan(&sellerID); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	d, err := repo.Create(ctx, Dataset{SellerID: sellerID, Title: "Sheet " + uniq, DataType: "structured", LicenseType: "commercial"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if _, err := repo.SetDatasheet(ctx, d.ID, &Datasheet{IntendedUses: "Pretraining", Limitations: "finance-skewed", Languages: []string{"zh", "en"}}); err != nil {
+		t.Fatalf("set datasheet: %v", err)
+	}
+	got, err := repo.GetByID(ctx, d.ID)
+	if err != nil {
+		t.Fatalf("getbyid: %v", err)
+	}
+	if got.Datasheet == nil || got.Datasheet.IntendedUses != "Pretraining" || len(got.Datasheet.Languages) != 2 {
+		t.Fatalf("datasheet round-trip lost data: %+v", got.Datasheet)
+	}
+
+	if _, err := repo.SetDatasheet(ctx, d.ID, nil); err != nil {
+		t.Fatalf("clear datasheet: %v", err)
+	}
+	got2, _ := repo.GetByID(ctx, d.ID)
+	if got2.Datasheet != nil {
+		t.Errorf("nil datasheet should clear, got %+v", got2.Datasheet)
+	}
+}

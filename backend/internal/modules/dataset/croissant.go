@@ -138,7 +138,34 @@ func BuildCroissant(d Dataset, vm VersionMeta, checks []QualityCheck, baseURL st
 	if props := qualityProperties(checks); len(props) > 0 {
 		doc["additionalProperty"] = props
 	}
+	applyDatasheet(doc, d.Datasheet)
 	return doc
+}
+
+// applyDatasheet maps the seller's datasheet onto the Croissant document using
+// the Responsible-AI (rai:) namespace where it fits, plus schema.org inLanguage.
+// Only populated fields are emitted.
+func applyDatasheet(doc map[string]any, ds *Datasheet) {
+	if ds == nil {
+		return
+	}
+	set := func(key, val string) {
+		if strings.TrimSpace(val) != "" {
+			doc[key] = val
+		}
+	}
+	set("rai:dataUseCases", ds.IntendedUses)
+	set("rai:dataLimitations", ds.Limitations)
+	set("rai:dataCollection", ds.CollectionProcess)
+	set("rai:dataPreprocessingProtocol", ds.Preprocessing)
+	set("rai:personalSensitiveInformation", ds.EthicalConsiderations)
+	if len(ds.Languages) > 0 {
+		langs := make([]any, len(ds.Languages))
+		for i, l := range ds.Languages {
+			langs[i] = l
+		}
+		doc["inLanguage"] = langs
+	}
 }
 
 // keywords derives schema.org keywords from the dataset's facets.

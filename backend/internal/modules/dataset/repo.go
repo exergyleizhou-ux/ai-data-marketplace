@@ -25,6 +25,8 @@ type Repository interface {
 	Create(ctx context.Context, d Dataset) (Dataset, error)
 	GetByID(ctx context.Context, id string) (Dataset, error)
 	UpdateMeta(ctx context.Context, d Dataset) (Dataset, error)
+	// SetDatasheet replaces the dataset's structured documentation (datasheet).
+	SetDatasheet(ctx context.Context, id string, ds *Datasheet) (Dataset, error)
 	ListBySeller(ctx context.Context, sellerID string, limit, offset int) ([]Dataset, error)
 	SignSource(ctx context.Context, id string) (Dataset, error)
 	SetStatus(ctx context.Context, id, status string) error
@@ -84,17 +86,18 @@ const datasetCols = `id, seller_id, title, description, data_type, COALESCE(doma
 	license_type, suggested_price_cents, final_price_cents, status,
 	total_size_bytes, sample_count, source_declaration,
 	source_signed_at::text, COALESCE(current_version_id::text,''),
-	created_at::text, updated_at::text`
+	created_at::text, updated_at::text, datasheet`
 
 func scanDataset(row pgx.Row) (Dataset, error) {
 	var d Dataset
 	var decl []byte
+	var sheet []byte
 	var signedAt *string
 	if err := row.Scan(
 		&d.ID, &d.SellerID, &d.Title, &d.Description, &d.DataType, &d.Domain,
 		&d.LicenseType, &d.SuggestedPriceCents, &d.FinalPriceCents, &d.Status,
 		&d.TotalSizeBytes, &d.SampleCount, &decl,
-		&signedAt, &d.CurrentVersionID, &d.CreatedAt, &d.UpdatedAt,
+		&signedAt, &d.CurrentVersionID, &d.CreatedAt, &d.UpdatedAt, &sheet,
 	); err != nil {
 		return Dataset{}, err
 	}
@@ -104,7 +107,28 @@ func scanDataset(row pgx.Row) (Dataset, error) {
 	if len(decl) > 0 {
 		_ = json.Unmarshal(decl, &d.SourceDeclaration)
 	}
+	if len(sheet) > 0 {
+		_ = json.Unmarshal(sheet, &d.Datasheet)
+	}
 	return d, nil
+}
+
+// SetDatasheet replaces the dataset's datasheet (structured documentation). A
+// nil datasheet clears it. Returns the updated dataset.
+func (r *pgRepo) SetDatasheet(ctx context.Context, id string, ds *Datasheet) (Dataset, error) {
+	raw, err := json.Marshal(ds)
+	if err != nil {
+		return Dataset{}, fmt.Errorf("marshal datasheet: %w", err)
+	}
+	const q = `UPDATE datasets SET datasheet=$2::jsonb, updated_at=now() WHERE id=$1 RETURNING ` + datasetCols
+	out, err := scanDataset(r.pool.QueryRow(ctx, q, id, string(raw)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Dataset{}, ErrNotFound
+	}
+	if err != nil {
+		return Dataset{}, fmt.Errorf("set datasheet: %w", err)
+	}
+	return out, nil
 }
 
 func (r *pgRepo) Create(ctx context.Context, d Dataset) (Dataset, error) {

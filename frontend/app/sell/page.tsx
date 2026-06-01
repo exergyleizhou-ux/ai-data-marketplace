@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api, yuan, type Dataset } from "@/lib/api";
 import { Protected } from "@/components/Protected";
 import { Alert, Badge, Button, Card, Empty, Field, Input, Select, Spinner, Textarea } from "@/components/ui";
+import { DatasheetEditor } from "@/components/Datasheet";
 
 export default function SellPage() {
   return (
@@ -183,6 +184,7 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
+  const [editingSheet, setEditingSheet] = useState(false);
 
   async function sign() {
     setErr("");
@@ -234,6 +236,9 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <Button variant="ghost" onClick={() => setEditingSheet((s) => !s)}>
+            {editingSheet ? "收起说明卡" : "数据说明卡"}
+          </Button>
           {!d.source_signed_at && (
             <Button variant="secondary" onClick={sign} disabled={!!busy}>
               签署来源承诺
@@ -263,6 +268,17 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
       )}
       {d.status === "draft" && d.source_signed_at && (
         <p className="mt-2 text-xs text-neutral-500">已签约，请上传数据文件以进入质检。</p>
+      )}
+      {editingSheet && (
+        <div className="mt-4 border-t border-neutral-100 pt-4">
+          <DatasheetEditor
+            initial={d.datasheet}
+            onSave={async (ds) => {
+              await api.updateDatasheet(d.id, ds);
+              onChange();
+            }}
+          />
+        </div>
       )}
     </Card>
   );

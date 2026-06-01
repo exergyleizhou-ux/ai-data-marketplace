@@ -6,6 +6,7 @@ import { api, yuan, type Dataset, type Preview, type QualityCheck, type Review }
 import { useAuth } from "@/lib/auth";
 import { Alert, Badge, Button, Card, Empty, Spinner } from "@/components/ui";
 import { QualityReport } from "@/components/QualityReport";
+import { DatasheetView } from "@/components/Datasheet";
 
 export default function DatasetDetailPage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -106,6 +107,13 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
               </p>
             </>
           )}
+        </Card>
+
+        <Card>
+          <h2 className="mb-3 font-semibold">
+            数据说明卡 <span className="font-normal text-neutral-400">/ Datasheet</span>
+          </h2>
+          <DatasheetView ds={ds.datasheet ?? {}} />
         </Card>
 
         <Card>
