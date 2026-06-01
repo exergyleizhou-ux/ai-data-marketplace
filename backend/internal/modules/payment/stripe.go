@@ -113,6 +113,9 @@ func (p *StripeProvider) ExecuteSplit(ctx context.Context, orderID, sellerRef st
 		TransferGroup: stripe.String(orderID),
 	}
 	params.Context = ctx
+	// Idempotency key so a retried settlement (H3 outbox) never creates a second
+	// transfer: Stripe returns the original transfer for a repeated key.
+	params.SetIdempotencyKey("settle:" + orderID)
 	tr, err := transfer.New(params)
 	if err != nil {
 		return "", fmt.Errorf("stripe transfer: %w", err)
