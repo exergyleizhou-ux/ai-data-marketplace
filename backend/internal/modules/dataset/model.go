@@ -24,6 +24,16 @@ type Dataset struct {
 	UpdatedAt           string             `json:"updated_at,omitempty"`
 }
 
+// QualityCheck is one persisted quality_check row, surfaced read-only on the
+// buyer-facing quality report. The Report is the raw JSONB the quality engine
+// wrote (counts, authenticity score/band/findings, redaction proof, etc.).
+type QualityCheck struct {
+	Type      string         `json:"type"`   // format | stats | dedup | pii | pii_redaction | authenticity
+	Result    string         `json:"result"` // pass | warn | fail
+	Report    map[string]any `json:"report"`
+	CreatedAt string         `json:"created_at,omitempty"`
+}
+
 // SourceDeclaration is the seller's legally-binding statement about data
 // provenance and licensing (docs §2.2). Signing it (source_signed_at) is a
 // precondition for moving a dataset past draft.

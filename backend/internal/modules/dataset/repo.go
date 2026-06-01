@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,6 +33,9 @@ type Repository interface {
 	AddVersion(ctx context.Context, datasetID, contentSHA256, simhash string, f FileInput, newStatus string) (string, error)
 	// SaveQualityCheck persists one quality_check row.
 	SaveQualityCheck(ctx context.Context, datasetID, versionID, checkType, result string, report any) error
+	// ListQualityChecks returns the quality_check rows for a dataset's current
+	// version (the buyer-facing quality report), oldest first.
+	ListQualityChecks(ctx context.Context, datasetID string) ([]QualityCheck, error)
 	// ContentDupExists reports whether another dataset already has a version
 	// with the same content hash (exact resale / duplicate upload).
 	ContentDupExists(ctx context.Context, contentSHA256, excludeDatasetID string) (bool, error)
@@ -350,6 +354,38 @@ func (r *pgRepo) SetVersionSimhash(ctx context.Context, versionID, simhash strin
 		return fmt.Errorf("set version simhash: %w", err)
 	}
 	return nil
+}
+
+func (r *pgRepo) ListQualityChecks(ctx context.Context, datasetID string) ([]QualityCheck, error) {
+	const q = `
+		SELECT qc.type, qc.result, COALESCE(qc.report, '{}'::jsonb), qc.created_at
+		FROM quality_checks qc
+		JOIN datasets d ON d.current_version_id = qc.version_id
+		WHERE d.id=$1
+		ORDER BY qc.created_at`
+	rows, err := r.pool.Query(ctx, q, datasetID)
+	if err != nil {
+		return nil, fmt.Errorf("list quality checks: %w", err)
+	}
+	defer rows.Close()
+
+	var out []QualityCheck
+	for rows.Next() {
+		var (
+			qc      QualityCheck
+			raw     []byte
+			created time.Time
+		)
+		if err := rows.Scan(&qc.Type, &qc.Result, &raw, &created); err != nil {
+			return nil, fmt.Errorf("scan quality check: %w", err)
+		}
+		if len(raw) > 0 {
+			_ = json.Unmarshal(raw, &qc.Report)
+		}
+		qc.CreatedAt = created.UTC().Format(time.RFC3339)
+		out = append(out, qc)
+	}
+	return out, rows.Err()
 }
 
 func (r *pgRepo) CurrentObjectKey(ctx context.Context, datasetID string) (string, error) {

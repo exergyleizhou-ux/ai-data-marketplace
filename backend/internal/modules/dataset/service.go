@@ -180,6 +180,23 @@ func (s *Service) Get(ctx context.Context, id string) (Dataset, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
+// QualityReport returns the buyer-facing quality checks for a dataset's current
+// version. Read-only and transparency-oriented: the persisted reports carry only
+// counts/scores/metadata (no raw personal data), so they are safe to surface.
+func (s *Service) QualityReport(ctx context.Context, id string) ([]QualityCheck, error) {
+	if _, err := s.repo.GetByID(ctx, id); err != nil {
+		return nil, err
+	}
+	checks, err := s.repo.ListQualityChecks(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if checks == nil {
+		checks = []QualityCheck{}
+	}
+	return checks, nil
+}
+
 // Purchasable is the purchase-relevant view of a dataset (consumed by the order
 // module via its own interface, so order never imports dataset internals).
 type Purchasable struct {

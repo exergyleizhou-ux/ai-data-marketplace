@@ -104,6 +104,15 @@ func (h *handler) get(c *gin.Context) {
 	httpx.OK(c, d)
 }
 
+func (h *handler) quality(c *gin.Context) {
+	checks, err := h.svc.QualityReport(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"checks": checks})
+}
+
 func (h *handler) listMine(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))

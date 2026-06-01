@@ -10,11 +10,14 @@ import (
 )
 
 type fakeRepo struct {
-	items map[string]Dataset
-	seq   int
+	items   map[string]Dataset
+	qchecks map[string][]QualityCheck
+	seq     int
 }
 
-func newFakeRepo() *fakeRepo { return &fakeRepo{items: map[string]Dataset{}} }
+func newFakeRepo() *fakeRepo {
+	return &fakeRepo{items: map[string]Dataset{}, qchecks: map[string][]QualityCheck{}}
+}
 
 func (r *fakeRepo) Create(_ context.Context, d Dataset) (Dataset, error) {
 	r.seq++
@@ -72,8 +75,15 @@ func (r *fakeRepo) AddVersion(_ context.Context, datasetID, contentSHA256, _ str
 	r.items[datasetID] = d
 	return "ver-1", nil
 }
-func (r *fakeRepo) SaveQualityCheck(_ context.Context, _, _, _, _ string, _ any) error { return nil }
-func (r *fakeRepo) ContentDupExists(_ context.Context, _, _ string) (bool, error)      { return false, nil }
+func (r *fakeRepo) SaveQualityCheck(_ context.Context, datasetID, _, checkType, result string, report any) error {
+	rep, _ := report.(map[string]any)
+	r.qchecks[datasetID] = append(r.qchecks[datasetID], QualityCheck{Type: checkType, Result: result, Report: rep})
+	return nil
+}
+func (r *fakeRepo) ListQualityChecks(_ context.Context, datasetID string) ([]QualityCheck, error) {
+	return r.qchecks[datasetID], nil
+}
+func (r *fakeRepo) ContentDupExists(_ context.Context, _, _ string) (bool, error) { return false, nil }
 func (r *fakeRepo) SetSampleCount(_ context.Context, id string, n int64) error {
 	d := r.items[id]
 	d.SampleCount = n
@@ -365,5 +375,36 @@ func TestSignSourceFlow(t *testing.T) {
 	}
 	if _, err := svc.SignSource(ctx, "owner", d2.ID); !errors.Is(err, ErrAlreadySigned) {
 		t.Fatalf("want ErrAlreadySigned, got %v", err)
+	}
+}
+
+func TestQualityReport(t *testing.T) {
+	repo := newFakeRepo()
+	repo.items["ds-1"] = Dataset{ID: "ds-1"}
+	repo.qchecks["ds-1"] = []QualityCheck{
+		{Type: "authenticity", Result: "warn", Report: map[string]any{"score": 72, "band": "review"}},
+		{Type: "pii_redaction", Result: "pass", Report: map[string]any{"verified": true}},
+	}
+	svc := NewService(repo, fakeIdentity{status: map[string]string{}}, nil)
+	ctx := context.Background()
+
+	checks, err := svc.QualityReport(ctx, "ds-1")
+	if err != nil {
+		t.Fatalf("QualityReport: %v", err)
+	}
+	if len(checks) != 2 || checks[0].Type != "authenticity" {
+		t.Fatalf("want 2 checks led by authenticity, got %+v", checks)
+	}
+
+	// Unknown dataset -> ErrNotFound (so the endpoint 404s).
+	if _, err := svc.QualityReport(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+
+	// Known dataset with no checks yet -> empty (non-nil) slice, no error.
+	repo.items["ds-2"] = Dataset{ID: "ds-2"}
+	c2, err := svc.QualityReport(ctx, "ds-2")
+	if err != nil || c2 == nil || len(c2) != 0 {
+		t.Fatalf("empty report should be [] not nil: err=%v checks=%v", err, c2)
 	}
 }

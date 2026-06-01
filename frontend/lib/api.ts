@@ -89,6 +89,13 @@ export type Preview = {
   truncated: boolean;
 };
 
+export type QualityCheck = {
+  type: "format" | "stats" | "dedup" | "pii" | "pii_redaction" | "authenticity" | string;
+  result: "pass" | "warn" | "fail";
+  report: Record<string, unknown>;
+  created_at?: string;
+};
+
 export class ApiError extends Error {
   code: number;
   status: number;
@@ -223,6 +230,8 @@ export const api = {
   getDataset: (id: string) => request<Dataset>(`/datasets/${id}`, { auth: false }),
   preview: (id: string) => request<Preview>(`/datasets/${id}/preview`),
   datasetReviews: (id: string) => request<{ items: Review[] }>(`/datasets/${id}/reviews`, { auth: false }),
+  datasetQuality: (id: string) =>
+    request<{ checks: QualityCheck[] }>(`/datasets/${id}/quality`, { auth: false }),
   myDatasets: () => request<{ items: Dataset[] }>("/users/me/datasets"),
   createDataset: (b: Record<string, unknown>) => request<Dataset>("/datasets", { body: b }),
   signSource: (id: string) => request<Dataset>(`/datasets/${id}/source-declaration/sign`, { method: "POST" }),
