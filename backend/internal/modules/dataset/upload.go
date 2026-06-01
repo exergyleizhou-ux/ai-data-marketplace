@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"mime"
 	"path"
 	"path/filepath"
@@ -151,7 +152,19 @@ func (s *Service) processQuality(ctx context.Context, job qualityJob) error {
 	statsChk, sample := quality.Stats(content)
 	piiChk := quality.PII(content, declaredPII)
 	redactChk := quality.PIIRedaction(content)
-	authChk := quality.Authenticity(content, contentTypeOf(key))
+
+	// Authenticity: prefer the PaperGuard sidecar for tabular data; fall back to
+	// the in-process Go baseline whenever the sidecar is absent or errors, so a
+	// score is always produced and the sidecar is never on the critical path.
+	ct := contentTypeOf(key)
+	authChk := quality.Authenticity(content, ct)
+	if s.screener != nil && strings.Contains(ct, "csv") {
+		if sc, err := s.screener.Screen(ctx, content, ct); err == nil {
+			authChk = sc
+		} else {
+			slog.Warn("authenticity sidecar failed; using Go baseline", "dataset_id", d.ID, "err", err)
+		}
+	}
 
 	dedupChk := quality.Check{Type: quality.TypeDedup, Result: quality.ResultPass, Report: map[string]any{}}
 	if dup, err := s.repo.ContentDupExists(ctx, job.ContentSHA256, d.ID); err == nil && dup {

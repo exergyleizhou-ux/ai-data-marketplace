@@ -274,6 +274,12 @@ CREATE INDEX IF NOT EXISTS idx_quality_check_version_type
 - **测试 + 验证**：本模块累计 **22 项单测全过**（卡方临界值、BH-FDR、四检测器命中/不命中、降级语义）；`go test -race ./...` 全绿；迁移 **1→7 已对真实 Postgres 跑通**，约束定义经查询确认含全部 6 个 type。
 - **下一步**：PR-C `paperguard-sidecar` 作为深度增强（GRIM/GRIMMER/SPRITE 等），与本 Go 基线**并存**——sidecar 在则用其结果，不在则降级到本基线，真实性分口径一致。
 
+**PR-C sidecar 已落地**（`services/paperguard-sidecar/` + Go 客户端）：
+
+- **Python sidecar**（`screening.py` + `app.py`）：忠实复刻 PaperGuard CLI 的表格检测器分支——`DetectorRegistry().register_default(load_plugins=False)` → `parse_data_file` → 只跑数值检测器 `A1/A2/A3/A5/A6/A7/D1/D2` → 映射 `Finding`（已自带 `p_value_adjusted` BH-FDR、`innocent_explanations`、`academic_reference`）。FastAPI 暴露 `GET /healthz`、`POST /v1/screen`，评分口径与 Go 基线逐位一致。含 `pyproject.toml`、`Dockerfile`（python:3.11）、README、测试。
+- **Go 客户端**（`dataset/sidecar.go`）：`WithAuthenticitySidecar(url, timeout)` 选项 + `QUALITY_SIDECAR_URL` 环境变量启用；worker 先算 Go 基线，配置了 sidecar 且为 CSV 时用 sidecar 覆盖，**任何失败/超时/不可达即降级回 Go 基线**——sidecar 永不在关键路径。
+- **验证**：Go 侧 6 项 httptest（映射、clean/review 分档、500/坏 JSON/缺 band/不可达均触发降级）+ `go test -race ./...` 全绿、`gofmt` 净；Python 纯逻辑 8 项 stdlib `unittest` **在 Python 3.9 实跑通过**（评分/分桶/映射）。PaperGuard 端到端（`test_contract.py`）需 3.11 部署环境，未安装自动 skip——本机无 3.11 且 PaperGuard 未发布到本索引，故该层为部署时验证（代码按 PaperGuard 真实源码编写）。
+
 ---
 
 ## 12. 风险与取舍

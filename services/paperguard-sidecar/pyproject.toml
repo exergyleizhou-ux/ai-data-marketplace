@@ -1,0 +1,17 @@
+[project]
+name = "verdant-oasis-paperguard-sidecar"
+version = "1.0.0"
+description = "Authenticity-screening sidecar for Verdant Oasis — wraps PaperGuard's numeric table detectors behind an HTTP contract."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "paperguard==2.17.0",
+    "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
