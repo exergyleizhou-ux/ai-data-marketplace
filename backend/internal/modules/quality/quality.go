@@ -13,10 +13,12 @@ const (
 	ResultWarn = "warn"
 	ResultFail = "fail"
 
-	TypeFormat = "format"
-	TypeStats  = "stats"
-	TypeDedup  = "dedup"
-	TypePII    = "pii"
+	TypeFormat       = "format"
+	TypeStats        = "stats"
+	TypeDedup        = "dedup"
+	TypePII          = "pii"
+	TypePIIRedaction = "pii_redaction"
+	TypeAuthenticity = "authenticity"
 )
 
 // Check is one check's outcome, ready to persist as a quality_check row.

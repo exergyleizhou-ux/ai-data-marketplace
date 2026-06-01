@@ -150,6 +150,8 @@ func (s *Service) processQuality(ctx context.Context, job qualityJob) error {
 	fmtChk := quality.Format(content, contentTypeOf(key))
 	statsChk, sample := quality.Stats(content)
 	piiChk := quality.PII(content, declaredPII)
+	redactChk := quality.PIIRedaction(content)
+	authChk := quality.Authenticity(content, contentTypeOf(key))
 
 	dedupChk := quality.Check{Type: quality.TypeDedup, Result: quality.ResultPass, Report: map[string]any{}}
 	if dup, err := s.repo.ContentDupExists(ctx, job.ContentSHA256, d.ID); err == nil && dup {
@@ -158,7 +160,7 @@ func (s *Service) processQuality(ctx context.Context, job qualityJob) error {
 	}
 
 	failed := false
-	for _, chk := range []quality.Check{fmtChk, statsChk, piiChk, dedupChk} {
+	for _, chk := range []quality.Check{fmtChk, statsChk, piiChk, redactChk, authChk, dedupChk} {
 		if err := s.repo.SaveQualityCheck(ctx, d.ID, job.VersionID, chk.Type, chk.Result, chk.Report); err != nil {
 			return err
 		}
