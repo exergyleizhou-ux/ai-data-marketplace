@@ -83,6 +83,12 @@ func (r *fakeRepo) SaveQualityCheck(_ context.Context, datasetID, _, checkType, 
 func (r *fakeRepo) ListQualityChecks(_ context.Context, datasetID string) ([]QualityCheck, error) {
 	return r.qchecks[datasetID], nil
 }
+func (r *fakeRepo) CurrentVersionMeta(_ context.Context, datasetID string) (VersionMeta, error) {
+	if _, ok := r.items[datasetID]; !ok {
+		return VersionMeta{}, ErrNotFound
+	}
+	return VersionMeta{VersionNo: 1, ContentType: "text/csv", SizeBytes: 1024, ContentSHA256: "deadbeef", ObjectKey: "datasets/" + datasetID + "/data.csv"}, nil
+}
 func (r *fakeRepo) ContentDupExists(_ context.Context, _, _ string) (bool, error) { return false, nil }
 func (r *fakeRepo) SetSampleCount(_ context.Context, id string, n int64) error {
 	d := r.items[id]

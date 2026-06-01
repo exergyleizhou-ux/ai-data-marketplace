@@ -109,3 +109,68 @@ func TestListPublishedQualitySummaryIntegration(t *testing.T) {
 		t.Errorf("text dataset should still be quality_verified (no fails), got %v", txt.QualityVerified)
 	}
 }
+
+// TestCroissantMetadataIntegration validates the full Croissant path against a
+// real Postgres: CurrentVersionMeta's 3-table join must surface the file's
+// content type / size / sha256 into the JSON-LD distribution.
+func TestCroissantMetadataIntegration(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping real-DB integration test")
+	}
+	if err := db.RunMigrations(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	defer pool.Close()
+	ctx := context.Background()
+	repo := NewRepository(pool)
+
+	uniq := fmt.Sprintf("%d", time.Now().UnixNano())
+	var sellerID string
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO users (account, account_type, password_hash, role)
+		 VALUES ($1,'email','x','seller') RETURNING id::text`,
+		"cr-"+uniq+"@example.com").Scan(&sellerID); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	d, err := repo.Create(ctx, Dataset{SellerID: sellerID, Title: "CR " + uniq, DataType: "structured", LicenseType: "commercial"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	vid, err := repo.AddVersion(ctx, d.ID, "feedface", "sim",
+		FileInput{ObjectKey: "datasets/" + d.ID + "/data.csv", SizeBytes: 2048, SHA256: "feedface", ContentType: "text/csv"}, StatusReviewing)
+	if err != nil {
+		t.Fatalf("addversion: %v", err)
+	}
+	if err := repo.SaveQualityCheck(ctx, d.ID, vid, "authenticity", "pass", map[string]any{"applicable": true, "band": "clean", "score": 90}); err != nil {
+		t.Fatalf("savecheck: %v", err)
+	}
+
+	svc := NewService(repo, fakeIdentity{status: map[string]string{}}, nil)
+	doc, err := svc.CroissantMetadata(ctx, d.ID, "https://oasis.example")
+	if err != nil {
+		t.Fatalf("croissant: %v", err)
+	}
+	if doc["conformsTo"] != "http://mlcommons.org/croissant/1.0" {
+		t.Errorf("conformsTo = %v", doc["conformsTo"])
+	}
+	dist, ok := doc["distribution"].([]any)
+	if !ok || len(dist) != 1 {
+		t.Fatalf("distribution = %v", doc["distribution"])
+	}
+	fo := dist[0].(map[string]any)
+	if fo["encodingFormat"] != "text/csv" {
+		t.Errorf("encodingFormat = %v (3-table join lost content_type)", fo["encodingFormat"])
+	}
+	if fo["sha256"] != "feedface" {
+		t.Errorf("sha256 = %v", fo["sha256"])
+	}
+	if fo["contentSize"] != "2048 B" {
+		t.Errorf("contentSize = %v", fo["contentSize"])
+	}
+}

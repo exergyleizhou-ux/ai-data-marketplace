@@ -36,6 +36,9 @@ type Repository interface {
 	// ListQualityChecks returns the quality_check rows for a dataset's current
 	// version (the buyer-facing quality report), oldest first.
 	ListQualityChecks(ctx context.Context, datasetID string) ([]QualityCheck, error)
+	// CurrentVersionMeta returns the current version's file + version info for
+	// the Croissant metadata export. Zero-value (no error) if not yet uploaded.
+	CurrentVersionMeta(ctx context.Context, datasetID string) (VersionMeta, error)
 	// ContentDupExists reports whether another dataset already has a version
 	// with the same content hash (exact resale / duplicate upload).
 	ContentDupExists(ctx context.Context, contentSHA256, excludeDatasetID string) (bool, error)
@@ -460,6 +463,26 @@ func (r *pgRepo) ListQualityChecks(ctx context.Context, datasetID string) ([]Qua
 		out = append(out, qc)
 	}
 	return out, rows.Err()
+}
+
+func (r *pgRepo) CurrentVersionMeta(ctx context.Context, datasetID string) (VersionMeta, error) {
+	const q = `
+		SELECT COALESCE(v.version_no, 1), COALESCE(v.content_sha256, ''), COALESCE(v.changelog, ''),
+		       COALESCE(f.object_key, ''), COALESCE(f.size_bytes, 0), COALESCE(f.content_type, '')
+		FROM datasets d
+		LEFT JOIN dataset_versions v ON v.id = d.current_version_id
+		LEFT JOIN dataset_files   f ON f.version_id = d.current_version_id
+		WHERE d.id = $1`
+	var m VersionMeta
+	err := r.pool.QueryRow(ctx, q, datasetID).Scan(
+		&m.VersionNo, &m.ContentSHA256, &m.Changelog, &m.ObjectKey, &m.SizeBytes, &m.ContentType)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return VersionMeta{}, ErrNotFound
+	}
+	if err != nil {
+		return VersionMeta{}, fmt.Errorf("current version meta: %w", err)
+	}
+	return m, nil
 }
 
 func (r *pgRepo) CurrentObjectKey(ctx context.Context, datasetID string) (string, error) {

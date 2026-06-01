@@ -32,6 +32,17 @@ type Dataset struct {
 	AuthenticityScore *int   `json:"authenticity_score,omitempty"`
 }
 
+// VersionMeta is the current version's file + version info, used to build the
+// Croissant (machine-readable) metadata export.
+type VersionMeta struct {
+	VersionNo     int
+	ContentSHA256 string
+	ObjectKey     string
+	SizeBytes     int64
+	ContentType   string
+	Changelog     string
+}
+
 // QualityCheck is one persisted quality_check row, surfaced read-only on the
 // buyer-facing quality report. The Report is the raw JSONB the quality engine
 // wrote (counts, authenticity score/band/findings, redaction proof, etc.).

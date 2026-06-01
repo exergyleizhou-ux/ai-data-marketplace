@@ -1,7 +1,9 @@
 package dataset
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -111,6 +113,31 @@ func (h *handler) quality(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"checks": checks})
+}
+
+// croissant serves the dataset's MLCommons Croissant JSON-LD (application/ld+json).
+func (h *handler) croissant(c *gin.Context) {
+	doc, err := h.svc.CroissantMetadata(c.Request.Context(), c.Param("id"), requestOrigin(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	b, err := json.Marshal(doc)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	c.Data(http.StatusOK, "application/ld+json; charset=utf-8", b)
+}
+
+// requestOrigin reconstructs the public site origin (scheme://host) from the
+// request, honouring a reverse proxy's X-Forwarded-Proto.
+func requestOrigin(c *gin.Context) string {
+	scheme := "http"
+	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + c.Request.Host
 }
 
 func (h *handler) listMine(c *gin.Context) {

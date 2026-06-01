@@ -113,6 +113,17 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
             数据质量 <span className="font-normal text-neutral-400">/ Data Quality</span>
           </h2>
           {quality === null ? <Spinner /> : <QualityReport checks={quality} />}
+          <div className="mt-4 border-t border-neutral-100 pt-3">
+            <a
+              href={api.croissantUrl(id)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-neutral-500 underline-offset-2 hover:text-neutral-800 hover:underline"
+            >
+              🥐 机器可读元数据 / Croissant (JSON-LD)
+            </a>
+            <span className="ml-2 text-xs text-neutral-300">符合 MLCommons Croissant 1.0</span>
+          </div>
         </Card>
 
         <Card>
