@@ -54,3 +54,19 @@ def test_screen_contract_shape():
 def test_empty_body_is_400():
     r = client.post("/v1/screen", content=b"", headers={"Content-Type": "text/csv"})
     assert r.status_code == 400
+
+
+def test_fabricated_data_is_flagged():
+    """Behavioral check: a deliberate last-digit (0/5) fabrication must be
+    surfaced — non-clean band, real findings, and the terminal-digit / Geng
+    detector firing. Verified against PaperGuard 2.17.0."""
+    fabricated = _csv([i * 5 for i in range(300)])
+    body = client.post(
+        "/v1/screen", content=fabricated, headers={"Content-Type": "text/csv"}
+    ).json()
+    s = body["summary"]
+    assert s["band"] in ("review", "suspect"), s
+    assert s["n_findings"] >= 1
+    detectors = {f["detector"] for f in body["findings"] if f["significant"]}
+    # A1 = terminal-digit distribution, A7 = Geng last-digit 0/5 preference.
+    assert detectors & {"A1", "A7"}, body["findings"]
