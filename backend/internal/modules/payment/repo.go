@@ -26,6 +26,13 @@ type Repository interface {
 	// already exists (unique order_id / idempotency_key) — the double-split guard.
 	CreateSettlement(ctx context.Context, orderID, idempotencyKey string, platformFeeCents, sellerAmountCents int64) (created bool, err error)
 	MarkSettlementSuccess(ctx context.Context, orderID, splitTxnID string) error
+	// RefundContext returns the data needed to reverse a payment (H2): the
+	// payment's channel txn id, and the settlement's split txn id if it already
+	// settled successfully (else "" — funds still escrowed, nothing to reverse).
+	RefundContext(ctx context.Context, orderID string) (channelTxnID, splitTxnID string, err error)
+	// MarkRefunded flips the payment to refunded/escrow reverted and any
+	// successful settlement to reverted, atomically.
+	MarkRefunded(ctx context.Context, orderID string) error
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }
@@ -109,6 +116,47 @@ func (r *pgRepo) MarkSettlementSuccess(ctx context.Context, orderID, splitTxnID 
 		orderID, splitTxnID)
 	if err != nil {
 		return fmt.Errorf("mark settlement success: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepo) RefundContext(ctx context.Context, orderID string) (string, string, error) {
+	var channelTxn string
+	err := r.pool.QueryRow(ctx,
+		`SELECT COALESCE(channel_txn_id,'') FROM payments WHERE order_id=$1`, orderID).Scan(&channelTxn)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", fmt.Errorf("no payment for order")
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("refund context payment: %w", err)
+	}
+	// split_txn_id only matters if the order already settled successfully.
+	var splitTxn string
+	err = r.pool.QueryRow(ctx,
+		`SELECT COALESCE(split_txn_id,'') FROM settlements WHERE order_id=$1 AND status='success'`, orderID).
+		Scan(&splitTxn)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", "", fmt.Errorf("refund context settlement: %w", err)
+	}
+	return channelTxn, splitTxn, nil
+}
+
+func (r *pgRepo) MarkRefunded(ctx context.Context, orderID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(ctx,
+		`UPDATE payments SET status='refunded', escrow_state='reverted' WHERE order_id=$1`, orderID); err != nil {
+		return fmt.Errorf("mark payment refunded: %w", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE settlements SET status='reverted' WHERE order_id=$1 AND status='success'`, orderID); err != nil {
+		return fmt.Errorf("mark settlement reverted: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit refund: %w", err)
 	}
 	return nil
 }

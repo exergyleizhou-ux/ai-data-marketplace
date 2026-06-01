@@ -32,6 +32,7 @@ type Service struct {
 	orders   OrderGateway
 	provider PaymentProvider
 	split    SplitProvider
+	refund   RefundProvider // optional; set when the provider supports refunds (H2)
 	audit    audit.Recorder
 }
 
@@ -39,7 +40,13 @@ func NewService(repo Repository, orders OrderGateway, provider PaymentProvider, 
 	if rec == nil {
 		rec = audit.Noop{}
 	}
-	return &Service{repo: repo, orders: orders, provider: provider, split: split, audit: rec}
+	s := &Service{repo: repo, orders: orders, provider: provider, split: split, audit: rec}
+	// Both the mock and Stripe providers implement RefundProvider; wire it when
+	// available so dispute refunds can move real money (H2).
+	if rp, ok := provider.(RefundProvider); ok {
+		s.refund = rp
+	}
+	return s
 }
 
 // CreatePayment initiates a charge for the buyer's created order and returns the
@@ -110,6 +117,35 @@ func (s *Service) DevMarkPaid(ctx context.Context, orderID string) error {
 		return err
 	}
 	return s.markPaid(ctx, txn)
+}
+
+// Refund reverses a payment when ops resolves a dispute for the buyer (H2): it
+// reverses the seller transfer if the order had already settled, refunds the
+// buyer's charge at the provider, then flips the payment to refunded and any
+// settlement to reverted. The provider call runs first so a provider failure
+// leaves the order untouched (the caller keeps the dispute open for retry).
+func (s *Service) Refund(ctx context.Context, orderID string) error {
+	if s.refund == nil {
+		return ErrRefundUnsupported
+	}
+	o, err := s.orders.GetSystem(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	channelTxn, splitTxn, err := s.repo.RefundContext(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	refundTxnID, err := s.refund.Refund(ctx, channelTxn, splitTxn, o.AmountCents)
+	if err != nil {
+		return fmt.Errorf("provider refund: %w", err)
+	}
+	if err := s.repo.MarkRefunded(ctx, orderID); err != nil {
+		return err
+	}
+	s.audit.Record(ctx, audit.Entry{Action: "payment.refund", ResourceType: "order", ResourceID: orderID,
+		Detail: map[string]any{"refund_txn_id": refundTxnID, "split_txn_id": splitTxn, "amount_cents": o.AmountCents}})
+	return nil
 }
 
 // Settle executes split-settlement for a confirmed order: seller share +

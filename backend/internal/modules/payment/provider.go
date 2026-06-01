@@ -43,6 +43,14 @@ type SplitProvider interface {
 	ExecuteSplit(ctx context.Context, orderID, sellerRef string, sellerAmountCents, platformFeeCents int64) (splitTxnID string, err error)
 }
 
+// RefundProvider reverses a payment when a dispute resolves in the buyer's
+// favour (H2): it reverses the split transfer to the seller (if the order was
+// already settled) and refunds the buyer's charge. splitTxnID is "" when the
+// funds are still escrowed on the platform (no transfer to claw back).
+type RefundProvider interface {
+	Refund(ctx context.Context, channelTxnID, splitTxnID string, amountCents int64) (refundTxnID string, err error)
+}
+
 // MockProvider is a SANDBOX implementation for local/dev only. It does NOT move
 // real money. Signatures are HMAC over a shared secret so the callback path
 // (verify + idempotency) is exercised exactly as it will be in production.
@@ -73,6 +81,10 @@ func (m MockProvider) VerifyCallback(payload []byte, signature string) (Callback
 
 func (m MockProvider) ExecuteSplit(_ context.Context, orderID, _ string, _, _ int64) (string, error) {
 	return "split-" + Sign(m.Secret, "split:"+orderID)[:16], nil
+}
+
+func (m MockProvider) Refund(_ context.Context, channelTxnID, _ string, _ int64) (string, error) {
+	return "refund-" + Sign(m.Secret, "refund:"+channelTxnID)[:16], nil
 }
 
 // Sign returns HMAC-SHA256(secret, msg) as hex — shared by the mock provider and

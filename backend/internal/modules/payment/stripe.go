@@ -10,7 +10,9 @@ import (
 	"github.com/stripe/stripe-go/v79"
 	"github.com/stripe/stripe-go/v79/account"
 	"github.com/stripe/stripe-go/v79/paymentintent"
+	"github.com/stripe/stripe-go/v79/refund"
 	"github.com/stripe/stripe-go/v79/transfer"
+	"github.com/stripe/stripe-go/v79/transferreversal"
 	"github.com/stripe/stripe-go/v79/webhook"
 )
 
@@ -116,6 +118,31 @@ func (p *StripeProvider) ExecuteSplit(ctx context.Context, orderID, sellerRef st
 		return "", fmt.Errorf("stripe transfer: %w", err)
 	}
 	return tr.ID, nil
+}
+
+// Refund reverses a payment in the buyer's favour (H2). If the order was
+// already settled (splitTxnID present), the seller's transfer is reversed first
+// to claw the share back into the platform balance; then the buyer's
+// PaymentIntent is fully refunded. Order matters: refunding the charge before
+// reversing would leave the platform short the seller's share.
+func (p *StripeProvider) Refund(ctx context.Context, channelTxnID, splitTxnID string, amountCents int64) (string, error) {
+	if splitTxnID != "" {
+		rp := &stripe.TransferReversalParams{ID: stripe.String(splitTxnID)}
+		rp.Context = ctx
+		if _, err := transferreversal.New(rp); err != nil {
+			return "", fmt.Errorf("stripe transfer reversal: %w", err)
+		}
+	}
+	params := &stripe.RefundParams{PaymentIntent: stripe.String(channelTxnID)}
+	if amountCents > 0 {
+		params.Amount = stripe.Int64(amountCents)
+	}
+	params.Context = ctx
+	rf, err := refund.New(params)
+	if err != nil {
+		return "", fmt.Errorf("stripe refund: %w", err)
+	}
+	return rf.ID, nil
 }
 
 // ensureAccount returns the seller's connected account, resolving it in order:

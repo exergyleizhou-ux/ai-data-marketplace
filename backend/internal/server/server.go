@@ -235,6 +235,7 @@ func (s *Server) routes() {
 		paySvc := payment.NewService(payment.NewRepository(s.db), orderPaymentAdapter{o: orderSvc}, provider, split, rec)
 		payment.Register(api, paySvc, authMW, s.cfg.Env != "production")
 		orderSvc.SetSettlementTrigger(paySvc) // confirm-delivery -> auto settle
+		orderSvc.SetRefundTrigger(paySvc)     // dispute refund -> provider refund + reversal (H2)
 
 		if store != nil {
 			delSvc := delivery.NewService(delivery.NewRepository(s.db),
