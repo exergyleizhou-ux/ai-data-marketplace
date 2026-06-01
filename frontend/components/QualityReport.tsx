@@ -38,6 +38,28 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const arr = (v: unknown): Record<string, unknown>[] =>
   Array.isArray(v) ? (v as Record<string, unknown>[]) : [];
 
+/** Compact browse-time quality pill for catalog cards. Shows the authenticity
+ *  band when a dataset was statistically screened (tabular), otherwise a generic
+ *  "quality verified" mark when all checks passed. Renders nothing if unknown. */
+export function QualityBadge({ band, verified }: { band?: string; verified?: boolean }) {
+  if (band) {
+    const b = BAND[band] ?? BAND.review;
+    return (
+      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${b.cls}`}>
+        {b.zh}
+      </span>
+    );
+  }
+  if (verified) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+        ✓ 质检通过
+      </span>
+    );
+  }
+  return null;
+}
+
 export function QualityReport({ checks }: { checks: QualityCheck[] }) {
   if (!checks || checks.length === 0) {
     return (
