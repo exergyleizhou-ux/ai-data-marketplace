@@ -10,6 +10,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -217,6 +219,9 @@ func (s *Server) routes() {
 		dsOpts := []dataset.Option{dataset.WithAsyncQuality(2, 128)}
 		if store != nil {
 			dsOpts = append(dsOpts, dataset.WithStorage(store))
+		}
+		if url := os.Getenv("QUALITY_SIDECAR_URL"); url != "" {
+			dsOpts = append(dsOpts, dataset.WithAuthenticitySidecar(url, 15*time.Second))
 		}
 		dsSvc := dataset.NewService(dataset.NewRepository(s.db), authSvc, rec, dsOpts...)
 		s.closers = append(s.closers, dsSvc.Close)

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/quality"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
@@ -40,6 +41,10 @@ type Service struct {
 	// in-process worker for Asynq/Redis at scale without touching call sites.
 	qCh chan qualityJob
 	wg  sync.WaitGroup
+
+	// Optional PaperGuard authenticity sidecar. When nil, processQuality uses
+	// the in-process Go baseline (quality.Authenticity).
+	screener authenticityScreener
 }
 
 // Option configures optional Service dependencies.
@@ -47,6 +52,13 @@ type Option func(*Service)
 
 // WithStorage wires the object store used by the upload endpoints.
 func WithStorage(s storage.Storage) Option { return func(svc *Service) { svc.storage = s } }
+
+// WithAuthenticitySidecar points the quality worker at the PaperGuard
+// authenticity sidecar at baseURL. When set, tabular datasets are screened by
+// the sidecar; on any sidecar error the worker falls back to the Go baseline.
+func WithAuthenticitySidecar(baseURL string, timeout time.Duration) Option {
+	return func(svc *Service) { svc.screener = newHTTPScreener(baseURL, timeout) }
+}
 
 // WithAsyncQuality starts `workers` background goroutines draining a buffered
 // queue so quality checks don't block the upload response. Call Close on
