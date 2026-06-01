@@ -21,24 +21,39 @@ import (
 // the platform balance (held); on buyer confirmation we Transfer the seller's
 // share to their connected account and keep the platform commission.
 //
-// Production hardening beyond this sandbox: persist connected-account ids in
-// payout_account (here they're created lazily + cached in memory for the demo),
-// handle Connect onboarding/KYC, and reconcile via Balance Transactions.
+// Connected-account ids are persisted in payout_accounts via PayoutAccountStore
+// (H1) and additionally cached in-process for the lifetime of the run. Further
+// production hardening: Connect onboarding/KYC and Balance-Transaction recon.
 type StripeProvider struct {
 	currency      string
 	webhookSecret string
+	store         PayoutAccountStore
 
 	mu       sync.Mutex
-	accounts map[string]string // sellerID -> connected account id (acct_...)
+	accounts map[string]string // sellerID -> connected account id (acct_...) — cache
 }
 
-// NewStripeProvider sets the global Stripe key and returns the provider.
-func NewStripeProvider(secretKey, webhookSecret, currency string) *StripeProvider {
+// PayoutAccountStore persists the seller -> connected-account mapping so the id
+// survives restarts. It is implemented by the auth module (which owns the
+// payout_accounts table) and injected by the server, so payment never imports
+// auth. PayoutAccountRef returns "" (no error) when the seller has none yet.
+type PayoutAccountStore interface {
+	PayoutAccountRef(ctx context.Context, sellerID, channel string) (string, error)
+	SavePayoutAccount(ctx context.Context, sellerID, channel, accountRef string) error
+}
+
+// payoutChannel is the channel key under which Stripe connected accounts are
+// stored in payout_accounts.
+const payoutChannel = "stripe"
+
+// NewStripeProvider sets the global Stripe key and returns the provider. store
+// may be nil (the mapping then lives only in the in-process cache).
+func NewStripeProvider(secretKey, webhookSecret, currency string, store PayoutAccountStore) *StripeProvider {
 	stripe.Key = secretKey
 	if currency == "" {
 		currency = "usd"
 	}
-	return &StripeProvider{currency: currency, webhookSecret: webhookSecret, accounts: map[string]string{}}
+	return &StripeProvider{currency: currency, webhookSecret: webhookSecret, store: store, accounts: map[string]string{}}
 }
 
 func (p *StripeProvider) Channel() string { return "stripe" }
@@ -85,7 +100,7 @@ func (p *StripeProvider) VerifyCallback(payload []byte, signature string) (Callb
 // seller's connected account (Connect transfer). Platform keeps the commission
 // implicitly (it never transfers it out).
 func (p *StripeProvider) ExecuteSplit(ctx context.Context, orderID, sellerRef string, sellerAmountCents, _ int64) (string, error) {
-	acct, err := p.ensureAccount(sellerRef)
+	acct, err := p.ensureAccount(ctx, sellerRef)
 	if err != nil {
 		return "", err
 	}
@@ -103,14 +118,26 @@ func (p *StripeProvider) ExecuteSplit(ctx context.Context, orderID, sellerRef st
 	return tr.ID, nil
 }
 
-// ensureAccount returns a usable test connected account for the seller, creating
-// a fully-onboarded test Custom account on first use (test individual + bank +
-// TOS so the transfers capability is active).
-func (p *StripeProvider) ensureAccount(sellerID string) (string, error) {
+// ensureAccount returns the seller's connected account, resolving it in order:
+// in-process cache -> persisted payout_accounts -> create a new fully-onboarded
+// test Custom account (and persist it). Persistence (H1) means the acct_… id
+// survives restarts instead of being recreated every boot.
+func (p *StripeProvider) ensureAccount(ctx context.Context, sellerID string) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if id, ok := p.accounts[sellerID]; ok {
 		return id, nil
+	}
+	// Persisted mapping (survives restarts).
+	if p.store != nil {
+		ref, err := p.store.PayoutAccountRef(ctx, sellerID, payoutChannel)
+		if err != nil {
+			return "", fmt.Errorf("load payout account: %w", err)
+		}
+		if ref != "" {
+			p.accounts[sellerID] = ref
+			return ref, nil
+		}
 	}
 	params := &stripe.AccountParams{
 		Type:         stripe.String("custom"),
@@ -143,6 +170,11 @@ func (p *StripeProvider) ensureAccount(sellerID string) (string, error) {
 	acct, err := account.New(params)
 	if err != nil {
 		return "", fmt.Errorf("stripe create connected account: %w", err)
+	}
+	if p.store != nil {
+		if err := p.store.SavePayoutAccount(ctx, sellerID, payoutChannel, acct.ID); err != nil {
+			return "", fmt.Errorf("persist payout account: %w", err)
+		}
 	}
 	p.accounts[sellerID] = acct.ID
 	return acct.ID, nil

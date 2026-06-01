@@ -38,6 +38,9 @@ var (
 	ErrInvalidToken       = errors.New("invalid or expired token")
 	ErrValidation         = errors.New("validation failed")
 	ErrKYCNotFound        = errors.New("no kyc record")
+	// ErrPayoutAccountNotFound means the user has no active payout account for
+	// the requested channel yet (the caller should create + persist one).
+	ErrPayoutAccountNotFound = errors.New("no payout account")
 )
 
 const (

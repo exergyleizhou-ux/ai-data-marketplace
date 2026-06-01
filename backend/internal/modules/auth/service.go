@@ -112,6 +112,18 @@ func (s *Service) KYCStatus(ctx context.Context, userID string) (string, error) 
 	return u.KYCStatus, nil
 }
 
+// PayoutAccountRef returns the user's persisted channel-side payout account ref
+// (e.g. a Stripe Connect acct_… id), or ErrPayoutAccountNotFound. The payment
+// module reads this through an adapter so it never touches the payout table.
+func (s *Service) PayoutAccountRef(ctx context.Context, userID, channel string) (string, error) {
+	return s.repo.GetPayoutAccountRef(ctx, userID, channel)
+}
+
+// SavePayoutAccount persists (upserts) a user's channel-side payout account ref.
+func (s *Service) SavePayoutAccount(ctx context.Context, userID, channel, accountRef string) error {
+	return s.repo.SavePayoutAccount(ctx, userID, channel, accountRef)
+}
+
 func (s *Service) issue(user User) (AuthResult, error) {
 	tokens, err := s.tokens.Issue(user.ID, user.Role)
 	if err != nil {
