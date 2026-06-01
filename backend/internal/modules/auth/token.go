@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -31,8 +33,9 @@ type Tokens struct {
 
 // TokenManager issues and verifies HS256 JWTs.
 //
-// NOTE (PR-06): refresh tokens are currently stateless JWTs. Revocation
-// ("可吊销", docs §6.8) needs a Redis denylist keyed by jti — wired in PR-06.
+// Every token carries a unique jti (RegisteredClaims.ID). Refresh-token
+// revocation (logout + single-use rotation, docs §6.8) is implemented in the
+// service via a Denylist keyed by that jti — see denylist.go.
 type TokenManager struct {
 	secret     []byte
 	accessTTL  time.Duration
@@ -58,17 +61,31 @@ func (tm *TokenManager) Issue(userID, role string) (Tokens, error) {
 }
 
 func (tm *TokenManager) sign(userID, role, typ string, now time.Time, ttl time.Duration) (string, error) {
+	jti, err := newJTI()
+	if err != nil {
+		return "", err
+	}
 	claims := Claims{
 		UserID: userID,
 		Role:   role,
 		Type:   typ,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        jti,
 			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 		},
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(tm.secret)
+}
+
+// newJTI returns a random 128-bit token id, hex-encoded.
+func newJTI() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate jti: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // Parse verifies a token's signature and expiry and asserts its type matches

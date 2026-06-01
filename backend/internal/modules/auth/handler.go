@@ -68,6 +68,19 @@ func (h *handler) refresh(c *gin.Context) {
 	httpx.OK(c, res)
 }
 
+func (h *handler) logout(c *gin.Context) {
+	var req refreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.RefreshToken == "" {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	if err := h.svc.Logout(c.Request.Context(), req.RefreshToken); err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"revoked": true})
+}
+
 func (h *handler) me(c *gin.Context) {
 	user, err := h.svc.Me(c.Request.Context(), httpx.UserID(c))
 	if err != nil {
