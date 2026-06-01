@@ -33,7 +33,13 @@ async def screen(request: Request):
     content = await request.body()
     if not content:
         return JSONResponse(status_code=400, content={"error": "empty body"})
-    suffix = ".tsv" if "tsv" in request.headers.get("content-type", "") else ".csv"
+    ct = request.headers.get("content-type", "")
+    if "parquet" in ct:
+        suffix = ".parquet"
+    elif "tsv" in ct or "tab-separated" in ct:
+        suffix = ".tsv"
+    else:
+        suffix = ".csv"
     try:
         with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
             tmp.write(content)

@@ -10,9 +10,22 @@ import (
 	"unicode/utf8"
 )
 
-// Format validates encoding and, for json/csv, parseability.
+// Format validates encoding and, for json/jsonl/csv/tsv, parseability. Parquet
+// is binary, so it is validated by its PAR1 magic instead of UTF-8/text parsing.
 func Format(content []byte, contentType string) Check {
 	report := map[string]any{"content_type": contentType}
+
+	// Parquet is binary columnar: verify the PAR1 magic at head and footer (a
+	// cheap, dependency-free integrity gate) and skip the text checks.
+	if strings.Contains(contentType, "parquet") {
+		if !validParquetMagic(content) {
+			report["error"] = "invalid Parquet: missing PAR1 magic at header/footer"
+			return Check{Type: TypeFormat, Result: ResultFail, Report: report}
+		}
+		report["format"] = "parquet"
+		return Check{Type: TypeFormat, Result: ResultPass, Report: report}
+	}
+
 	if !utf8.Valid(content) {
 		report["error"] = "content is not valid UTF-8"
 		return Check{Type: TypeFormat, Result: ResultFail, Report: report}
@@ -91,4 +104,15 @@ func Stats(content []byte) (Check, int64) {
 		result = ResultWarn // empty/whitespace-only content
 	}
 	return Check{Type: TypeStats, Result: result, Report: report}, nonEmpty
+}
+
+// validParquetMagic checks the Parquet "PAR1" magic at the file head and footer.
+// Every Parquet file begins and ends with these 4 bytes; this catches truncated
+// or non-Parquet uploads without a full columnar parser.
+func validParquetMagic(content []byte) bool {
+	const magic = "PAR1"
+	if len(content) < 2*len(magic) {
+		return false
+	}
+	return string(content[:len(magic)]) == magic && string(content[len(content)-len(magic):]) == magic
 }

@@ -76,3 +76,41 @@ func TestFormatJSONLAndTSV(t *testing.T) {
 		t.Errorf("valid tsv should pass, got %s (%v)", c.Result, c.Report)
 	}
 }
+
+func TestFormatParquetMagic(t *testing.T) {
+	good := append(append([]byte("PAR1"), []byte("\x00\x01\x02columnar")...), []byte("PAR1")...)
+	if c := Format(good, "application/vnd.apache.parquet"); c.Result != ResultPass {
+		t.Errorf("valid parquet magic should pass, got %s (%v)", c.Result, c.Report)
+	}
+	badFooter := append(append([]byte("PAR1"), []byte("data")...), []byte("XXXX")...)
+	if c := Format(badFooter, "application/vnd.apache.parquet"); c.Result != ResultFail {
+		t.Errorf("bad parquet footer should fail, got %s", c.Result)
+	}
+	if c := Format([]byte("PAR"), "application/vnd.apache.parquet"); c.Result != ResultFail {
+		t.Errorf("too-short parquet should fail, got %s", c.Result)
+	}
+	// Binary (non-UTF8) parquet body must not trip the UTF-8 check.
+	bin := append(append([]byte("PAR1"), []byte{0xff, 0xfe, 0x00}...), []byte("PAR1")...)
+	if c := Format(bin, "application/vnd.apache.parquet"); c.Result != ResultPass {
+		t.Errorf("binary parquet body should pass via magic check, got %s", c.Result)
+	}
+}
+
+func TestIsScreenable(t *testing.T) {
+	cases := map[string]bool{
+		"text/csv":                       true,
+		"text/tab-separated-values":      true,
+		"application/vnd.apache.parquet": true,
+		"application/json":               false,
+		"application/x-ndjson":           false,
+		"text/plain":                     false,
+	}
+	for ct, want := range cases {
+		if got := IsScreenable(ct); got != want {
+			t.Errorf("IsScreenable(%q)=%v, want %v", ct, got, want)
+		}
+		if IsTabular(ct) && !IsScreenable(ct) {
+			t.Errorf("tabular %q must be screenable", ct)
+		}
+	}
+}

@@ -42,7 +42,13 @@ type authFinding struct {
 func Authenticity(content []byte, contentType string) Check {
 	delim, ok := tabularDelimiter(contentType)
 	if !ok {
-		return authCheck(100, "clean", 0, 0, nil, map[string]any{"applicable": false, "note": "non-tabular payload — statistical screening skipped"})
+		note := "non-tabular payload — statistical screening skipped"
+		if IsParquet(contentType) {
+			// Binary columnar — the Go baseline can't read it; the PaperGuard
+			// sidecar (pandas) screens it when configured.
+			note = "Parquet — statistical screening runs in the PaperGuard sidecar"
+		}
+		return authCheck(100, "clean", 0, 0, nil, map[string]any{"applicable": false, "note": note})
 	}
 	cols, nrows, ok := parseNumericColumns(content, delim)
 	if !ok || len(cols) == 0 {
@@ -95,10 +101,22 @@ type numColumn struct {
 }
 
 // IsTabular reports whether a content type is a delimited table (CSV/TSV) the
-// authenticity engine and sidecar can screen.
+// in-process Go baseline can screen.
 func IsTabular(contentType string) bool {
 	_, ok := tabularDelimiter(contentType)
 	return ok
+}
+
+// IsParquet reports whether a content type is Apache Parquet.
+func IsParquet(contentType string) bool {
+	return strings.Contains(contentType, "parquet")
+}
+
+// IsScreenable reports whether the authenticity pipeline (Go baseline OR the
+// PaperGuard sidecar) can screen this content type — CSV/TSV in-process, Parquet
+// via the sidecar. Used by the worker to decide what to send to the sidecar.
+func IsScreenable(contentType string) bool {
+	return IsTabular(contentType) || IsParquet(contentType)
 }
 
 // tabularDelimiter maps a content type to its column delimiter. CSV uses comma,
