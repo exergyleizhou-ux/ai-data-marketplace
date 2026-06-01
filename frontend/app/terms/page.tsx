@@ -1,11 +1,18 @@
 import Link from "next/link";
 import { LEGAL_VERSIONS } from "@/lib/legal";
+import { BRAND } from "@/lib/brand";
 
-export const metadata = { title: "用户服务协议 - AI 训练数据交易市场" };
+export const metadata = { title: `用户服务协议 - ${BRAND.name}` };
 
 export default function TermsPage() {
   return (
     <article className="mx-auto max-w-3xl space-y-6">
+      <header className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+        <p className="text-lg font-semibold text-emerald-800">{BRAND.name}</p>
+        <p className="italic text-emerald-700">{BRAND.sloganEn}</p>
+        <p className="text-emerald-700">{BRAND.sloganZh}</p>
+        <p className="pt-1 text-sm leading-relaxed text-emerald-900/80">{BRAND.philosophy}</p>
+      </header>
       <h1 className="text-2xl font-semibold">用户服务协议</h1>
       <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
         ⚠️ <strong>草案占位（{LEGAL_VERSIONS.terms}）</strong>。最终条款须经执业律师审核定稿后方可生效;

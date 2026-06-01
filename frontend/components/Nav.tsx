@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { BRAND } from "@/lib/brand";
 import { Badge } from "./ui";
 
 const LINKS = [
@@ -22,7 +23,7 @@ export function Nav() {
     <header className="sticky top-0 z-10 border-b border-neutral-200 bg-white/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4">
         <Link href="/" className="font-semibold tracking-tight">
-          AI 数据市场
+          {BRAND.nameEn} <span className="text-neutral-400">{BRAND.nameZh}</span>
         </Link>
         <nav className="flex flex-1 items-center gap-1">
           {LINKS.filter((l) => !l.auth || user).map((l) => (

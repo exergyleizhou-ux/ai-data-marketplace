@@ -1,12 +1,15 @@
 import Link from "next/link";
+import { BRAND } from "@/lib/brand";
 
 export default function Home() {
   return (
     <div className="space-y-12">
       <section className="space-y-5 py-8">
-        <h1 className="text-4xl font-semibold tracking-tight">AI 训练数据交易市场</h1>
-        <p className="max-w-2xl text-lg leading-relaxed text-neutral-600">
-          高信任、可追溯、合规的训练数据流通基础设施。让优质数据被公平定价、安全交易、全程留痕。
+        <h1 className="text-4xl font-semibold tracking-tight">{BRAND.name}</h1>
+        <p className="text-lg font-medium text-emerald-700">{BRAND.sloganEn}</p>
+        <p className="text-lg text-emerald-700">{BRAND.sloganZh}</p>
+        <p className="max-w-2xl leading-relaxed text-neutral-600">
+          {BRAND.tagline}：高信任、可追溯、合规的训练数据流通基础设施。让优质数据被公平定价、安全交易、全程留痕。
         </p>
         <div className="flex gap-3">
           <Link href="/datasets" className="rounded-md bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-neutral-700">

@@ -1,6 +1,11 @@
-# AI 训练数据交易市场平台
+# Verdant Oasis（绿洲）
 
-高信任、可追溯、合规的 AI 训练数据流通基础设施。护城河是三件事：**质量可信 · 来源合规 · 资金安全**（撮合本身门槛极低）。
+> **In the data desert, we build a pure oasis.**
+> **在数据荒漠中，我们筑起一片纯净绿洲。**
+
+**Verdant Oasis（绿洲）** 是一个 AI 训练数据交易市场：高信任、可追溯、合规的 AI 训练数据流通基础设施。护城河是三件事：**质量可信 · 来源合规 · 资金安全**（撮合本身门槛极低）。
+
+> 说明：产品品牌为 **Verdant Oasis（绿洲）**；代码标识符(Go 模块路径 `github.com/lei/ai-data-marketplace`、npm 包名、S3 bucket、env key、仓库名)沿用原 slug 不改名,详见 [`docs/Verdant-Oasis-品牌统一替换确认清单.md`](docs/Verdant-Oasis-品牌统一替换确认清单.md)。
 
 完整设计见 [`docs/`](docs/)，重点读 [`docs/设计与实施文档-v2.0.md`](docs/设计与实施文档-v2.0.md)（架构 + P3 MVP + PR 计划 + 三条合规生死线）。
 
