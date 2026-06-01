@@ -40,10 +40,11 @@ type authFinding struct {
 // findings. It never returns fail — authenticity is advisory and must not bounce
 // a dataset; result is pass (clean) or warn (review/suspect).
 func Authenticity(content []byte, contentType string) Check {
-	if !strings.Contains(contentType, "csv") {
-		return authCheck(100, "clean", 0, 0, nil, map[string]any{"applicable": false, "note": "non-CSV payload — handled by the statistical sidecar / skipped"})
+	delim, ok := tabularDelimiter(contentType)
+	if !ok {
+		return authCheck(100, "clean", 0, 0, nil, map[string]any{"applicable": false, "note": "non-tabular payload — statistical screening skipped"})
 	}
-	cols, nrows, ok := parseNumericColumns(content)
+	cols, nrows, ok := parseNumericColumns(content, delim)
 	if !ok || len(cols) == 0 {
 		return authCheck(100, "clean", 0, 0, nil, map[string]any{"applicable": false, "note": "no screenable numeric columns (too few rows or non-numeric)"})
 	}
@@ -60,7 +61,7 @@ func Authenticity(content []byte, contentType string) Check {
 			findings = append(findings, f)
 		}
 	}
-	if f, ok := duplicateRowsFinding(content, nrows); ok {
+	if f, ok := duplicateRowsFinding(content, nrows, delim); ok {
 		findings = append(findings, f)
 	}
 
@@ -93,10 +94,31 @@ type numColumn struct {
 	values []float64
 }
 
-// parseNumericColumns parses CSV, detects a header heuristically, and returns
-// the columns with enough numeric values to screen.
-func parseNumericColumns(content []byte) ([]numColumn, int, bool) {
+// IsTabular reports whether a content type is a delimited table (CSV/TSV) the
+// authenticity engine and sidecar can screen.
+func IsTabular(contentType string) bool {
+	_, ok := tabularDelimiter(contentType)
+	return ok
+}
+
+// tabularDelimiter maps a content type to its column delimiter. CSV uses comma,
+// TSV uses tab; anything else is non-tabular (screening not applicable).
+func tabularDelimiter(contentType string) (rune, bool) {
+	switch {
+	case strings.Contains(contentType, "tab-separated") || strings.Contains(contentType, "tsv"):
+		return '\t', true
+	case strings.Contains(contentType, "csv"):
+		return ',', true
+	default:
+		return 0, false
+	}
+}
+
+// parseNumericColumns parses a delimited table, detects a header heuristically,
+// and returns the columns with enough numeric values to screen.
+func parseNumericColumns(content []byte, delim rune) ([]numColumn, int, bool) {
 	r := csv.NewReader(bytes.NewReader(content))
+	r.Comma = delim
 	r.FieldsPerRecord = -1 // tolerate ragged rows
 	rows, err := r.ReadAll()
 	if err != nil || len(rows) < authMinColN {
@@ -286,8 +308,9 @@ func sentinelFinding(c numColumn) (authFinding, bool) {
 
 // duplicateRowsFinding flags a high fraction of exact-duplicate rows — a sign of
 // padded, copy-pasted, or templated data.
-func duplicateRowsFinding(content []byte, nrows int) (authFinding, bool) {
+func duplicateRowsFinding(content []byte, nrows int, delim rune) (authFinding, bool) {
 	r := csv.NewReader(bytes.NewReader(content))
+	r.Comma = delim
 	r.FieldsPerRecord = -1
 	rows, err := r.ReadAll()
 	if err != nil || len(rows) < authMinColN {

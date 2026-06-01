@@ -58,3 +58,21 @@ func TestSimHash(t *testing.T) {
 		t.Errorf("different content should have positive hamming distance, got %d", Hamming(a, c))
 	}
 }
+
+func TestFormatJSONLAndTSV(t *testing.T) {
+	goodJSONL := []byte(`{"a":1}` + "\n" + `{"b":2}` + "\n\n" + `{"c":3}`)
+	if c := Format(goodJSONL, "application/x-ndjson"); c.Result != ResultPass {
+		t.Errorf("valid jsonl should pass, got %s (%v)", c.Result, c.Report)
+	}
+	badJSONL := []byte(`{"a":1}` + "\n" + `{bad}`)
+	if c := Format(badJSONL, "application/x-ndjson"); c.Result != ResultFail {
+		t.Errorf("invalid jsonl line should fail, got %s", c.Result)
+	}
+	// A single JSON object must still validate as json (not mis-parsed as jsonl).
+	if c := Format([]byte(`{"a":1}`), "application/json"); c.Result != ResultPass {
+		t.Errorf("single json still passes: %s", c.Result)
+	}
+	if c := Format([]byte("a\tb\n1\t2\n"), "text/tab-separated-values"); c.Result != ResultPass {
+		t.Errorf("valid tsv should pass, got %s (%v)", c.Result, c.Report)
+	}
+}

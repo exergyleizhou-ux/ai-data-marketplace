@@ -1,8 +1,11 @@
 package quality
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 )
@@ -15,6 +18,28 @@ func Format(content []byte, contentType string) Check {
 		return Check{Type: TypeFormat, Result: ResultFail, Report: report}
 	}
 	switch {
+	case strings.Contains(contentType, "ndjson") || strings.Contains(contentType, "jsonl"):
+		// JSON Lines: each non-empty line must be valid JSON (checked before the
+		// generic "json" case, which "ndjson" would otherwise match and fail).
+		sc := bufio.NewScanner(bytes.NewReader(content))
+		sc.Buffer(make([]byte, 0, 64*1024), 32<<20) // tolerate long records
+		n := 0
+		for sc.Scan() {
+			line := bytes.TrimSpace(sc.Bytes())
+			if len(line) == 0 {
+				continue
+			}
+			n++
+			if !json.Valid(line) {
+				report["error"] = fmt.Sprintf("invalid JSON on line %d", n)
+				return Check{Type: TypeFormat, Result: ResultFail, Report: report}
+			}
+		}
+		if err := sc.Err(); err != nil {
+			report["error"] = "read error: " + err.Error()
+			return Check{Type: TypeFormat, Result: ResultFail, Report: report}
+		}
+		report["jsonl_records"] = n
 	case strings.Contains(contentType, "json"):
 		if !json.Valid(content) {
 			report["error"] = "invalid JSON"
@@ -23,6 +48,14 @@ func Format(content []byte, contentType string) Check {
 	case strings.Contains(contentType, "csv"):
 		if _, err := csv.NewReader(strings.NewReader(string(content))).ReadAll(); err != nil {
 			report["error"] = "invalid CSV: " + err.Error()
+			return Check{Type: TypeFormat, Result: ResultFail, Report: report}
+		}
+	case strings.Contains(contentType, "tab-separated") || strings.Contains(contentType, "tsv"):
+		r := csv.NewReader(strings.NewReader(string(content)))
+		r.Comma = '\t'
+		r.FieldsPerRecord = -1
+		if _, err := r.ReadAll(); err != nil {
+			report["error"] = "invalid TSV: " + err.Error()
 			return Check{Type: TypeFormat, Result: ResultFail, Report: report}
 		}
 	}
