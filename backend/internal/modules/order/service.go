@@ -33,6 +33,13 @@ type SettlementTrigger interface {
 	Settle(ctx context.Context, orderID string) error
 }
 
+// RefundTrigger reverses a payment (refund + transfer reversal) when ops
+// resolves a dispute for the buyer (H2). Like SettlementTrigger it is
+// implemented by payment and injected late to avoid an import cycle.
+type RefundTrigger interface {
+	Refund(ctx context.Context, orderID string) error
+}
+
 // Service holds order business logic and drives the status state machine.
 type Service struct {
 	repo     Repository
@@ -40,6 +47,7 @@ type Service struct {
 	datasets DatasetReader
 	audit    audit.Recorder
 	settle   SettlementTrigger
+	refund   RefundTrigger
 }
 
 func NewService(repo Repository, identity IdentityChecker, datasets DatasetReader, rec audit.Recorder) *Service {
@@ -52,6 +60,9 @@ func NewService(repo Repository, identity IdentityChecker, datasets DatasetReade
 // SetSettlementTrigger wires the settlement hook after construction (the
 // payment service needs this order service, so the dependency is set late).
 func (s *Service) SetSettlementTrigger(t SettlementTrigger) { s.settle = t }
+
+// SetRefundTrigger wires the refund hook (payment) after construction (H2).
+func (s *Service) SetRefundTrigger(t RefundTrigger) { s.refund = t }
 
 // GetSystem returns an order without a party check — for internal callers
 // (payment/settlement) acting as the system, not an end user.
@@ -236,8 +247,10 @@ func (s *Service) ListReviews(ctx context.Context, datasetID string, limit, offs
 // ResolveDispute is the ops decision on a disputed order: refund (-> refunded)
 // or release (-> confirmed, then auto-settle).
 //
-// NOTE: a real refund / 分账回退 must call the licensed provider (walled,
-// Spike-2). Here we only drive the order/dispute state.
+// For a refund the real money movement (provider refund + 分账回退 transfer
+// reversal) runs FIRST via the refund trigger; only if it succeeds do we flip
+// the dispute/order state, so a provider failure leaves the dispute open for a
+// retry rather than marking refunded with funds still moved.
 func (s *Service) ResolveDispute(ctx context.Context, opsID, orderID string, refund bool, note string) (Order, error) {
 	o, err := s.repo.GetByID(ctx, orderID)
 	if err != nil {
@@ -247,6 +260,11 @@ func (s *Service) ResolveDispute(ctx context.Context, opsID, orderID string, ref
 		return Order{}, ErrNotDisputed
 	}
 	if refund {
+		if s.refund != nil {
+			if err := s.refund.Refund(ctx, orderID); err != nil {
+				return Order{}, fmt.Errorf("refund: %w", err)
+			}
+		}
 		if err := s.repo.ResolveDispute(ctx, orderID, "resolved_refund", note, opsID); err != nil {
 			return Order{}, err
 		}

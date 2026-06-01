@@ -24,11 +24,12 @@ const (
 )
 
 var (
-	ErrOrderNotPayable  = errors.New("order is not in a payable state")
-	ErrForbidden        = errors.New("not the buyer of this order")
-	ErrInvalidSignature = errors.New("invalid callback signature")
-	ErrNotConfirmed     = errors.New("order is not confirmed; cannot settle")
-	ErrAlreadyHandled   = errors.New("callback already handled")
+	ErrOrderNotPayable   = errors.New("order is not in a payable state")
+	ErrForbidden         = errors.New("not the buyer of this order")
+	ErrInvalidSignature  = errors.New("invalid callback signature")
+	ErrNotConfirmed      = errors.New("order is not confirmed; cannot settle")
+	ErrAlreadyHandled    = errors.New("callback already handled")
+	ErrRefundUnsupported = errors.New("payment provider does not support refunds")
 )
 
 // PayInfo is returned to the buyer after creating a payment.
