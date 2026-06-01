@@ -26,6 +26,10 @@ type Repository interface {
 	// already exists (unique order_id / idempotency_key) — the double-split guard.
 	CreateSettlement(ctx context.Context, orderID, idempotencyKey string, platformFeeCents, sellerAmountCents int64) (created bool, err error)
 	MarkSettlementSuccess(ctx context.Context, orderID, splitTxnID string) error
+	// SettlementState returns the settlement row's status for an order, with
+	// exists=false if there is none yet. Lets the (retriable) settle path be
+	// idempotent regardless of the order's current status.
+	SettlementState(ctx context.Context, orderID string) (status string, exists bool, err error)
 	// RefundContext returns the data needed to reverse a payment (H2): the
 	// payment's channel txn id, and the settlement's split txn id if it already
 	// settled successfully (else "" — funds still escrowed, nothing to reverse).
@@ -118,6 +122,18 @@ func (r *pgRepo) MarkSettlementSuccess(ctx context.Context, orderID, splitTxnID 
 		return fmt.Errorf("mark settlement success: %w", err)
 	}
 	return nil
+}
+
+func (r *pgRepo) SettlementState(ctx context.Context, orderID string) (string, bool, error) {
+	var status string
+	err := r.pool.QueryRow(ctx, `SELECT status FROM settlements WHERE order_id=$1`, orderID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("settlement state: %w", err)
+	}
+	return status, true, nil
 }
 
 func (r *pgRepo) RefundContext(ctx context.Context, orderID string) (string, string, error) {

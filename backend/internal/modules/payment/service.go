@@ -3,6 +3,9 @@ package payment
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 )
@@ -34,7 +37,25 @@ type Service struct {
 	split    SplitProvider
 	refund   RefundProvider // optional; set when the provider supports refunds (H2)
 	audit    audit.Recorder
+
+	// Settlement outbox (H3): durable retry of failed settlements. nil unless
+	// StartSettlementOutbox was called (server with a DB).
+	outbox       OutboxRepository
+	lock         Locker
+	outboxStop   chan struct{}
+	outboxWG     sync.WaitGroup
+	outboxTicker time.Duration
 }
+
+// Settlement-outbox tuning. Kept small/conservative for the MVP; a real
+// deployment would read these from config.
+const (
+	outboxBatch         = 50
+	maxSettleAttempts   = 6
+	settleBackoffBase   = 30 * time.Second
+	settleBackoffCap    = 30 * time.Minute
+	defaultOutboxTicker = 15 * time.Second
+)
 
 func NewService(repo Repository, orders OrderGateway, provider PaymentProvider, split SplitProvider, rec audit.Recorder) *Service {
 	if rec == nil {
@@ -148,26 +169,52 @@ func (s *Service) Refund(ctx context.Context, orderID string) error {
 	return nil
 }
 
-// Settle executes split-settlement for a confirmed order: seller share +
-// platform commission move out of escrow at the provider, then the order
-// becomes settled. Idempotent via the unique settlement row (the double-split
-// guard, docs §6.6). NOTE: production should additionally take a distributed
-// lock and use an outbox for the provider call + retries.
+// Settle is the settlement entrypoint, called when an order is confirmed. With
+// the outbox enabled (H3) it first records a durable job, then attempts an
+// inline settlement; if the inline attempt fails the durable row guarantees a
+// background worker retries it. Without the outbox it just settles once
+// (previous behaviour). Either way the work is idempotent.
 func (s *Service) Settle(ctx context.Context, orderID string) error {
+	if s.outbox != nil {
+		if err := s.outbox.Enqueue(ctx, orderID); err != nil {
+			return fmt.Errorf("enqueue settlement: %w", err)
+		}
+	}
+	return s.settleOnce(ctx, orderID)
+}
+
+// settleOnce performs (or resumes) one split-settlement: seller share +
+// platform commission move out of escrow at the provider, then the order
+// becomes settled. It is idempotent and retriable:
+//   - if the settlement already succeeded/reverted, it's a no-op;
+//   - if a pending settlement row exists (a prior attempt created it but the
+//     provider call didn't finish), it re-executes the split — safe because the
+//     provider call carries an idempotency key (no double transfer);
+//   - the settlements unique key remains the double-split guard (docs §6.6).
+func (s *Service) settleOnce(ctx context.Context, orderID string) error {
+	status, exists, err := s.repo.SettlementState(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	if exists && (status == SettleSuccess || status == SettleReverted) {
+		return nil // already settled, or clawed back by a refund — done
+	}
+
 	o, err := s.orders.GetSystem(ctx, orderID)
 	if err != nil {
 		return err
 	}
-	if o.Status != "confirmed" {
-		return ErrNotConfirmed
+	if !exists {
+		if o.Status != "confirmed" {
+			return ErrNotConfirmed
+		}
+		if _, err := s.repo.CreateSettlement(ctx, orderID, "settle:"+orderID, o.PlatformFeeCents, o.SellerAmountCents); err != nil {
+			return err
+		}
+		// created==false here means a concurrent attempt inserted it first; we
+		// still fall through to execute the now-pending row (idempotent split).
 	}
-	created, err := s.repo.CreateSettlement(ctx, orderID, "settle:"+orderID, o.PlatformFeeCents, o.SellerAmountCents)
-	if err != nil {
-		return err
-	}
-	if !created {
-		return nil // already settling/settled — idempotent
-	}
+
 	splitTxnID, err := s.split.ExecuteSplit(ctx, orderID, o.SellerID, o.SellerAmountCents, o.PlatformFeeCents)
 	if err != nil {
 		return fmt.Errorf("execute split: %w", err)
@@ -181,4 +228,80 @@ func (s *Service) Settle(ctx context.Context, orderID string) error {
 	s.audit.Record(ctx, audit.Entry{Action: "settlement.success", ResourceType: "order", ResourceID: orderID,
 		Detail: map[string]any{"split_txn_id": splitTxnID, "platform_fee_cents": o.PlatformFeeCents, "seller_amount_cents": o.SellerAmountCents}})
 	return nil
+}
+
+// StartSettlementOutbox enables durable settlement (H3): Settle then records a
+// job, and a background worker drains due jobs under a distributed lock,
+// retrying with backoff. Call Close on shutdown to stop the worker. Safe to
+// call once; a second call is ignored.
+func (s *Service) StartSettlementOutbox(repo OutboxRepository, lock Locker) {
+	if s.outbox != nil || repo == nil {
+		return
+	}
+	s.outbox = repo
+	s.lock = lock
+	s.outboxStop = make(chan struct{})
+	if s.outboxTicker == 0 {
+		s.outboxTicker = defaultOutboxTicker
+	}
+	s.outboxWG.Add(1)
+	go s.runOutboxWorker()
+}
+
+// Close stops the settlement-outbox worker (no-op if it was never started).
+func (s *Service) Close() {
+	if s.outboxStop != nil {
+		close(s.outboxStop)
+		s.outboxWG.Wait()
+		s.outboxStop = nil
+	}
+}
+
+func (s *Service) runOutboxWorker() {
+	defer s.outboxWG.Done()
+	ticker := time.NewTicker(s.outboxTicker)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.outboxStop:
+			return
+		case <-ticker.C:
+			s.drainSettlementOutbox(context.Background())
+		}
+	}
+}
+
+// drainSettlementOutbox processes one batch of due settlement jobs. Each job is
+// handled under an advisory lock so concurrent workers/instances don't
+// double-process the same order.
+func (s *Service) drainSettlementOutbox(ctx context.Context) {
+	orders, err := s.outbox.DueOrders(ctx, outboxBatch)
+	if err != nil {
+		slog.Error("settlement outbox: list due failed", "err", err)
+		return
+	}
+	for _, orderID := range orders {
+		s.settleOutboxOne(ctx, orderID)
+	}
+}
+
+func (s *Service) settleOutboxOne(ctx context.Context, orderID string) {
+	var settleErr error
+	locked, lockErr := s.lock.WithLock(ctx, "settle:"+orderID, func(ctx context.Context) error {
+		settleErr = s.settleOnce(ctx, orderID)
+		if settleErr != nil {
+			return s.outbox.MarkRetry(ctx, orderID, settleErr.Error(), settleBackoffBase, settleBackoffCap, maxSettleAttempts)
+		}
+		return s.outbox.MarkDone(ctx, orderID)
+	})
+	if lockErr != nil {
+		slog.Error("settlement outbox: lock/update failed", "order_id", orderID, "err", lockErr)
+		return
+	}
+	if !locked {
+		return // another worker holds it; try again next tick
+	}
+	if settleErr != nil {
+		slog.Warn("settlement outbox: retry scheduled", "order_id", orderID, "err", settleErr)
+	}
 }

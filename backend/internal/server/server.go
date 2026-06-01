@@ -233,6 +233,9 @@ func (s *Server) routes() {
 			provider, split = mock, mock
 		}
 		paySvc := payment.NewService(payment.NewRepository(s.db), orderPaymentAdapter{o: orderSvc}, provider, split, rec)
+		// H3: durable settlement — outbox + PG advisory lock + retry worker.
+		paySvc.StartSettlementOutbox(payment.NewOutboxRepository(s.db), payment.NewPGLocker(s.db))
+		s.closers = append(s.closers, paySvc.Close)
 		payment.Register(api, paySvc, authMW, s.cfg.Env != "production")
 		orderSvc.SetSettlementTrigger(paySvc) // confirm-delivery -> auto settle
 		orderSvc.SetRefundTrigger(paySvc)     // dispute refund -> provider refund + reversal (H2)

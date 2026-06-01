@@ -7,16 +7,21 @@ import (
 )
 
 type fakeRepo struct {
-	paid       map[string]bool // channelTxn -> already paid
-	txnToOrder map[string]string
-	settled    map[string]bool   // orderID -> settlement exists
-	splitTxn   map[string]string // orderID -> split txn id (settled successfully)
-	refunded   map[string]bool   // orderID -> refund recorded
+	paid         map[string]bool // channelTxn -> already paid
+	txnToOrder   map[string]string
+	settleStatus map[string]string // orderID -> settlement status (pending/success/reverted)
+	splitTxn     map[string]string // orderID -> split txn id (settled successfully)
+	refunded     map[string]bool   // orderID -> refund recorded
 }
 
 func newFakeRepo() *fakeRepo {
-	return &fakeRepo{paid: map[string]bool{}, txnToOrder: map[string]string{}, settled: map[string]bool{},
+	return &fakeRepo{paid: map[string]bool{}, txnToOrder: map[string]string{}, settleStatus: map[string]string{},
 		splitTxn: map[string]string{}, refunded: map[string]bool{}}
+}
+
+func (r *fakeRepo) SettlementState(_ context.Context, orderID string) (string, bool, error) {
+	st, ok := r.settleStatus[orderID]
+	return st, ok, nil
 }
 
 func (r *fakeRepo) RefundContext(_ context.Context, orderID string) (string, string, error) {
@@ -53,13 +58,14 @@ func (r *fakeRepo) MarkPaidByChannelTxn(_ context.Context, channelTxnID string) 
 	return orderID, true, nil
 }
 func (r *fakeRepo) CreateSettlement(_ context.Context, orderID, _ string, _, _ int64) (bool, error) {
-	if r.settled[orderID] {
+	if _, ok := r.settleStatus[orderID]; ok {
 		return false, nil
 	}
-	r.settled[orderID] = true
+	r.settleStatus[orderID] = "pending"
 	return true, nil
 }
 func (r *fakeRepo) MarkSettlementSuccess(_ context.Context, orderID, splitTxnID string) error {
+	r.settleStatus[orderID] = "success"
 	r.splitTxn[orderID] = splitTxnID
 	return nil
 }

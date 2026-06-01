@@ -173,8 +173,14 @@ func (s *Service) ConfirmDelivery(ctx context.Context, buyerID, id string) (Orde
 	return s.repo.GetByID(ctx, id)
 }
 
-// MarkSettled: confirmed -> settled (called by the settlement module).
+// MarkSettled: confirmed -> settled (called by the settlement module). It is
+// idempotent: if the order is already settled (a retried settlement re-running
+// after the first one flipped it) it returns the order without error, so the
+// outbox retry path (H3) doesn't fail on an already-settled order.
 func (s *Service) MarkSettled(ctx context.Context, id string) (Order, error) {
+	if o, err := s.repo.GetByID(ctx, id); err == nil && o.Status == StatusSettled {
+		return o, nil
+	}
 	return s.transition(ctx, "", id, StatusConfirmed, StatusSettled, false)
 }
 
