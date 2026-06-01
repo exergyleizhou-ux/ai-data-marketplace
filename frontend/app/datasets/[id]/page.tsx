@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, yuan, type Dataset, type Preview, type Review } from "@/lib/api";
+import { api, yuan, type Dataset, type Preview, type QualityCheck, type Review } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Alert, Badge, Button, Card, Empty, Spinner } from "@/components/ui";
+import { QualityReport } from "@/components/QualityReport";
 
 export default function DatasetDetailPage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -14,6 +15,7 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
   const [reviews, setReviews] = useState<Review[]>([]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewErr, setPreviewErr] = useState("");
+  const [quality, setQuality] = useState<QualityCheck[] | null>(null);
   const [err, setErr] = useState("");
   const [buying, setBuying] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -21,6 +23,7 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
   useEffect(() => {
     api.getDataset(id).then(setDs).catch(() => setNotFound(true));
     api.datasetReviews(id).then((r) => setReviews(r.items)).catch(() => {});
+    api.datasetQuality(id).then((r) => setQuality(r.checks)).catch(() => setQuality([]));
   }, [id]);
 
   async function loadPreview() {
@@ -103,6 +106,13 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
               </p>
             </>
           )}
+        </Card>
+
+        <Card>
+          <h2 className="mb-3 font-semibold">
+            数据质量 <span className="font-normal text-neutral-400">/ Data Quality</span>
+          </h2>
+          {quality === null ? <Spinner /> : <QualityReport checks={quality} />}
         </Card>
 
         <Card>
