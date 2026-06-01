@@ -1,10 +1,11 @@
 // Current legal-document versions the UI asks users to accept. Bump a version
 // when its text materially changes; the backend records consent per (doc,
-// version) so an update can trigger re-consent. Values are placeholders until
-// counsel finalizes the texts (see docs/legal/).
+// version) so an update can trigger re-consent. Texts finalized per counsel's
+// 2026-06-01 review (see docs/legal/); a few business slots remain (custodian
+// name, ICP/EDI licensing) but the agreement text is in effect.
 export const LEGAL_VERSIONS = {
-  terms: "v0.1-draft",
-  privacy: "v0.1-draft",
+  terms: "v1.0-2026-06-01",
+  privacy: "v1.0-2026-06-01",
 } as const;
 
 export type AgreementInput = { doc: string; version: string };
