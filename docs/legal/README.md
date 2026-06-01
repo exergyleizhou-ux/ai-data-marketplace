@@ -20,10 +20,10 @@
 
 | 位置 | 文件 | 现状 |
 |------|------|------|
-| 注册同意勾选(《用户服务协议》《隐私政策》) | `frontend/app/register` | ⬜ 需加"我已阅读并同意"勾选 + 链接,后端记录同意时间/版本 |
+| 注册同意勾选(《用户服务协议》《隐私政策》) | `frontend/app/register/page.tsx` | ✅ 勾选框已就位(勾选才能提交)+ 链接;注册时把同意版本传后端记录 |
 | 卖家上传**来源合法性电子签** | `frontend/app/sell/page.tsx` | ✅ 已有声明签署钩子 → 关联《数据交易许可协议》卖家声明部分 |
 | 买家下载/交付**许可签约** | `frontend/app/orders/[id]/page.tsx` | ✅ 已有许可签约钩子 → 关联《数据交易许可协议》买家许可部分 |
-| 全文展示页 `/terms`、`/privacy` | `frontend/app/` | ⬜ 需加静态页展示全文,页脚加链接 |
-| 同意版本留痕 | 后端 | ⬜ 建议加 `user_agreements(user_id, doc, version, agreed_at)`,便于条款更新后重新同意取证 |
+| 全文展示页 `/terms`、`/privacy` | `frontend/app/terms`、`frontend/app/privacy` | ✅ 已建(当前"草案占位"banner;定稿后回填正文)+ 页脚链接 |
+| 同意版本留痕 | 后端 | ✅ `user_agreements` 表(migration 000006)+ `GET/POST /users/me/agreements`,注册即记录,支持版本变更后重新同意取证 |
 
-> 落点的**代码实现**属产品工作,等律师文本定稿(尤其版本号、生效日期、关键条款措辞)后再做,避免返工。
+> 落点骨架已全部就位。**待法务定稿后**只需:① 把 `/terms` `/privacy` 占位正文替换为定稿文本;② 在 `frontend/lib/legal.ts` 把 `LEGAL_VERSIONS` 升到正式版本号(触发用户按新版本重新同意)。
