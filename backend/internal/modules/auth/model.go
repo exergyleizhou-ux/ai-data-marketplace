@@ -28,6 +28,15 @@ type KYCRecord struct {
 	CreatedAt    string   `json:"created_at,omitempty"`
 }
 
+// Agreement records a user accepting a legal document at a version. doc is a
+// stable key ("terms" / "privacy" / "data_license"); version is the accepted
+// document version. AgreedAt is populated by the store on read.
+type Agreement struct {
+	Doc      string `json:"doc"`
+	Version  string `json:"version"`
+	AgreedAt string `json:"agreed_at,omitempty"`
+}
+
 // Sentinel errors returned by the repository and service layers. Handlers map
 // these onto httpx error codes; lower layers stay HTTP-agnostic.
 var (

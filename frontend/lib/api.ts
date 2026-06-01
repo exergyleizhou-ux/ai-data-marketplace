@@ -198,8 +198,17 @@ function tryRefresh(): Promise<boolean> {
 // --- typed API surface ---
 export const api = {
   // auth
-  register: (account: string, account_type: string, password: string) =>
-    request<AuthResult>("/auth/register", { body: { account, account_type, password }, auth: false }),
+  register: (
+    account: string,
+    account_type: string,
+    password: string,
+    agreements?: { doc: string; version: string }[],
+  ) =>
+    request<AuthResult>("/auth/register", { body: { account, account_type, password, agreements }, auth: false }),
+  listAgreements: () =>
+    request<{ items: { doc: string; version: string; agreed_at: string }[] }>("/users/me/agreements"),
+  recordAgreements: (agreements: { doc: string; version: string }[]) =>
+    request<{ recorded: number }>("/users/me/agreements", { body: { agreements } }),
   login: (account: string, password: string) =>
     request<AuthResult>("/auth/login", { body: { account, password }, auth: false }),
   me: () => request<User>("/users/me"),

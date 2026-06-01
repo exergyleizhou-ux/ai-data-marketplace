@@ -13,8 +13,22 @@ type fakeRepo struct {
 	byID      map[string]User
 	kyc       map[string]KYCRecord // by kyc id
 	payouts   map[string]string    // "userID|channel" -> account_ref
+	agrees    map[string][]Agreement
 	seq       int
 	kycSeq    int
+}
+
+func (r *fakeRepo) RecordAgreements(_ context.Context, userID string, ags []Agreement) error {
+	if r.agrees == nil {
+		r.agrees = map[string][]Agreement{}
+	}
+	// prepend (most-recent-first), mirroring the SQL ORDER BY agreed_at DESC.
+	r.agrees[userID] = append(append([]Agreement{}, ags...), r.agrees[userID]...)
+	return nil
+}
+
+func (r *fakeRepo) ListAgreements(_ context.Context, userID string) ([]Agreement, error) {
+	return r.agrees[userID], nil
 }
 
 func (r *fakeRepo) GetPayoutAccountRef(_ context.Context, userID, channel string) (string, error) {
@@ -230,6 +244,38 @@ func TestRefreshFlow(t *testing.T) {
 	// An access token must NOT be accepted as a refresh token.
 	if _, err := svc.Refresh(ctx, res.Tokens.AccessToken); !errors.Is(err, ErrInvalidToken) {
 		t.Fatalf("want ErrInvalidToken when replaying access token, got %v", err)
+	}
+}
+
+func TestRegisterRecordsAgreements(t *testing.T) {
+	ctx := context.Background()
+	svc, repo := newTestService()
+
+	_, err := svc.Register(ctx, "dave@example.com", "email", "password123",
+		Agreement{Doc: "terms", Version: "v1.0"},
+		Agreement{Doc: "privacy", Version: "v1.0"})
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	var uid string
+	for id := range repo.byID {
+		uid = id
+	}
+	got, err := svc.ListAgreements(ctx, uid)
+	if err != nil {
+		t.Fatalf("list agreements: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("agreements recorded = %d, want 2", len(got))
+	}
+
+	// Re-consent appends.
+	if err := svc.RecordAgreements(ctx, uid, []Agreement{{Doc: "terms", Version: "v2.0"}}); err != nil {
+		t.Fatalf("record agreements: %v", err)
+	}
+	got, _ = svc.ListAgreements(ctx, uid)
+	if len(got) != 3 || got[0].Version != "v2.0" {
+		t.Fatalf("after re-consent = %+v, want 3 with newest v2.0 first", got)
 	}
 }
 

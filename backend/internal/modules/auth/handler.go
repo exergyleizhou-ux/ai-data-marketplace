@@ -11,10 +11,27 @@ import (
 
 type handler struct{ svc *Service }
 
+type agreementReq struct {
+	Doc     string `json:"doc"`
+	Version string `json:"version"`
+}
+
+func toAgreements(reqs []agreementReq) []Agreement {
+	out := make([]Agreement, 0, len(reqs))
+	for _, a := range reqs {
+		if a.Doc == "" || a.Version == "" {
+			continue
+		}
+		out = append(out, Agreement{Doc: a.Doc, Version: a.Version})
+	}
+	return out
+}
+
 type registerRequest struct {
-	Account     string `json:"account"`
-	AccountType string `json:"account_type"`
-	Password    string `json:"password"`
+	Account     string         `json:"account"`
+	AccountType string         `json:"account_type"`
+	Password    string         `json:"password"`
+	Agreements  []agreementReq `json:"agreements"`
 }
 
 type loginRequest struct {
@@ -32,12 +49,46 @@ func (h *handler) register(c *gin.Context) {
 		httpx.Fail(c, httpx.ErrInvalidParam)
 		return
 	}
-	res, err := h.svc.Register(c.Request.Context(), req.Account, req.AccountType, req.Password)
+	res, err := h.svc.Register(c.Request.Context(), req.Account, req.AccountType, req.Password, toAgreements(req.Agreements)...)
 	if err != nil {
 		fail(c, err)
 		return
 	}
 	httpx.OK(c, res)
+}
+
+type agreementsRequest struct {
+	Agreements []agreementReq `json:"agreements"`
+}
+
+func (h *handler) listAgreements(c *gin.Context) {
+	ags, err := h.svc.ListAgreements(c.Request.Context(), httpx.UserID(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	if ags == nil {
+		ags = []Agreement{}
+	}
+	httpx.OK(c, gin.H{"items": ags})
+}
+
+func (h *handler) recordAgreements(c *gin.Context) {
+	var req agreementsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	ags := toAgreements(req.Agreements)
+	if len(ags) == 0 {
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("no valid agreements"))
+		return
+	}
+	if err := h.svc.RecordAgreements(c.Request.Context(), httpx.UserID(c), ags); err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"recorded": len(ags)})
 }
 
 func (h *handler) login(c *gin.Context) {

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { Nav } from "@/components/Nav";
@@ -15,6 +16,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AuthProvider>
           <Nav />
           <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+          <footer className="mx-auto max-w-6xl px-4 py-8 text-sm text-neutral-500">
+            <Link href="/terms" className="hover:underline">
+              用户服务协议
+            </Link>
+            <span className="mx-2">·</span>
+            <Link href="/privacy" className="hover:underline">
+              隐私政策
+            </Link>
+          </footer>
         </AuthProvider>
       </body>
     </html>

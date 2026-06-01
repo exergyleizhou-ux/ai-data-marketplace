@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
+import { SIGNUP_AGREEMENTS } from "@/lib/legal";
 import { Alert, Button, Card, Field, Input, Select } from "@/components/ui";
 
 export default function RegisterPage() {
@@ -12,15 +13,20 @@ export default function RegisterPage() {
   const [account, setAccount] = useState("");
   const [accountType, setAccountType] = useState("email");
   const [password, setPassword] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!agreed) {
+      setErr("请先阅读并同意《用户服务协议》和《隐私政策》");
+      return;
+    }
     setErr("");
     setBusy(true);
     try {
-      await register(account, accountType, password);
+      await register(account, accountType, password, SIGNUP_AGREEMENTS);
       router.push("/account");
     } catch (e) {
       setErr((e as Error).message || "注册失败");
@@ -47,7 +53,25 @@ export default function RegisterPage() {
           <Field label="密码" hint="至少 8 位">
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
           </Field>
-          <Button type="submit" disabled={busy} className="w-full">
+          <label className="flex items-start gap-2 text-sm text-neutral-600">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              我已阅读并同意{" "}
+              <Link href="/terms" target="_blank" className="font-medium text-neutral-900 hover:underline">
+                《用户服务协议》
+              </Link>{" "}
+              和{" "}
+              <Link href="/privacy" target="_blank" className="font-medium text-neutral-900 hover:underline">
+                《隐私政策》
+              </Link>
+            </span>
+          </label>
+          <Button type="submit" disabled={busy || !agreed} className="w-full">
             {busy ? "注册中…" : "注册"}
           </Button>
         </form>
