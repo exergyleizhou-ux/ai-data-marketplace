@@ -133,3 +133,28 @@ func TestAuthenticityNeverFails(t *testing.T) {
 		t.Errorf("authenticity must never fail/bounce a dataset, got %s", c.Result)
 	}
 }
+
+func TestAuthenticityTSV(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("idx\tyield\n")
+	for i := 0; i < 200; i++ {
+		fmt.Fprintf(&b, "%d\t%d\n", i, i*5) // yield ends in 0/5 (fabricated)
+	}
+	c := Authenticity([]byte(b.String()), "text/tab-separated-values")
+	if applicable, _ := c.Report["applicable"].(bool); !applicable {
+		t.Fatalf("TSV should be screenable (delimiter used), got %v", c.Report)
+	}
+	if c.Result != ResultWarn || c.Report["band"] == "clean" {
+		t.Errorf("fabricated TSV should warn/non-clean, got %s %v", c.Result, c.Report)
+	}
+	if !hasSignificant(c, "terminal_digit_uniformity") {
+		t.Errorf("expected terminal_digit finding in TSV, got %+v", findingsOf(c))
+	}
+}
+
+func TestAuthenticityJSONLNotTabular(t *testing.T) {
+	c := Authenticity([]byte(`{"a":1}`+"\n"+`{"a":2}`), "application/x-ndjson")
+	if applicable, _ := c.Report["applicable"].(bool); applicable {
+		t.Errorf("JSONL is not tabular — screening should be not-applicable, got %v", c.Report)
+	}
+}
