@@ -91,12 +91,20 @@ def paperguard_version() -> str:
 
 def screen_file(path: Path, suffix: str = ".csv") -> dict:
     """Run the numeric table detectors over a tabular file and return the
-    sidecar contract dict. Lazily imports PaperGuard."""
+    sidecar contract dict. CSV/TSV/XLSX go through PaperGuard's own loader;
+    Parquet is read with pandas (PaperGuard's loader doesn't handle it) and fed
+    to the same detectors. Lazily imports PaperGuard."""
     from paperguard.core.registry import DetectorRegistry
-    from paperguard.extractor.excel import parse_data_file
 
     registry = DetectorRegistry().register_default(load_plugins=False)
-    sheets = dict(parse_data_file(Path(path)))
+    if suffix == ".parquet":
+        import pandas as pd
+
+        sheets = {"data": pd.read_parquet(Path(path))}
+    else:
+        from paperguard.extractor.excel import parse_data_file
+
+        sheets = dict(parse_data_file(Path(path)))
 
     findings: list[dict] = []
     errors: list[dict] = []

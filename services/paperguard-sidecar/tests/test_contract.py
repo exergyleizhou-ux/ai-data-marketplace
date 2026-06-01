@@ -70,3 +70,30 @@ def test_fabricated_data_is_flagged():
     detectors = {f["detector"] for f in body["findings"] if f["significant"]}
     # A1 = terminal-digit distribution, A7 = Geng last-digit 0/5 preference.
     assert detectors & {"A1", "A7"}, body["findings"]
+
+
+def test_screen_parquet():
+    """Parquet path: read via pandas/pyarrow, run the same detectors. A fabricated
+    last-digit column must still be flagged."""
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("pyarrow")
+    import os
+    import tempfile
+
+    df = pd.DataFrame({"yield": [i * 5 for i in range(300)]})
+    with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as f:
+        df.to_parquet(f.name)
+        path = f.name
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    finally:
+        os.unlink(path)
+
+    r = client.post(
+        "/v1/screen", content=data, headers={"Content-Type": "application/vnd.apache.parquet"}
+    )
+    assert r.status_code == 200, r.text
+    s = r.json()["summary"]
+    assert s["rows"] == 300
+    assert s["band"] in ("review", "suspect"), s

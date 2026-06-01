@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir \
-        "fastapi>=0.110" "uvicorn[standard]>=0.29" "paperguard==2.17.0" "pandas>=2.0"
+        "fastapi>=0.110" "uvicorn[standard]>=0.29" "paperguard==2.17.0" "pandas>=2.0" "pyarrow>=14"
 
 COPY screening.py app.py ./
 

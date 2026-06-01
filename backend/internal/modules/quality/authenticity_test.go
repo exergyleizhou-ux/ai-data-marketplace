@@ -158,3 +158,16 @@ func TestAuthenticityJSONLNotTabular(t *testing.T) {
 		t.Errorf("JSONL is not tabular — screening should be not-applicable, got %v", c.Report)
 	}
 }
+
+func TestAuthenticityParquetDefersToSidecar(t *testing.T) {
+	// Parquet can't be read in-process; Go reports not-applicable with a note
+	// that the sidecar handles it (the worker overlays the sidecar result).
+	blob := append(append([]byte("PAR1"), []byte{0x00, 0x01}...), []byte("PAR1")...)
+	c := Authenticity(blob, "application/vnd.apache.parquet")
+	if applicable, _ := c.Report["applicable"].(bool); applicable {
+		t.Errorf("parquet should be not-applicable in the Go baseline, got %v", c.Report)
+	}
+	if note, _ := c.Report["note"].(string); !strings.Contains(note, "sidecar") {
+		t.Errorf("note should mention the sidecar, got %q", note)
+	}
+}

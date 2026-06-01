@@ -158,7 +158,7 @@ func (s *Service) processQuality(ctx context.Context, job qualityJob) error {
 	// score is always produced and the sidecar is never on the critical path.
 	ct := contentTypeOf(key)
 	authChk := quality.Authenticity(content, ct)
-	if s.screener != nil && quality.IsTabular(ct) {
+	if s.screener != nil && quality.IsScreenable(ct) {
 		if sc, err := s.screener.Screen(ctx, content, ct); err == nil {
 			authChk = sc
 		} else {
@@ -249,6 +249,8 @@ func contentTypeOf(key string) string {
 		return "application/x-ndjson" // JSON Lines — not a single JSON document
 	case ".tsv":
 		return "text/tab-separated-values"
+	case ".parquet":
+		return "application/vnd.apache.parquet"
 	}
 	if ct := mime.TypeByExtension(filepath.Ext(key)); ct != "" {
 		return ct
