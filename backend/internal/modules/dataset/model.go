@@ -61,6 +61,13 @@ func (d *Datasheet) isEmpty() bool {
 		d.EthicalConsiderations == "" && d.UpdatePolicy == "" && len(d.Languages) == 0
 }
 
+// VersionInfo is one entry in a dataset's version history (buyer-facing).
+type VersionInfo struct {
+	VersionNo int    `json:"version_no"`
+	Changelog string `json:"changelog,omitempty"`
+	CreatedAt string `json:"created_at"`
+}
+
 // VersionMeta is the current version's file + version info, used to build the
 // Croissant (machine-readable) metadata export.
 type VersionMeta struct {

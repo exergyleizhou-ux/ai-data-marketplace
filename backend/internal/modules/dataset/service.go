@@ -198,6 +198,21 @@ func (s *Service) Get(ctx context.Context, id string) (Dataset, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
+// Versions returns a dataset's version history (newest first).
+func (s *Service) Versions(ctx context.Context, id string) ([]VersionInfo, error) {
+	if _, err := s.repo.GetByID(ctx, id); err != nil {
+		return nil, err
+	}
+	vs, err := s.repo.ListVersions(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if vs == nil {
+		vs = []VersionInfo{}
+	}
+	return vs, nil
+}
+
 // QualityReport returns the buyer-facing quality checks for a dataset's current
 // version. Read-only and transparency-oriented: the persisted reports carry only
 // counts/scores/metadata (no raw personal data), so they are safe to surface.

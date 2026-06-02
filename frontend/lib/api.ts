@@ -107,11 +107,13 @@ export type Preview = {
 };
 
 export type QualityCheck = {
-  type: "format" | "stats" | "dedup" | "pii" | "pii_redaction" | "authenticity" | string;
+  type: "format" | "stats" | "dedup" | "pii" | "pii_redaction" | "authenticity" | "schema" | string;
   result: "pass" | "warn" | "fail";
   report: Record<string, unknown>;
   created_at?: string;
 };
+
+export type VersionInfo = { version_no: number; changelog?: string; created_at: string };
 
 export class ApiError extends Error {
   code: number;
@@ -249,6 +251,8 @@ export const api = {
   datasetReviews: (id: string) => request<{ items: Review[] }>(`/datasets/${id}/reviews`, { auth: false }),
   datasetQuality: (id: string) =>
     request<{ checks: QualityCheck[] }>(`/datasets/${id}/quality`, { auth: false }),
+  datasetVersions: (id: string) =>
+    request<{ versions: VersionInfo[] }>(`/datasets/${id}/versions`, { auth: false }),
   // Absolute URL to the dataset's MLCommons Croissant JSON-LD (machine-readable).
   croissantUrl: (id: string) => `${BASE}/datasets/${id}/croissant`,
   myDatasets: () => request<{ items: Dataset[] }>("/users/me/datasets"),

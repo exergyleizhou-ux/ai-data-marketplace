@@ -50,6 +50,7 @@ export default function DatasetsPage() {
         </Select>
         <Select value={sort} onChange={(e) => setSort(e.target.value)} className="w-36">
           <option value="newest">最新</option>
+          <option value="quality">质量优先</option>
           <option value="price_asc">价格从低</option>
           <option value="price_desc">价格从高</option>
         </Select>

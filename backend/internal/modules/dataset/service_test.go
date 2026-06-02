@@ -98,6 +98,12 @@ func (r *fakeRepo) SetDatasheet(_ context.Context, id string, ds *Datasheet) (Da
 	r.items[id] = d
 	return d, nil
 }
+func (r *fakeRepo) ListVersions(_ context.Context, datasetID string) ([]VersionInfo, error) {
+	if _, ok := r.items[datasetID]; !ok {
+		return nil, ErrNotFound
+	}
+	return []VersionInfo{{VersionNo: 1, CreatedAt: "2026-01-01T00:00:00Z"}}, nil
+}
 func (r *fakeRepo) ContentDupExists(_ context.Context, _, _ string) (bool, error) { return false, nil }
 func (r *fakeRepo) SetSampleCount(_ context.Context, id string, n int64) error {
 	d := r.items[id]

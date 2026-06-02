@@ -120,6 +120,15 @@ func (h *handler) get(c *gin.Context) {
 	httpx.OK(c, d)
 }
 
+func (h *handler) versions(c *gin.Context) {
+	vs, err := h.svc.Versions(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"versions": vs})
+}
+
 func (h *handler) quality(c *gin.Context) {
 	checks, err := h.svc.QualityReport(c.Request.Context(), c.Param("id"))
 	if err != nil {

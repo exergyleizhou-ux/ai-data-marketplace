@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, yuan, type Dataset, type Preview, type QualityCheck, type Review } from "@/lib/api";
+import { api, yuan, type Dataset, type Preview, type QualityCheck, type Review, type VersionInfo } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Alert, Badge, Button, Card, Empty, Spinner } from "@/components/ui";
 import { QualityReport } from "@/components/QualityReport";
@@ -18,6 +18,7 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewErr, setPreviewErr] = useState("");
   const [quality, setQuality] = useState<QualityCheck[] | null>(null);
+  const [versions, setVersions] = useState<VersionInfo[]>([]);
   const [err, setErr] = useState("");
   const [buying, setBuying] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -26,6 +27,7 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
     api.getDataset(id).then(setDs).catch(() => setNotFound(true));
     api.datasetReviews(id).then((r) => setReviews(r.items)).catch(() => {});
     api.datasetQuality(id).then((r) => setQuality(r.checks)).catch(() => setQuality([]));
+    api.datasetVersions(id).then((r) => setVersions(r.versions)).catch(() => {});
   }, [id]);
 
   async function loadPreview() {
@@ -162,6 +164,23 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
             </ul>
           )}
         </Card>
+
+        {versions.length > 0 && (
+          <Card>
+            <h2 className="mb-3 font-semibold">
+              版本历史 <span className="font-normal text-neutral-400">/ Versions</span>
+            </h2>
+            <ul className="space-y-2">
+              {versions.map((v) => (
+                <li key={v.version_no} className="flex items-baseline gap-3 text-sm">
+                  <span className="font-medium text-neutral-700">v{v.version_no}</span>
+                  <span className="text-xs text-neutral-400">{(v.created_at || "").slice(0, 10)}</span>
+                  {v.changelog && <span className="text-neutral-600">{v.changelog}</span>}
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
       </div>
 
       <div className="lg:col-span-1">
