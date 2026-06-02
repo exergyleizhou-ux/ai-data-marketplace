@@ -72,7 +72,46 @@ func Schema(content []byte, contentType string) Check {
 		"row_count":    rowCount,
 		"column_count": ncol,
 		"columns":      cols,
+		"alerts":       schemaAlerts(cols),
 	}}
+}
+
+// schemaAlert is one automated data-health flag on a column — the "alerts" idea
+// from ydata-profiling / Deepchecks / OpenDataArena. Bilingual; a signal to look
+// closer, not a defect verdict.
+type schemaAlert struct {
+	Column  string `json:"column"`
+	Code    string `json:"code"` // empty | constant | high_null | unique_key | high_cardinality
+	Message string `json:"message"`
+}
+
+// schemaAlerts derives per-column data-health flags from the profiles. Returns a
+// non-nil (possibly empty) slice so the report always carries an "alerts" array.
+func schemaAlerts(cols []columnProfile) []schemaAlert {
+	alerts := []schemaAlert{}
+	for _, c := range cols {
+		total := c.NonNull + c.Null
+		if c.NonNull == 0 {
+			alerts = append(alerts, schemaAlert{c.Name, "empty", "列全部为空 / column is entirely empty"})
+			continue
+		}
+		if c.Distinct == 1 && !c.DistinctCapped {
+			alerts = append(alerts, schemaAlert{c.Name, "constant", "恒定列：只有一个取值，信息量低 / constant column (single value)"})
+		}
+		if total > 0 {
+			if pct := c.Null * 100 / total; pct >= 50 {
+				alerts = append(alerts, schemaAlert{c.Name, "high_null",
+					strconv.Itoa(pct) + "% 缺失，可用性受限 / " + strconv.Itoa(pct) + "% missing"})
+			}
+		}
+		switch {
+		case !c.DistinctCapped && c.Distinct == c.NonNull && c.NonNull >= 20:
+			alerts = append(alerts, schemaAlert{c.Name, "unique_key", "疑似唯一标识/主键：每个值都不同 / likely a unique identifier"})
+		case c.Type == "string" && c.NonNull >= 50 && (c.DistinctCapped || c.Distinct*10 > c.NonNull*9):
+			alerts = append(alerts, schemaAlert{c.Name, "high_cardinality", "高基数：取值高度多样（自由文本/ID）/ high cardinality"})
+		}
+	}
+	return alerts
 }
 
 func profileColumn(rows [][]string, start, j int, header bool) columnProfile {
