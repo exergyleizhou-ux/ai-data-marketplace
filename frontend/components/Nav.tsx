@@ -4,17 +4,19 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { BRAND } from "@/lib/brand";
+import { useT, LangToggle } from "@/lib/i18n";
 import { Badge } from "./ui";
 
 const LINKS = [
-  { href: "/datasets", label: "数据市场" },
-  { href: "/sell", label: "我要卖", auth: true },
-  { href: "/orders", label: "我的订单", auth: true },
-  { href: "/earnings", label: "收益", auth: true },
+  { href: "/datasets", zh: "数据市场", en: "Marketplace" },
+  { href: "/sell", zh: "我要卖", en: "Sell", auth: true },
+  { href: "/orders", zh: "我的订单", en: "Orders", auth: true },
+  { href: "/earnings", zh: "收益", en: "Earnings", auth: true },
 ];
 
 export function Nav() {
   const { user, loading, logout } = useAuth();
+  const { t } = useT();
   const pathname = usePathname();
   const router = useRouter();
   const isOps = user?.role === "ops" || user?.role === "admin";
@@ -34,7 +36,7 @@ export function Nav() {
                 pathname.startsWith(l.href) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-600 hover:bg-neutral-50"
               }`}
             >
-              {l.label}
+              {t(l.zh, l.en)}
             </Link>
           ))}
           {isOps && (
@@ -44,11 +46,12 @@ export function Nav() {
                 pathname.startsWith("/admin") ? "bg-neutral-100 font-medium" : "text-neutral-600 hover:bg-neutral-50"
               }`}
             >
-              运营后台
+              {t("运营后台", "Ops")}
             </Link>
           )}
         </nav>
         <div className="flex items-center gap-3 text-sm">
+          <LangToggle />
           {loading ? null : user ? (
             <>
               <Link href="/account" className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900">
@@ -62,16 +65,16 @@ export function Nav() {
                 }}
                 className="text-neutral-500 hover:text-neutral-900"
               >
-                退出
+                {t("退出", "Sign out")}
               </button>
             </>
           ) : (
             <>
               <Link href="/login" className="text-neutral-600 hover:text-neutral-900">
-                登录
+                {t("登录", "Sign in")}
               </Link>
               <Link href="/register" className="rounded-md bg-neutral-900 px-3 py-1.5 text-white hover:bg-neutral-700">
-                注册
+                {t("注册", "Sign up")}
               </Link>
             </>
           )}
