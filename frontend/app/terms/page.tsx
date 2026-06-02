@@ -122,7 +122,46 @@ export default function TermsPage() {
         />
       </LegalSection>
 
-      <LegalSection n={9} zh="知识产权" en="Intellectual Property">
+      <LegalSection n={9} zh="「可用不可见」沙箱计算服务" en={`Sandbox Compute ("Available-but-Invisible") Services`}>
+        <P
+          zh="除下载型交易外，本平台提供「可用不可见 / 沙箱计算」服务：买方在平台提供的隔离环境内，对数据集运行经平台审核的算法，仅取得计算结果（如模型、统计或查询结果），而不获得原始数据本身。"
+          en={`In addition to download transactions, the Platform offers "available-but-invisible / sandbox compute" services: the Buyer runs platform-reviewed algorithms against a Dataset inside an isolated environment provided by the Platform and obtains only the computation output (e.g., a model, statistics, or query results), not the raw data itself.`}
+        />
+        <P
+          zh="在沙箱计算交易中，平台不向买方交付原始数据；买方所得为计算输出物。"
+          en="In a sandbox compute transaction, the Platform does not deliver raw data to the Buyer; the Buyer receives only the computation output."
+        />
+        <List
+          items={[
+            [
+              "信任级别如实界定：L1（数据沙箱）下买方不可见原始数据，但平台运营方为运行沙箱仍可访问数据；仅 L2（机密计算 / TEE）对平台亦不可见。平台不就「可用不可见」作出超出所标信任级别的承诺。",
+              "Honest trust-level scope: at L1 (data sandbox) the raw data is invisible to the Buyer, but the Platform operator can still access it in order to run the sandbox; only at L2 (confidential computing / TEE) is the data invisible to the Platform as well. The Platform makes no representation about \"available-but-invisible\" beyond the labeled trust level.",
+            ],
+            [
+              "算法责任：买方仅可在平台审核通过的算法范围内提交作业，并对其所选算法的合法性、安全性及用途合规性负责；不得借算法或输出实施数据窃取、对个人信息再识别，或规避本协议。",
+              "Algorithm responsibility: the Buyer may submit jobs only within the set of platform-approved algorithms and is responsible for the legality, safety, and compliant purpose of the chosen algorithm; the Buyer must not use an algorithm or its output to exfiltrate data, re-identify personal information, or circumvent these Terms.",
+            ],
+            [
+              "输出物权属与使用：除另有约定外，计算输出物（如模型、指标）在合法合规前提下供买方在约定范围内使用；买方不得依据输出反向重建、推断或再识别原始数据或其中的个人信息。",
+              "Output ownership & use: unless otherwise agreed, the computation output (e.g., model, metrics) may be used by the Buyer within the agreed scope, subject to law; the Buyer must not reconstruct, infer, or re-identify the raw data or any personal information therein from the output.",
+            ],
+            [
+              "计费与不保证：计算权益按订单购买，并按成功放行核销；因平台或算法原因失败、或被输出闸门拒绝的作业按平台规则处理（通常返还相应额度）。平台不对计算结果的准确性、适用性或商业价值作任何明示或默示保证。",
+              "Billing & no warranty: compute entitlements are purchased per order and consumed upon successful release; jobs that fail due to the Platform or the algorithm, or that are rejected by the output gate, are handled per Platform rules (typically the credit is refunded). The Platform makes no express or implied warranty as to the accuracy, fitness, or commercial value of any computation result.",
+            ],
+            [
+              "留痕审计：为合规与纠纷处理，平台对计算作业全过程留痕（算法及版本、数据集版本、差分隐私预算消耗、放行 / 拒绝等）。",
+              "Audit trail: for compliance and dispute handling, the Platform logs the full lifecycle of each compute job (algorithm and version, dataset version, differential-privacy budget spent, release/rejection, etc.).",
+            ],
+          ]}
+        />
+        <P
+          zh="本服务的隐私保护程度以所标信任级别为准。平台秉持「信号非结论、不夸大」的一贯立场如实披露，具体以相应商品页说明为准。"
+          en={`The degree of privacy protection of this service is governed by its labeled trust level. Consistent with our "signals, not verdicts — no overstatement" stance, the Platform discloses this honestly; the applicable product page prevails.`}
+        />
+      </LegalSection>
+
+      <LegalSection n={10} zh="知识产权" en="Intellectual Property">
         <P
           zh="本平台的软件、界面、商标（包括 “Verdant Oasis / 绿洲” 标识）、Slogan 及相关内容的知识产权归平台方或权利人所有，未经授权不得使用。"
           en="Intellectual property in the Platform's software, interface, trademarks (including the “Verdant Oasis” mark), Slogan, and related content belongs to the Operator or its licensors and may not be used without authorization."
@@ -133,7 +172,7 @@ export default function TermsPage() {
         />
       </LegalSection>
 
-      <LegalSection n={10} zh="用户行为规范与禁止行为" en="User Conduct & Prohibited Activities">
+      <LegalSection n={11} zh="用户行为规范与禁止行为" en="User Conduct & Prohibited Activities">
         <P zh="您在使用本平台时不得从事下列行为：" en="When using the Platform, you must not:" />
         <List
           items={[
@@ -145,7 +184,7 @@ export default function TermsPage() {
         />
       </LegalSection>
 
-      <LegalSection n={11} zh="退款、纠纷与裁决" en="Refunds, Disputes & Adjudication">
+      <LegalSection n={12} zh="退款、纠纷与裁决" en="Refunds, Disputes & Adjudication">
         <P
           zh="买卖双方就交易发生争议的，可通过本平台发起纠纷处理。平台方可基于交易记录、交付指纹、质检与留痕信息进行调解或作出裁决，并据此指令存管资金的退款或结算。"
           en="In the event of a transaction dispute, either party may initiate dispute handling on the Platform. We may mediate or adjudicate based on transaction records, delivery fingerprints, inspection results, and audit logs, and instruct the custodian to refund or settle accordingly."
@@ -156,7 +195,7 @@ export default function TermsPage() {
         />
       </LegalSection>
 
-      <LegalSection n={12} zh="免责声明与责任限制" en="Disclaimers & Limitation of Liability">
+      <LegalSection n={13} zh="免责声明与责任限制" en="Disclaimers & Limitation of Liability">
         <P
           zh="在法律允许的最大范围内，本平台按“现状”提供服务。平台方不对数据集的准确性、完整性、适用性或交易结果作出明示或默示担保。"
           en="To the maximum extent permitted by law, the Platform is provided “as is”. We make no express or implied warranties as to the accuracy, completeness, fitness, or outcome of any Dataset or transaction."
@@ -167,21 +206,21 @@ export default function TermsPage() {
         />
       </LegalSection>
 
-      <LegalSection n={13} zh="违约处理与账户措施" en="Breach & Account Measures">
+      <LegalSection n={14} zh="违约处理与账户措施" en="Breach & Account Measures">
         <P
           zh="如您违反本协议或相关法律法规，平台方有权视情节采取警告、限制功能、下架数据集、冻结结算、暂停或终止账户等措施，并保留追究法律责任的权利。"
           en="If you breach these Terms or applicable laws, we may, depending on severity, issue warnings, restrict features, delist Datasets, freeze settlement, or suspend/terminate accounts, and reserve the right to pursue legal liability."
         />
       </LegalSection>
 
-      <LegalSection n={14} zh="协议变更" en="Modifications">
+      <LegalSection n={15} zh="协议变更" en="Modifications">
         <P
           zh="平台方可根据法律法规或业务调整修订本协议，并通过平台公告或站内通知方式发布。变更生效后您继续使用本平台的，视为接受修订后的协议。"
           en="We may revise these Terms due to legal or business changes, published via Platform announcements or in-app notices. Continued use after the effective date of a revision constitutes acceptance."
         />
       </LegalSection>
 
-      <LegalSection n={15} zh="适用法律与争议管辖" en="Governing Law & Jurisdiction">
+      <LegalSection n={16} zh="适用法律与争议管辖" en="Governing Law & Jurisdiction">
         <P
           zh="本协议适用中华人民共和国法律（不含港澳台地区冲突法规则）。"
           en="These Terms are governed by the laws of the People's Republic of China (excluding the conflict-of-laws rules of the Hong Kong, Macau, and Taiwan regions)."
@@ -192,7 +231,7 @@ export default function TermsPage() {
         />
       </LegalSection>
 
-      <LegalSection n={16} zh="其他" en="Miscellaneous">
+      <LegalSection n={17} zh="其他" en="Miscellaneous">
         <P
           zh="本协议某一条款被认定为无效或不可执行的，不影响其余条款的效力。本协议的标题仅为方便阅读，不影响条款解释。"
           en="If any provision is held invalid or unenforceable, the remaining provisions remain in effect. Headings are for convenience only and do not affect interpretation."
