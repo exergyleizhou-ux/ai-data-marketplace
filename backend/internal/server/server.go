@@ -277,8 +277,10 @@ func (s *Server) routes() {
 		// (default, docker-less dev/CI).
 		var runner compute.Runner = compute.NewMockRunner()
 		if os.Getenv("COMPUTE_RUNNER") == "docker" {
-			runner = compute.NewDockerRunner(compute.DefaultDockerResources)
-			slog.Info("compute runner", "kind", "docker")
+			res := compute.DefaultDockerResources
+			res.Runtime = os.Getenv("COMPUTE_DOCKER_RUNTIME") // "" runc | "runsc" gVisor | "kata" (P2 isolation, §7.2)
+			runner = compute.NewDockerRunner(res)
+			slog.Info("compute runner", "kind", "docker", "runtime", res.Runtime)
 		}
 		var computeOpts []compute.Option
 		if store != nil {
