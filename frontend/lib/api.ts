@@ -138,6 +138,51 @@ export class ApiError extends Error {
 }
 
 // --- token storage ---
+// --- compute-to-data (C2D / 可用不可见) ---
+export type ComputeOffer = {
+  dataset_id: string;
+  enabled: boolean;
+  allow_custom: boolean;
+  allowed_algorithm_ids: string[];
+  price_cents: number;
+  max_runtime_secs: number;
+  max_output_bytes: number;
+  max_output_files: number;
+  dp_epsilon?: number | null;
+  dp_epsilon_total?: number | null;
+  return_logs: boolean;
+  review_output: boolean;
+  trust_level: string; // L1 | L2 | L3
+};
+export type ComputeAlgorithm = {
+  id: string;
+  name: string;
+  runtime: string;
+  output_kind: string; // model | metrics | table | aggregate
+  trusted: boolean;
+  status: string;
+  version: number;
+  params_schema?: Record<string, unknown>;
+};
+export type ComputeEntitlement = {
+  id: string;
+  dataset_id: string;
+  buyer_id: string;
+  jobs_quota: number;
+  jobs_used: number;
+  status: string;
+};
+export type ComputeJob = {
+  id: string;
+  dataset_id: string;
+  status: string; // created|queued|running|output_pending|output_reviewing|released|failed|rejected|canceled
+  algorithm_id?: string;
+  output_kind?: string;
+  output_bytes?: number;
+  error?: string;
+  created_at?: string;
+};
+
 export const tokenStore = {
   get access() {
     return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
@@ -324,6 +369,38 @@ export const api = {
     request<KYC>("/admin/kyc/review", { body: { kyc_id, approve } }),
   adminResolveDispute: (id: string, refund: boolean, note: string) =>
     request<Order>(`/admin/orders/${id}/resolve`, { body: { refund, note } }),
+
+  // compute-to-data (C2D / 可用不可见)
+  getComputeOffer: (id: string) =>
+    request<ComputeOffer>(`/datasets/${id}/compute-offer`, { auth: false }),
+  putComputeOffer: (id: string, body: Partial<ComputeOffer>) =>
+    request<ComputeOffer>(`/datasets/${id}/compute-offer`, { method: "PUT", body }),
+  listComputeAlgorithms: (dataset_id: string) =>
+    request<{ items: ComputeAlgorithm[] }>("/compute/algorithms", { query: { dataset_id } }),
+  purchaseCompute: (id: string, quota: number) =>
+    request<ComputeEntitlement>(`/datasets/${id}/compute/purchase`, { body: { quota } }),
+  submitComputeJob: (b: { dataset_id: string; entitlement_id: string; algorithm_id: string; params?: Record<string, unknown> }) =>
+    request<ComputeJob>("/compute/jobs", { body: b }),
+  getComputeJob: (id: string) => request<ComputeJob>(`/compute/jobs/${id}`),
+  listMyComputeJobs: () => request<{ items: ComputeJob[] }>("/users/me/compute/jobs"),
+  cancelComputeJob: (id: string) => request<ComputeJob>(`/compute/jobs/${id}/cancel`, { method: "POST" }),
+  // The output endpoint streams raw bytes (auth-gated); fetch with the bearer
+  // token and trigger a browser download.
+  downloadComputeOutput: async (id: string) => {
+    const res = await fetch(buildURL(`/compute/jobs/${id}/output`), {
+      headers: tokenStore.access ? { Authorization: `Bearer ${tokenStore.access}` } : {},
+    });
+    if (!res.ok) throw new ApiError(-1, res.status, "下载失败");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `compute-output-${id}.bin`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 };
 
 export function yuan(cents?: number): string {
