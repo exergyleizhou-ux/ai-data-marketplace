@@ -95,3 +95,6 @@ jobs:
       - name: Test compute-to-data sandbox algorithms (dp_stats)
         working-directory: algorithms/dp_stats
         run: python test_stats.py
+      - name: Test §19 red-team probes are genuine (docker containment via run-redteam.sh)
+        working-directory: algorithms/redteam
+        run: python test_attack.py
