@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/metrics"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
 )
 
@@ -86,8 +87,10 @@ func WithWorker(runner Runner, store storage.Storage, data DataKeyResolver, work
 		}
 		// Reclaim any jobs left "running" by a previous crashed process, then
 		// sweep periodically.
-		if _, err := s.repo.ReclaimStaleLeases(context.Background(), s.maxAttempts); err != nil {
+		if n, err := s.repo.ReclaimStaleLeases(context.Background(), s.maxAttempts); err != nil {
 			slog.Error("compute: startup lease reclaim failed", "err", err)
+		} else {
+			metrics.RecordComputeReclaims(n)
 		}
 		s.wg.Add(1)
 		go func() {
@@ -102,6 +105,7 @@ func WithWorker(runner Runner, store storage.Storage, data DataKeyResolver, work
 					if n, err := s.repo.ReclaimStaleLeases(context.Background(), s.maxAttempts); err != nil {
 						slog.Error("compute: lease reclaim failed", "err", err)
 					} else if n > 0 {
+						metrics.RecordComputeReclaims(n)
 						slog.Warn("compute: reclaimed stale jobs", "count", n)
 					}
 				}
@@ -146,6 +150,7 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 		// Already claimed/terminal — not an error for this worker.
 		return
 	}
+	start := time.Now() // run-time clock for metrics
 	algo, err := s.repo.GetAlgorithm(ctx, job.AlgorithmID)
 	if err != nil {
 		s.failJob(ctx, jobID, "algorithm_unavailable")
@@ -228,6 +233,8 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 		}
 		s.audit.Record(ctx, audit.Entry{Action: "compute.job.review_pending", ResourceType: "compute_job",
 			ResourceID: jobID, Detail: map[string]any{"output_kind": res.OutputKind, "output_bytes": size}})
+		metrics.RecordComputeJob("review_pending")
+		metrics.ObserveComputeJobDuration(res.OutputKind, time.Since(start).Seconds())
 		return
 	}
 
@@ -238,6 +245,8 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 	}
 	s.audit.Record(ctx, audit.Entry{Action: "compute.job.release", ResourceType: "compute_job",
 		ResourceID: jobID, Detail: map[string]any{"output_kind": released.OutputKind, "output_bytes": size}})
+	metrics.RecordComputeJob("released")
+	metrics.ObserveComputeJobDuration(released.OutputKind, time.Since(start).Seconds())
 }
 
 // rejectJob marks a job's output rejected by the gate and refunds the credit
@@ -254,6 +263,7 @@ func (s *Service) rejectJob(ctx context.Context, jobID, entitlementID, reason st
 	}
 	s.audit.Record(ctx, audit.Entry{Action: "compute.job.reject", ResourceType: "compute_job",
 		ResourceID: jobID, Detail: map[string]any{"reason": reason}})
+	metrics.RecordComputeJob("rejected")
 }
 
 func (s *Service) failJob(ctx context.Context, jobID, code string) {
@@ -269,6 +279,7 @@ func (s *Service) failJob(ctx context.Context, jobID, code string) {
 	}
 	s.audit.Record(ctx, audit.Entry{Action: "compute.job.fail", ResourceType: "compute_job",
 		ResourceID: jobID, Detail: map[string]any{"error": code}})
+	metrics.RecordComputeJob("failed")
 }
 
 // OpenOutput streams a released job's output to its buyer. Returns ErrForbidden
