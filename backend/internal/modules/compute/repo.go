@@ -64,6 +64,9 @@ type Repository interface {
 	Release(ctx context.Context, id, outputKey, outputKind string, outputBytes int64, logsKey string) (Job, error)
 	// Fail marks a job failed with a de-identified error (never raw stdout).
 	Fail(ctx context.Context, id, errCode string) (Job, error)
+	// Reject marks a job's output rejected by the output gate (size/DP/leak/
+	// human review) — distinct from Fail (execution error); billing differs (§21).
+	Reject(ctx context.Context, id, reason string) (Job, error)
 	// ReclaimStaleLeases requeues running jobs whose lease expired (runner
 	// presumed crashed): attempts < maxAttempts -> queued, else -> failed.
 	// Returns the number of jobs reclaimed. Used by the recovery sweep (§17).
@@ -533,6 +536,21 @@ func (r *pgRepo) Fail(ctx context.Context, id, errCode string) (Job, error) {
 	}
 	if err != nil {
 		return Job{}, fmt.Errorf("fail job: %w", err)
+	}
+	return out, nil
+}
+
+func (r *pgRepo) Reject(ctx context.Context, id, reason string) (Job, error) {
+	const q = `
+		UPDATE compute_jobs SET status='rejected', error=$2, lease_until=NULL, finished_at=now()
+		WHERE id=$1 AND status IN ('running','output_pending','output_reviewing')
+		RETURNING ` + jobCols
+	out, err := scanJob(r.pool.QueryRow(ctx, q, id, reason))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Job{}, ErrBadTransition
+	}
+	if err != nil {
+		return Job{}, fmt.Errorf("reject job: %w", err)
 	}
 	return out, nil
 }

@@ -1,0 +1,235 @@
+package compute
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"time"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
+)
+
+// randSuffix builds a per-process runner id (pid + start nanos) for lease
+// ownership. Uniqueness across processes is enough; within a process all
+// workers share one id (they coordinate via the DB claim).
+func randSuffix() string { return fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano()) }
+
+// WithWorker enables in-process execution: `workers` goroutines drain a queue,
+// each claiming a job (lease), running it through the Runner, applying the
+// output gate, storing the output, and releasing — mirroring the dataset
+// quality worker. A background sweep reclaims crashed (lease-expired) jobs. Call
+// Close on shutdown to drain in-flight work.
+//
+// The interface is queue-agnostic: swap this in-process worker for a separate
+// runner service (claiming over HTTP/mTLS, design §18) without touching the
+// business logic — the job lifecycle is the same DB state machine either way.
+func WithWorker(runner Runner, store storage.Storage, data DataKeyResolver, workers, buffer int) Option {
+	return func(s *Service) {
+		if workers < 1 {
+			workers = 1
+		}
+		if buffer < 1 {
+			buffer = 1
+		}
+		s.runner = runner
+		s.store = store
+		s.data = data
+		s.runnerID = "inproc-" + randSuffix()
+		s.qCh = make(chan string, buffer)
+		s.stopSweep = make(chan struct{})
+
+		for i := 0; i < workers; i++ {
+			s.wg.Add(1)
+			go func() {
+				defer s.wg.Done()
+				for jobID := range s.qCh {
+					s.processJob(context.Background(), jobID)
+				}
+			}()
+		}
+		// Reclaim any jobs left "running" by a previous crashed process, then
+		// sweep periodically.
+		if _, err := s.repo.ReclaimStaleLeases(context.Background(), s.maxAttempts); err != nil {
+			slog.Error("compute: startup lease reclaim failed", "err", err)
+		}
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			t := time.NewTicker(time.Duration(s.leaseSecs) * time.Second)
+			defer t.Stop()
+			for {
+				select {
+				case <-s.stopSweep:
+					return
+				case <-t.C:
+					if n, err := s.repo.ReclaimStaleLeases(context.Background(), s.maxAttempts); err != nil {
+						slog.Error("compute: lease reclaim failed", "err", err)
+					} else if n > 0 {
+						slog.Warn("compute: reclaimed stale jobs", "count", n)
+					}
+				}
+			}
+		}()
+	}
+}
+
+// enqueue dispatches a queued job to the worker pool, or runs it inline when no
+// worker is configured (tests/determinism). When a separate out-of-process
+// runner is used (no in-process worker), the job simply stays queued for it.
+func (s *Service) enqueue(jobID string) {
+	if s.qCh == nil {
+		return
+	}
+	select {
+	case s.qCh <- jobID:
+	default:
+		// Queue full: leave it queued; the periodic sweep / a future poll picks
+		// it up. (P1 buffer is generous; this only trips under heavy backlog.)
+		slog.Warn("compute: worker queue full, job left queued", "job_id", jobID)
+	}
+}
+
+// Close drains in-flight jobs and stops the sweep (no-op if no worker).
+func (s *Service) Close() {
+	if s.qCh == nil {
+		return
+	}
+	close(s.stopSweep)
+	close(s.qCh)
+	s.wg.Wait()
+}
+
+// processJob runs one job through the pipeline: claim (lease) → run → output
+// gate (size) → store → DP ledger → release. Failures map to Fail (execution
+// error) or Reject (gate). The dataset is read-only; the algorithm never names
+// the output (design §7.4).
+func (s *Service) processJob(ctx context.Context, jobID string) {
+	job, err := s.repo.ClaimJob(ctx, jobID, s.runnerID, s.leaseSecs)
+	if err != nil {
+		// Already claimed/terminal — not an error for this worker.
+		return
+	}
+	algo, err := s.repo.GetAlgorithm(ctx, job.AlgorithmID)
+	if err != nil {
+		s.failJob(ctx, jobID, "algorithm_unavailable")
+		return
+	}
+	offer, err := s.repo.GetOffer(ctx, job.DatasetID)
+	if err != nil {
+		s.failJob(ctx, jobID, "offer_unavailable")
+		return
+	}
+	dataKey := ""
+	if s.data != nil {
+		dataKey, _ = s.data.CurrentObjectKey(ctx, job.DatasetID) // best-effort; mock ignores
+	}
+
+	res, err := s.runner.Run(ctx, RunRequest{
+		Job: job, Algorithm: algo, DataKey: dataKey,
+		MaxOutputBytes: offer.MaxOutputBytes, MaxOutputFiles: offer.MaxOutputFiles,
+		MaxRuntimeSecs: offer.MaxRuntimeSecs,
+	})
+	if err != nil {
+		slog.Error("compute: runner failed", "job_id", jobID, "err", err)
+		s.failJob(ctx, jobID, "algorithm_error")
+		return
+	}
+
+	// Output gate: size cap (design §7/§8). A real runner enforces this during
+	// write; the mock returns in memory so we check here.
+	if offer.MaxOutputBytes > 0 && int64(len(res.Output)) > offer.MaxOutputBytes {
+		if _, rerr := s.repo.Reject(ctx, jobID, "output_exceeds_max_bytes"); rerr != nil {
+			slog.Error("compute: reject failed", "job_id", jobID, "err", rerr)
+		}
+		s.audit.Record(ctx, audit.Entry{Action: "compute.job.reject", ResourceType: "compute_job",
+			ResourceID: jobID, Detail: map[string]any{"reason": "output_exceeds_max_bytes", "bytes": len(res.Output)}})
+		return
+	}
+
+	key := outputObjectKey(jobID)
+	size, err := uploadOutput(ctx, s.store, key, res.Output)
+	if err != nil {
+		slog.Error("compute: output store failed", "job_id", jobID, "err", err)
+		s.failJob(ctx, jobID, "output_store_error")
+		return
+	}
+
+	// DP ledger: record the spent epsilon for aggregate/metric outputs (§8).
+	if job.DPEpsilon != nil {
+		if err := s.repo.SpendDP(ctx, job.DatasetID, job.BuyerID, jobID, *job.DPEpsilon); err != nil {
+			slog.Error("compute: dp ledger write failed", "job_id", jobID, "err", err)
+		}
+	}
+
+	// Logs are returned to the buyer only when the seller opted in; even then
+	// they would pass a scrub gate. P1: store nothing by default (design §7.4).
+	logsKey := ""
+
+	released, err := s.repo.Release(ctx, jobID, key, res.OutputKind, size, logsKey)
+	if err != nil {
+		slog.Error("compute: release failed", "job_id", jobID, "err", err)
+		return
+	}
+	s.audit.Record(ctx, audit.Entry{Action: "compute.job.release", ResourceType: "compute_job",
+		ResourceID: jobID, Detail: map[string]any{"output_kind": released.OutputKind, "output_bytes": size}})
+}
+
+func (s *Service) failJob(ctx context.Context, jobID, code string) {
+	if _, err := s.repo.Fail(ctx, jobID, code); err != nil {
+		slog.Error("compute: fail transition failed", "job_id", jobID, "code", code, "err", err)
+		return
+	}
+	// A platform/runner-side failure should not consume the buyer's credit (§21).
+	if job, gerr := s.repo.GetJob(ctx, jobID); gerr == nil {
+		if rerr := s.repo.RefundQuota(ctx, job.EntitlementID); rerr != nil {
+			slog.Error("compute: quota refund on fail failed", "job_id", jobID, "err", rerr)
+		}
+	}
+	s.audit.Record(ctx, audit.Entry{Action: "compute.job.fail", ResourceType: "compute_job",
+		ResourceID: jobID, Detail: map[string]any{"error": code}})
+}
+
+// OpenOutput streams a released job's output to its buyer. Returns ErrForbidden
+// for non-owners and ErrBadTransition if the job is not released yet.
+func (s *Service) OpenOutput(ctx context.Context, userID, jobID string) (io.ReadCloser, int64, Job, error) {
+	job, err := s.repo.GetJob(ctx, jobID)
+	if err != nil {
+		return nil, 0, Job{}, err
+	}
+	if job.BuyerID != userID {
+		return nil, 0, Job{}, ErrForbidden
+	}
+	if job.Status != JobReleased || job.OutputKey == "" {
+		return nil, 0, Job{}, ErrBadTransition
+	}
+	if s.store == nil {
+		return nil, 0, Job{}, ErrNotFound
+	}
+	rc, size, err := s.store.Open(ctx, job.OutputKey)
+	if err != nil {
+		return nil, 0, Job{}, err
+	}
+	return rc, size, job, nil
+}
+
+// uploadOutput stores the output bytes as a single-part object and returns its
+// size.
+func uploadOutput(ctx context.Context, store storage.Storage, key string, data []byte) (int64, error) {
+	uid, err := store.InitMultipart(ctx, key)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := store.PutPart(ctx, uid, 1, bytes.NewReader(data)); err != nil {
+		_ = store.Abort(ctx, uid)
+		return 0, err
+	}
+	obj, err := store.CompleteMultipart(ctx, uid)
+	if err != nil {
+		return 0, err
+	}
+	return obj.Size, nil
+}
