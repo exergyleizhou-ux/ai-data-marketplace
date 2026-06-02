@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { Alert, Badge, Button, Card, Empty, Spinner } from "@/components/ui";
 import { QualityReport } from "@/components/QualityReport";
 import { DatasheetView } from "@/components/Datasheet";
+import { SchemaTable, hasSchema } from "@/components/SchemaTable";
 
 export default function DatasetDetailPage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -115,6 +116,15 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
           </h2>
           <DatasheetView ds={ds.datasheet ?? {}} />
         </Card>
+
+        {quality && hasSchema(quality) && (
+          <Card>
+            <h2 className="mb-3 font-semibold">
+              数据结构 <span className="font-normal text-neutral-400">/ Schema</span>
+            </h2>
+            <SchemaTable checks={quality} />
+          </Card>
+        )}
 
         <Card>
           <h2 className="mb-3 font-semibold">

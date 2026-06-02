@@ -19,6 +19,7 @@ const (
 	TypePII          = "pii"
 	TypePIIRedaction = "pii_redaction"
 	TypeAuthenticity = "authenticity"
+	TypeSchema       = "schema"
 )
 
 // Check is one check's outcome, ready to persist as a quality_check row.

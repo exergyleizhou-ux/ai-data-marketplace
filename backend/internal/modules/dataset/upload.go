@@ -166,6 +166,8 @@ func (s *Service) processQuality(ctx context.Context, job qualityJob) error {
 		}
 	}
 
+	schemaChk := quality.Schema(content, ct)
+
 	dedupChk := quality.Check{Type: quality.TypeDedup, Result: quality.ResultPass, Report: map[string]any{}}
 	if dup, err := s.repo.ContentDupExists(ctx, job.ContentSHA256, d.ID); err == nil && dup {
 		dedupChk.Result = quality.ResultWarn
@@ -173,7 +175,7 @@ func (s *Service) processQuality(ctx context.Context, job qualityJob) error {
 	}
 
 	failed := false
-	for _, chk := range []quality.Check{fmtChk, statsChk, piiChk, redactChk, authChk, dedupChk} {
+	for _, chk := range []quality.Check{fmtChk, statsChk, piiChk, redactChk, authChk, schemaChk, dedupChk} {
 		if err := s.repo.SaveQualityCheck(ctx, d.ID, job.VersionID, chk.Type, chk.Result, chk.Report); err != nil {
 			return err
 		}
