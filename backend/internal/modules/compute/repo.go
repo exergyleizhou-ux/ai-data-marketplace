@@ -32,6 +32,7 @@ type Repository interface {
 	// entitlements
 	CreateEntitlement(ctx context.Context, e Entitlement) (Entitlement, error)
 	GetEntitlement(ctx context.Context, id string) (Entitlement, error)
+	ListEntitlementsByBuyer(ctx context.Context, buyerID string, limit, offset int) ([]Entitlement, error)
 	// SpendQuota atomically consumes one job credit: it only succeeds when the
 	// entitlement is active and jobs_used < jobs_quota, marking it exhausted on
 	// the last credit. Concurrency-safe (single conditional UPDATE) so parallel
@@ -63,6 +64,10 @@ type Repository interface {
 	// released). Idempotent: a job already released returns without error so a
 	// retried runner cannot double-release.
 	Release(ctx context.Context, id, outputKey, outputKind string, outputBytes int64, logsKey string) (Job, error)
+	// StageForReview stores a job's output and parks it in output_reviewing
+	// (running -> output_reviewing) for ops human review before release — used
+	// when the offer sets review_output (high-sensitivity datasets, §8 gate ⑤).
+	StageForReview(ctx context.Context, id, outputKey, outputKind string, outputBytes int64, logsKey string) (Job, error)
 	// Fail marks a job failed with a de-identified error (never raw stdout).
 	Fail(ctx context.Context, id, errCode string) (Job, error)
 	// Reject marks a job's output rejected by the output gate (size/DP/leak/
@@ -322,6 +327,28 @@ func (r *pgRepo) GetEntitlement(ctx context.Context, id string) (Entitlement, er
 	return out, nil
 }
 
+func (r *pgRepo) ListEntitlementsByBuyer(ctx context.Context, buyerID string, limit, offset int) ([]Entitlement, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+entCols+` FROM compute_entitlements WHERE buyer_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		buyerID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list entitlements: %w", err)
+	}
+	defer rows.Close()
+	var out []Entitlement
+	for rows.Next() {
+		e, err := scanEnt(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 func (r *pgRepo) SpendQuota(ctx context.Context, id string) (Entitlement, error) {
 	// Atomic single-statement spend: only when active, not expired, and credits
 	// remain. Flip to exhausted on the last credit. Concurrency-safe.
@@ -542,6 +569,23 @@ func (r *pgRepo) Release(ctx context.Context, id, outputKey, outputKind string, 
 	}
 	if err != nil {
 		return Job{}, fmt.Errorf("release job: %w", err)
+	}
+	return out, nil
+}
+
+func (r *pgRepo) StageForReview(ctx context.Context, id, outputKey, outputKind string, outputBytes int64, logsKey string) (Job, error) {
+	const q = `
+		UPDATE compute_jobs
+		SET status='output_reviewing', output_key=$2, output_kind=$3, output_bytes=$4,
+		    logs_key=NULLIF($5,''), lease_until=NULL
+		WHERE id=$1 AND status IN ('running','output_pending')
+		RETURNING ` + jobCols
+	out, err := scanJob(r.pool.QueryRow(ctx, q, id, outputKey, outputKind, outputBytes, logsKey))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Job{}, ErrBadTransition
+	}
+	if err != nil {
+		return Job{}, fmt.Errorf("stage for review: %w", err)
 	}
 	return out, nil
 }

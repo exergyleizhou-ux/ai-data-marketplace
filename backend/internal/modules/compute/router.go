@@ -27,6 +27,7 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	buyer.GET("/compute/jobs/:id/output", h.downloadOutput)
 	buyer.POST("/compute/jobs/:id/cancel", h.cancelJob)
 	buyer.GET("/users/me/compute/jobs", h.listMyJobs)
+	buyer.GET("/users/me/compute/entitlements", h.listMyEntitlements)
 
 	if devEnabled {
 		// Dev-only: grant a compute entitlement without a real gateway so the
@@ -41,4 +42,6 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	admin.POST("/algorithms", h.registerAlgorithm)
 	admin.POST("/algorithms/:id/review", h.reviewAlgorithm)
 	admin.GET("/jobs", h.adminListJobs)
+	admin.POST("/jobs/:id/release", h.opsReleaseJob) // release an output_reviewing job
+	admin.POST("/jobs/:id/reject", h.opsRejectJob)   // reject it (output withheld, credit refunded)
 }
