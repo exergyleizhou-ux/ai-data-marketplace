@@ -205,7 +205,13 @@ func TestComputeRepoIntegration(t *testing.T) {
 	}
 
 	// --- refund → revoke linkage (H2) ---
-	ordEnt, _ := repo.CreateEntitlement(ctx, Entitlement{DatasetID: dsID, BuyerID: buyer, OrderID: seedOrder(t, pool, buyer, seller, dsID), JobsQuota: 3})
+	orderID := seedOrder(t, pool, buyer, seller, dsID)
+	ordEnt, _ := repo.CreateEntitlement(ctx, Entitlement{DatasetID: dsID, BuyerID: buyer, OrderID: orderID, JobsQuota: 3})
+	// One entitlement per order (migration 000011 unique index) → second grant
+	// for the same order is rejected (makes grant-on-payment idempotent).
+	if _, err := repo.CreateEntitlement(ctx, Entitlement{DatasetID: dsID, BuyerID: buyer, OrderID: orderID, JobsQuota: 3}); !errors.Is(err, ErrDuplicateEnt) {
+		t.Fatalf("duplicate entitlement for order: err=%v, want ErrDuplicateEnt", err)
+	}
 	full, _ := repo.GetEntitlement(ctx, ordEnt.ID)
 	revoked, err := repo.RevokeByOrder(ctx, full.OrderID)
 	if err != nil || revoked != 1 {

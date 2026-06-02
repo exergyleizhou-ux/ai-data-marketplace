@@ -28,6 +28,8 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	buyer.POST("/compute/jobs/:id/cancel", h.cancelJob)
 	buyer.GET("/users/me/compute/jobs", h.listMyJobs)
 	buyer.GET("/users/me/compute/entitlements", h.listMyEntitlements)
+	// Real purchase: create a compute order, then pay it via the payment flow.
+	buyer.POST("/datasets/:id/compute/order", h.createComputeOrder)
 
 	if devEnabled {
 		// Dev-only: grant a compute entitlement without a real gateway so the

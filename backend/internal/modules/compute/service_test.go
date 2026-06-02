@@ -111,6 +111,14 @@ func (f *fakeRepo) GetOffer(_ context.Context, datasetID string) (Offer, error) 
 func (f *fakeRepo) CreateEntitlement(_ context.Context, e Entitlement) (Entitlement, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// Emulate the one-entitlement-per-order unique index (idempotent grant).
+	if e.OrderID != "" {
+		for _, ex := range f.ents {
+			if ex.OrderID == e.OrderID {
+				return Entitlement{}, ErrDuplicateEnt
+			}
+		}
+	}
 	e.ID = f.id("ent")
 	if e.JobsQuota < 1 {
 		e.JobsQuota = 1

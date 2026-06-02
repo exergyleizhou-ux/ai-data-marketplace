@@ -147,7 +147,15 @@ function OrderInner({ id }: { id: string }) {
 
             {(o.status === "paid" || o.status === "delivered") && (
               <div className="space-y-2">
-                {!downloadUrl ? (
+                {o.product_type === "compute" ? (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    计算权益已发放。前往{" "}
+                    <a className="font-medium underline" href={`/datasets/${o.dataset_id}`}>
+                      数据集页
+                    </a>{" "}
+                    使用「可用不可见」沙箱计算（提交作业、下载结果）。本订单不交付原始数据。
+                  </div>
+                ) : !downloadUrl ? (
                   <Button
                     className="w-full"
                     disabled={!!busy}

@@ -2,6 +2,7 @@ package compute
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -34,6 +35,13 @@ type DataKeyResolver interface {
 	CurrentObjectKey(ctx context.Context, datasetID string) (string, error)
 }
 
+// OrderCreator creates a compute order through the order module (injected by the
+// server so compute doesn't import order). The buyer then pays it through the
+// existing payment flow; payment grants the entitlement via GrantForOrder.
+type OrderCreator interface {
+	CreateComputeOrder(ctx context.Context, buyerID, sellerID, datasetID string, amountCents int64) (orderID string, err error)
+}
+
 const kycVerified = "verified"
 
 // Lease / retry tuning for the worker.
@@ -49,6 +57,7 @@ type Service struct {
 	identity IdentityChecker
 	datasets DatasetReader
 	audit    audit.Recorder
+	orders   OrderCreator // optional; set via SetOrderCreator (real purchase path)
 
 	// Execution engine (optional; set via WithWorker). When runner is nil,
 	// SubmitJob leaves the job queued for an out-of-process runner to claim.
@@ -62,6 +71,10 @@ type Service struct {
 	wg          sync.WaitGroup
 	stopSweep   chan struct{}
 }
+
+// SetOrderCreator wires the real purchase path (compute order via order+payment)
+// after construction.
+func (s *Service) SetOrderCreator(o OrderCreator) { s.orders = o }
 
 // Option configures optional Service dependencies.
 type Option func(*Service)
@@ -249,6 +262,55 @@ func (s *Service) GrantEntitlement(ctx context.Context, datasetID, buyerID, orde
 	s.audit.Record(ctx, audit.Entry{ActorID: buyerID, Action: "compute.entitlement.grant",
 		ResourceType: "dataset", ResourceID: datasetID, Detail: map[string]any{"order_id": orderID, "quota": quota}})
 	return e, nil
+}
+
+// PurchaseViaOrder starts a REAL compute purchase: it creates a compute order
+// (priced from the offer) through the order module and returns the order id. The
+// buyer pays it via the existing payment flow; on payment the entitlement is
+// granted by GrantForOrder. (The dev-only direct grant bypasses payment.)
+func (s *Service) PurchaseViaOrder(ctx context.Context, buyerID, datasetID string) (string, error) {
+	offer, err := s.repo.GetOffer(ctx, datasetID)
+	if err != nil {
+		return "", err
+	}
+	if !offer.Enabled {
+		return "", ErrOfferDisabled
+	}
+	ds, err := s.datasets.ForCompute(ctx, datasetID)
+	if err != nil {
+		return "", err
+	}
+	if ds.SellerID == buyerID {
+		return "", ErrSelfPurchase
+	}
+	if s.orders == nil {
+		return "", fmt.Errorf("%w: order path not configured", ErrValidation)
+	}
+	orderID, err := s.orders.CreateComputeOrder(ctx, buyerID, ds.SellerID, datasetID, offer.PriceCents)
+	if err != nil {
+		return "", err
+	}
+	s.audit.Record(ctx, audit.Entry{ActorID: buyerID, Action: "compute.purchase.order",
+		ResourceType: "dataset", ResourceID: datasetID, Detail: map[string]any{"order_id": orderID, "price_cents": offer.PriceCents}})
+	return orderID, nil
+}
+
+// GrantForOrder grants the compute entitlement for a PAID compute order. Called
+// by the order module on payment. Idempotent (one entitlement per order — a
+// retried webhook is a no-op).
+func (s *Service) GrantForOrder(ctx context.Context, orderID, datasetID, buyerID string) error {
+	_, err := s.repo.CreateEntitlement(ctx, Entitlement{
+		DatasetID: datasetID, BuyerID: buyerID, OrderID: orderID, JobsQuota: 1,
+	})
+	if err != nil {
+		if errors.Is(err, ErrDuplicateEnt) {
+			return nil // already granted (idempotent)
+		}
+		return err
+	}
+	s.audit.Record(ctx, audit.Entry{ActorID: buyerID, Action: "compute.entitlement.grant_paid",
+		ResourceType: "compute_order", ResourceID: orderID, Detail: map[string]any{"dataset_id": datasetID}})
+	return nil
 }
 
 // RevokeEntitlementsForOrder revokes compute credits when an order is refunded

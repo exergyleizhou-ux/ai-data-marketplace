@@ -108,6 +108,18 @@ func (h *handler) purchase(c *gin.Context) {
 	httpx.OK(c, ent)
 }
 
+// createComputeOrder starts a REAL purchase: create a compute order priced from
+// the offer; the buyer then pays it via the existing payment flow, which grants
+// the entitlement on success.
+func (h *handler) createComputeOrder(c *gin.Context) {
+	orderID, err := h.svc.PurchaseViaOrder(c.Request.Context(), httpx.UserID(c), c.Param("id"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"order_id": orderID})
+}
+
 type submitRequest struct {
 	DatasetID      string         `json:"dataset_id"`
 	EntitlementID  string         `json:"entitlement_id"`
@@ -330,6 +342,8 @@ func fail(c *gin.Context, err error) {
 		httpx.Fail(c, httpx.ErrConflict.WithMessage("illegal job state for this action"))
 	case errors.Is(err, ErrSelfPurchase):
 		httpx.Fail(c, httpx.ErrConflict.WithMessage("cannot buy compute on your own dataset"))
+	case errors.Is(err, ErrPurchasePending):
+		httpx.Fail(c, httpx.ErrConflict.WithMessage("a compute order for this dataset is already in progress"))
 	default:
 		httpx.Fail(c, httpx.ErrInternal)
 	}

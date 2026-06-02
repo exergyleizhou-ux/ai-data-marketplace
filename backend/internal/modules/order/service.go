@@ -47,6 +47,12 @@ type ComputeRevoker interface {
 	RevokeEntitlementsForOrder(ctx context.Context, orderID string) (int, error)
 }
 
+// ComputeGranter grants the compute (C2D) entitlement for a PAID compute order.
+// Implemented by the compute module, injected late. Must be idempotent. Optional.
+type ComputeGranter interface {
+	GrantForOrder(ctx context.Context, orderID, datasetID, buyerID string) error
+}
+
 // Service holds order business logic and drives the status state machine.
 type Service struct {
 	repo     Repository
@@ -56,6 +62,7 @@ type Service struct {
 	settle   SettlementTrigger
 	refund   RefundTrigger
 	compute  ComputeRevoker
+	granter  ComputeGranter
 }
 
 func NewService(repo Repository, identity IdentityChecker, datasets DatasetReader, rec audit.Recorder) *Service {
@@ -75,6 +82,40 @@ func (s *Service) SetRefundTrigger(t RefundTrigger) { s.refund = t }
 // SetComputeRevoker wires the compute-entitlement revoker (compute) so a refund
 // also revokes the buyer's C2D credits for the order. Optional.
 func (s *Service) SetComputeRevoker(r ComputeRevoker) { s.compute = r }
+
+// SetComputeGranter wires the compute-entitlement granter (compute) so paying a
+// compute order grants its entitlement. Optional.
+func (s *Service) SetComputeGranter(g ComputeGranter) { s.granter = g }
+
+// CreateCompute places a compute (C2D) order priced by the caller (the compute
+// module passes the offer price). Same KYC / self-purchase / fee-split / state
+// machine as a download; product_type='compute', no version.
+func (s *Service) CreateCompute(ctx context.Context, buyerID, sellerID, datasetID string, amountCents int64) (Order, error) {
+	if amountCents < 0 {
+		return Order{}, fmt.Errorf("%w: amount", ErrValidation)
+	}
+	status, err := s.identity.KYCStatus(ctx, buyerID)
+	if err != nil {
+		return Order{}, err
+	}
+	if status != kycVerified {
+		return Order{}, ErrNotVerified
+	}
+	if sellerID == buyerID {
+		return Order{}, ErrSelfPurchase
+	}
+	fee, seller := platformFee(amountCents)
+	o, err := s.repo.CreateCompute(ctx, Order{
+		BuyerID: buyerID, SellerID: sellerID, DatasetID: datasetID,
+		AmountCents: amountCents, PlatformFeeCents: fee, SellerAmountCents: seller,
+	})
+	if err != nil {
+		return Order{}, err
+	}
+	s.audit.Record(ctx, audit.Entry{ActorID: buyerID, Action: "order.create_compute", ResourceType: "order", ResourceID: o.ID,
+		Detail: map[string]any{"dataset_id": datasetID, "amount_cents": amountCents}})
+	return o, nil
+}
 
 // GetSystem returns an order without a party check — for internal callers
 // (payment/settlement) acting as the system, not an end user.
@@ -153,8 +194,30 @@ func (s *Service) transition(ctx context.Context, actorID, id, from, to string, 
 }
 
 // MarkPaid: created -> paid (called by the payment module on a verified callback).
+// For a COMPUTE order, payment is the moment of delivery: grant the compute
+// entitlement (idempotent) and auto-advance paid -> delivered (arming the
+// auto-confirm + settlement that pays the seller). A grant/deliver hiccup leaves
+// the order 'paid' for a retry rather than failing the payment callback.
 func (s *Service) MarkPaid(ctx context.Context, id string) (Order, error) {
-	return s.transition(ctx, "", id, StatusCreated, StatusPaid, false)
+	paid, err := s.transition(ctx, "", id, StatusCreated, StatusPaid, false)
+	if err != nil {
+		return Order{}, err
+	}
+	if paid.ProductType != ProductCompute {
+		return paid, nil
+	}
+	if s.granter != nil {
+		if err := s.granter.GrantForOrder(ctx, paid.ID, paid.DatasetID, paid.BuyerID); err != nil {
+			slog.Error("compute entitlement grant on paid failed (order left paid, retriable)", "order_id", id, "err", err)
+			return paid, nil
+		}
+	}
+	delivered, err := s.transition(ctx, "", id, StatusPaid, StatusDelivered, true)
+	if err != nil {
+		slog.Error("compute order auto-deliver failed (entitlement granted, order left paid)", "order_id", id, "err", err)
+		return paid, nil
+	}
+	return delivered, nil
 }
 
 // MarkDelivered: paid -> delivered, arming the 7-day auto-confirm (called by delivery).

@@ -311,6 +311,10 @@ func (r *pgRepo) CreateEntitlement(ctx context.Context, e Entitlement) (Entitlem
 		RETURNING ` + entCols
 	out, err := scanEnt(r.pool.QueryRow(ctx, q, e.DatasetID, e.BuyerID, e.OrderID, e.JobsQuota, e.ExpiresAt))
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+			return Entitlement{}, ErrDuplicateEnt // one entitlement per order (idempotent grant)
+		}
 		return Entitlement{}, fmt.Errorf("create entitlement: %w", err)
 	}
 	return out, nil
