@@ -67,3 +67,49 @@ func TestSchemaTSVAndNonTabular(t *testing.T) {
 		t.Errorf("schema must never fail, got %s", c.Result)
 	}
 }
+
+func schemaAlertCodes(c Check) map[string]string {
+	out := map[string]string{}
+	if alerts, ok := c.Report["alerts"].([]schemaAlert); ok {
+		for _, a := range alerts {
+			out[a.Column+":"+a.Code] = a.Message
+		}
+	}
+	return out
+}
+
+func TestSchemaAlerts(t *testing.T) {
+	var b []byte
+	b = append(b, []byte("uid,const,mostly_null,note\n")...)
+	for i := 0; i < 60; i++ {
+		line := ""
+		line += "u" + itoaq(i) + "," // uid: all distinct -> unique_key
+		line += "X,"                 // const: single value -> constant
+		if i < 5 {                   // mostly_null: >50% empty -> high_null
+			line += "v,"
+		} else {
+			line += ","
+		}
+		line += "t" + itoaq(i%55) + "\n" // note: 55 distinct of 60 -> high_cardinality (not fully unique)
+		b = append(b, []byte(line)...)
+	}
+	c := Schema(b, "text/csv")
+	codes := schemaAlertCodes(c)
+	for _, want := range []string{"uid:unique_key", "const:constant", "mostly_null:high_null", "note:high_cardinality"} {
+		if _, ok := codes[want]; !ok {
+			t.Errorf("expected alert %q, got %v", want, codes)
+		}
+	}
+}
+
+func itoaq(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var d []byte
+	for n > 0 {
+		d = append([]byte{byte('0' + n%10)}, d...)
+		n /= 10
+	}
+	return string(d)
+}

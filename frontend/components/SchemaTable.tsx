@@ -31,10 +31,26 @@ export function hasSchema(checks: QualityCheck[] | null): boolean {
   );
 }
 
+type Alert = { column: string; code: string; message: string };
+
+const ALERT_CLS: Record<string, string> = {
+  empty: "border-rose-200 bg-rose-50 text-rose-700",
+  high_null: "border-amber-200 bg-amber-50 text-amber-700",
+  constant: "border-amber-200 bg-amber-50 text-amber-700",
+  unique_key: "border-sky-200 bg-sky-50 text-sky-700",
+  high_cardinality: "border-neutral-200 bg-neutral-50 text-neutral-600",
+};
+
 export function SchemaTable({ checks }: { checks: QualityCheck[] }) {
   const schema = checks.find((c) => c.type === "schema");
   const r = schema?.report as
-    | { applicable?: boolean; row_count?: number; column_count?: number; columns?: Col[] }
+    | {
+        applicable?: boolean;
+        row_count?: number;
+        column_count?: number;
+        columns?: Col[];
+        alerts?: Alert[];
+      }
     | undefined;
   if (!schema || !r?.applicable) {
     return (
@@ -44,11 +60,29 @@ export function SchemaTable({ checks }: { checks: QualityCheck[] }) {
     );
   }
   const cols = r.columns ?? [];
+  const alerts = r.alerts ?? [];
   return (
     <div>
       <p className="mb-2 text-xs text-neutral-400">
         {r.row_count} 行 · {r.column_count} 列（按样本统计 / sampled）
       </p>
+      {alerts.length > 0 && (
+        <div className="mb-3">
+          <p className="mb-1 text-xs font-medium text-neutral-500">
+            数据健康提示 <span className="font-normal text-neutral-400">/ Data-health alerts</span>
+          </p>
+          <ul className="flex flex-wrap gap-1.5">
+            {alerts.map((a, i) => (
+              <li
+                key={i}
+                className={`rounded border px-2 py-0.5 text-[11px] ${ALERT_CLS[a.code] ?? ALERT_CLS.high_cardinality}`}
+              >
+                <span className="font-medium">{a.column}</span>: {a.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
