@@ -226,3 +226,75 @@ func TestDatasheetRoundTripIntegration(t *testing.T) {
 		t.Errorf("nil datasheet should clear, got %+v", got2.Datasheet)
 	}
 }
+
+// TestSortByQualityIntegration validates that sort=quality orders a clean,
+// high-score tabular dataset ahead of a low-score one against real Postgres
+// (exercises the LATERAL join + ORDER BY).
+func TestSortByQualityIntegration(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping real-DB integration test")
+	}
+	if err := db.RunMigrations(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	defer pool.Close()
+	ctx := context.Background()
+	repo := NewRepository(pool)
+
+	uniq := fmt.Sprintf("%d", time.Now().UnixNano())
+	var sellerID string
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO users (account, account_type, password_hash, role)
+		 VALUES ($1,'email','x','seller') RETURNING id::text`,
+		"qsort-"+uniq+"@example.com").Scan(&sellerID); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	mk := func(title string, score int) string {
+		d, err := repo.Create(ctx, Dataset{SellerID: sellerID, Title: title + " " + uniq, DataType: "structured", LicenseType: "commercial"})
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		vid, err := repo.AddVersion(ctx, d.ID, "sha-"+d.ID, "sim", FileInput{ObjectKey: "datasets/" + d.ID + "/d.csv", SizeBytes: 1, SHA256: "s", ContentType: "text/csv"}, StatusReviewing)
+		if err != nil {
+			t.Fatalf("addversion: %v", err)
+		}
+		band := "clean"
+		if score < 60 {
+			band = "suspect"
+		}
+		if err := repo.SaveQualityCheck(ctx, d.ID, vid, "authenticity", "pass", map[string]any{"applicable": true, "band": band, "score": score}); err != nil {
+			t.Fatalf("savecheck: %v", err)
+		}
+		if err := repo.SetStatus(ctx, d.ID, StatusPublished); err != nil {
+			t.Fatalf("setstatus: %v", err)
+		}
+		return d.ID
+	}
+	hi := mk("HiQ", 95)
+	lo := mk("LoQ", 30)
+
+	list, err := repo.ListPublished(ctx, ListFilter{Sort: "quality", Limit: 100, Keyword: uniq})
+	if err != nil {
+		t.Fatalf("listpublished: %v", err)
+	}
+	var hiPos, loPos = -1, -1
+	for i, d := range list {
+		if d.ID == hi {
+			hiPos = i
+		}
+		if d.ID == lo {
+			loPos = i
+		}
+	}
+	if hiPos < 0 || loPos < 0 {
+		t.Fatalf("both datasets must be present (hi=%d lo=%d)", hiPos, loPos)
+	}
+	if hiPos > loPos {
+		t.Errorf("sort=quality: high-score (pos %d) must come before low-score (pos %d)", hiPos, loPos)
+	}
+}

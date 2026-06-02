@@ -41,6 +41,8 @@ type Repository interface {
 	// CurrentVersionMeta returns the current version's file + version info for
 	// the Croissant metadata export. Zero-value (no error) if not yet uploaded.
 	CurrentVersionMeta(ctx context.Context, datasetID string) (VersionMeta, error)
+	// ListVersions returns a dataset's version history, newest first.
+	ListVersions(ctx context.Context, datasetID string) ([]VersionInfo, error)
 	// ContentDupExists reports whether another dataset already has a version
 	// with the same content hash (exact resale / duplicate upload).
 	ContentDupExists(ctx context.Context, contentSHA256, excludeDatasetID string) (bool, error)
@@ -65,7 +67,7 @@ type ListFilter struct {
 	Domain        string
 	MinPriceCents int64
 	MaxPriceCents int64  // 0 = no upper bound
-	Sort          string // newest | price_asc | price_desc
+	Sort          string // newest | price_asc | price_desc | quality
 	Limit         int
 	Offset        int
 }
@@ -315,11 +317,22 @@ func (r *pgRepo) ListPublished(ctx context.Context, f ListFilter) ([]Dataset, er
 	}
 
 	order := "created_at DESC"
+	from := "datasets"
 	switch f.Sort {
 	case "price_asc":
 		order = effPrice + " ASC, created_at DESC"
 	case "price_desc":
 		order = effPrice + " DESC, created_at DESC"
+	case "quality":
+		// Verified-and-clean first, then by authenticity score (tabular), then
+		// newest. The LATERAL is added only for this sort so the default catalog
+		// query is untouched.
+		from = `datasets d LEFT JOIN LATERAL (
+			SELECT bool_or(result = 'fail') AS any_fail, count(*) AS n,
+			       max((report->>'score')::int) FILTER (
+			           WHERE type = 'authenticity' AND report->>'applicable' = 'true') AS auth_score
+			FROM quality_checks qc WHERE qc.version_id = d.current_version_id) qa ON true`
+		order = `(qa.n > 0 AND qa.any_fail IS NOT TRUE) DESC, qa.auth_score DESC NULLS LAST, d.created_at DESC`
 	default:
 		if kwArg > 0 {
 			order = fmt.Sprintf("ts_rank(search_vector, plainto_tsquery('simple', $%d)) DESC, created_at DESC", kwArg)
@@ -335,7 +348,7 @@ func (r *pgRepo) ListPublished(ctx context.Context, f ListFilter) ([]Dataset, er
 		offset = 0
 	}
 	args = append(args, limit, offset)
-	q := `SELECT ` + datasetCols + ` FROM datasets WHERE ` +
+	q := `SELECT ` + datasetCols + ` FROM ` + from + ` WHERE ` +
 		strings.Join(conds, " AND ") +
 		` ORDER BY ` + order +
 		fmt.Sprintf(` LIMIT $%d OFFSET $%d`, len(args)-1, len(args))
@@ -485,6 +498,25 @@ func (r *pgRepo) ListQualityChecks(ctx context.Context, datasetID string) ([]Qua
 		}
 		qc.CreatedAt = created.UTC().Format(time.RFC3339)
 		out = append(out, qc)
+	}
+	return out, rows.Err()
+}
+
+func (r *pgRepo) ListVersions(ctx context.Context, datasetID string) ([]VersionInfo, error) {
+	const q = `SELECT version_no, COALESCE(changelog,''), created_at::text
+	           FROM dataset_versions WHERE dataset_id=$1 ORDER BY version_no DESC`
+	rows, err := r.pool.Query(ctx, q, datasetID)
+	if err != nil {
+		return nil, fmt.Errorf("list versions: %w", err)
+	}
+	defer rows.Close()
+	var out []VersionInfo
+	for rows.Next() {
+		var v VersionInfo
+		if err := rows.Scan(&v.VersionNo, &v.Changelog, &v.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan version: %w", err)
+		}
+		out = append(out, v)
 	}
 	return out, rows.Err()
 }
