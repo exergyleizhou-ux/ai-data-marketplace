@@ -234,6 +234,8 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
                   </Button>
                 ) : TERMINAL.has(j.status) ? (
                   <span className="text-xs text-neutral-400">—</span>
+                ) : j.status === "output_reviewing" ? (
+                  <span className="text-xs text-amber-600">运营审核中…</span>
                 ) : (
                   <span className="text-xs text-neutral-400">运行中…</span>
                 )}

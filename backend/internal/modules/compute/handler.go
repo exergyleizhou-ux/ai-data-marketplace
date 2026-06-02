@@ -169,6 +169,20 @@ func (h *handler) cancelJob(c *gin.Context) {
 	httpx.OK(c, j)
 }
 
+func (h *handler) listMyEntitlements(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	items, err := h.svc.ListEntitlements(c.Request.Context(), httpx.UserID(c), limit, offset)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	if items == nil {
+		items = []Entitlement{}
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
 // downloadOutput streams a released job's output to its buyer. Mirrors delivery:
 // the output bytes leave through this endpoint (or, with a presign-capable
 // store, a redirect — a later optimization).
@@ -262,6 +276,28 @@ func (h *handler) adminListJobs(c *gin.Context) {
 		items = []Job{}
 	}
 	httpx.OK(c, gin.H{"items": items})
+}
+
+func (h *handler) opsReleaseJob(c *gin.Context) {
+	j, err := h.svc.OpsReleaseOutput(c.Request.Context(), httpx.UserID(c), c.Param("id"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, j)
+}
+
+func (h *handler) opsRejectJob(c *gin.Context) {
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	j, err := h.svc.OpsRejectOutput(c.Request.Context(), httpx.UserID(c), c.Param("id"), req.Reason)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, j)
 }
 
 // fail maps compute sentinels to the shared httpx envelope (same approach as

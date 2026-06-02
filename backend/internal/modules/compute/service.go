@@ -257,6 +257,61 @@ func (s *Service) RevokeEntitlementsForOrder(ctx context.Context, orderID string
 	return s.repo.RevokeByOrder(ctx, orderID)
 }
 
+// ListEntitlements returns a buyer's compute entitlements (so the UI doesn't
+// have to remember them client-side).
+func (s *Service) ListEntitlements(ctx context.Context, buyerID string, limit, offset int) ([]Entitlement, error) {
+	return s.repo.ListEntitlementsByBuyer(ctx, buyerID, clampLimit(limit), max0(offset))
+}
+
+// --- ops: output review (for offers with review_output) ---
+
+// OpsReleaseOutput releases a job parked in output_reviewing to the buyer.
+func (s *Service) OpsReleaseOutput(ctx context.Context, opsID, jobID string) (Job, error) {
+	j, err := s.repo.GetJob(ctx, jobID)
+	if err != nil {
+		return Job{}, err
+	}
+	if j.Status != JobOutputReviewing {
+		return Job{}, ErrBadTransition
+	}
+	out, err := s.repo.Release(ctx, jobID, j.OutputKey, j.OutputKind, j.OutputBytes, j.LogsKey)
+	if err != nil {
+		return Job{}, err
+	}
+	s.audit.Record(ctx, audit.Entry{ActorID: opsID, Action: "compute.job.ops_release",
+		ResourceType: "compute_job", ResourceID: jobID})
+	return out, nil
+}
+
+// OpsRejectOutput rejects a job parked in output_reviewing (output withheld) and
+// refunds the buyer's credit (§21).
+func (s *Service) OpsRejectOutput(ctx context.Context, opsID, jobID, reason string) (Job, error) {
+	j, err := s.repo.GetJob(ctx, jobID)
+	if err != nil {
+		return Job{}, err
+	}
+	if j.Status != JobOutputReviewing {
+		return Job{}, ErrBadTransition
+	}
+	out, err := s.repo.Reject(ctx, jobID, orReason(reason, "ops_review_rejected"))
+	if err != nil {
+		return Job{}, err
+	}
+	if err := s.repo.RefundQuota(ctx, j.EntitlementID); err != nil {
+		slog.Error("compute: quota refund on ops reject failed", "job_id", jobID, "err", err)
+	}
+	s.audit.Record(ctx, audit.Entry{ActorID: opsID, Action: "compute.job.ops_reject",
+		ResourceType: "compute_job", ResourceID: jobID, Detail: map[string]any{"reason": reason}})
+	return out, nil
+}
+
+func orReason(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
+}
+
 // --- buyer: job submission ---
 
 // SubmitInput is a buyer's request to run an algorithm on a dataset.

@@ -193,13 +193,10 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 	}
 
 	// Output gate: size cap (design §7/§8). A real runner enforces this during
-	// write; the mock returns in memory so we check here.
+	// write; the mock returns in memory so we check here. A gate rejection
+	// refunds the buyer's credit (§21: rejected output isn't billed).
 	if offer.MaxOutputBytes > 0 && int64(len(res.Output)) > offer.MaxOutputBytes {
-		if _, rerr := s.repo.Reject(ctx, jobID, "output_exceeds_max_bytes"); rerr != nil {
-			slog.Error("compute: reject failed", "job_id", jobID, "err", rerr)
-		}
-		s.audit.Record(ctx, audit.Entry{Action: "compute.job.reject", ResourceType: "compute_job",
-			ResourceID: jobID, Detail: map[string]any{"reason": "output_exceeds_max_bytes", "bytes": len(res.Output)}})
+		s.rejectJob(ctx, jobID, job.EntitlementID, "output_exceeds_max_bytes")
 		return
 	}
 
@@ -222,6 +219,18 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 	// they would pass a scrub gate. P1: store nothing by default (design §7.4).
 	logsKey := ""
 
+	// High-sensitivity offers park the output for ops human review before it is
+	// released to the buyer (design §8 gate ⑤). Otherwise release directly.
+	if offer.ReviewOutput {
+		if _, err := s.repo.StageForReview(ctx, jobID, key, res.OutputKind, size, logsKey); err != nil {
+			slog.Error("compute: stage-for-review failed", "job_id", jobID, "err", err)
+			return
+		}
+		s.audit.Record(ctx, audit.Entry{Action: "compute.job.review_pending", ResourceType: "compute_job",
+			ResourceID: jobID, Detail: map[string]any{"output_kind": res.OutputKind, "output_bytes": size}})
+		return
+	}
+
 	released, err := s.repo.Release(ctx, jobID, key, res.OutputKind, size, logsKey)
 	if err != nil {
 		slog.Error("compute: release failed", "job_id", jobID, "err", err)
@@ -229,6 +238,22 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 	}
 	s.audit.Record(ctx, audit.Entry{Action: "compute.job.release", ResourceType: "compute_job",
 		ResourceID: jobID, Detail: map[string]any{"output_kind": released.OutputKind, "output_bytes": size}})
+}
+
+// rejectJob marks a job's output rejected by the gate and refunds the credit
+// (rejected output isn't billed — §21).
+func (s *Service) rejectJob(ctx context.Context, jobID, entitlementID, reason string) {
+	if _, err := s.repo.Reject(ctx, jobID, reason); err != nil {
+		slog.Error("compute: reject failed", "job_id", jobID, "err", err)
+		return
+	}
+	if entitlementID != "" {
+		if err := s.repo.RefundQuota(ctx, entitlementID); err != nil {
+			slog.Error("compute: quota refund on reject failed", "job_id", jobID, "err", err)
+		}
+	}
+	s.audit.Record(ctx, audit.Entry{Action: "compute.job.reject", ResourceType: "compute_job",
+		ResourceID: jobID, Detail: map[string]any{"reason": reason}})
 }
 
 func (s *Service) failJob(ctx context.Context, jobID, code string) {

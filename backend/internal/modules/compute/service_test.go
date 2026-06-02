@@ -128,6 +128,17 @@ func (f *fakeRepo) GetEntitlement(_ context.Context, id string) (Entitlement, er
 	}
 	return e, nil
 }
+func (f *fakeRepo) ListEntitlementsByBuyer(_ context.Context, buyerID string, _, _ int) ([]Entitlement, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []Entitlement
+	for _, e := range f.ents {
+		if e.BuyerID == buyerID {
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}
 func (f *fakeRepo) SpendQuota(_ context.Context, id string) (Entitlement, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -276,6 +287,17 @@ func (f *fakeRepo) Release(_ context.Context, id, key, kind string, b int64, log
 		return j, nil
 	}
 	j.Status, j.OutputKey, j.OutputKind, j.OutputBytes, j.LogsKey = JobReleased, key, kind, b, logs
+	f.jobs[id] = j
+	return j, nil
+}
+func (f *fakeRepo) StageForReview(_ context.Context, id, key, kind string, b int64, logs string) (Job, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	j, ok := f.jobs[id]
+	if !ok {
+		return Job{}, ErrNotFound
+	}
+	j.Status, j.OutputKey, j.OutputKind, j.OutputBytes, j.LogsKey = JobOutputReviewing, key, kind, b, logs
 	f.jobs[id] = j
 	return j, nil
 }

@@ -118,6 +118,63 @@ func TestComputeEngineIntegration(t *testing.T) {
 	if rej.OutputKey != "" {
 		t.Fatalf("rejected job must not have a downloadable output: %+v", rej)
 	}
+	// §21: a rejected job refunds the credit. Only the first (released) job
+	// should have consumed quota.
+	afterRej, _ := repo.GetEntitlement(ctx, ent.ID)
+	if afterRej.JobsUsed != 1 {
+		t.Fatalf("rejected job did not refund credit: jobs_used=%d, want 1", afterRej.JobsUsed)
+	}
+
+	// --- review_output: output parks in output_reviewing until ops releases ---
+	if _, err := repo.UpsertOffer(ctx, Offer{
+		DatasetID: dsID, Enabled: true, TrustLevel: TrustL1, MaxOutputBytes: 1 << 20, ReviewOutput: true,
+	}); err != nil {
+		t.Fatalf("review offer: %v", err)
+	}
+	revJob, err := svc.SubmitJob(ctx, buyer, SubmitInput{DatasetID: dsID, EntitlementID: ent.ID, AlgorithmID: algo.ID})
+	if err != nil {
+		t.Fatalf("submit review job: %v", err)
+	}
+	reviewing := waitStatus(t, repo, revJob.ID, JobOutputReviewing, 5*time.Second)
+	if reviewing.OutputKey == "" {
+		t.Fatalf("reviewing job should have its output staged: %+v", reviewing)
+	}
+	// Buyer cannot download while it is under review.
+	if _, _, _, err := svc.OpenOutput(ctx, buyer, revJob.ID); err == nil {
+		t.Fatal("output under review must not be downloadable")
+	}
+	// Ops releases it → now downloadable.
+	if _, err := svc.OpsReleaseOutput(ctx, "ops-1", revJob.ID); err != nil {
+		t.Fatalf("ops release: %v", err)
+	}
+	relJob, _ := repo.GetJob(ctx, revJob.ID)
+	if relJob.Status != JobReleased {
+		t.Fatalf("ops-released job status=%s, want released", relJob.Status)
+	}
+	rc2, _, _, err := svc.OpenOutput(ctx, buyer, revJob.ID)
+	if err != nil {
+		t.Fatalf("download after ops release: %v", err)
+	}
+	rc2.Close()
+
+	// And an ops reject withholds the output + refunds the credit.
+	usedBefore, _ := repo.GetEntitlement(ctx, ent.ID)
+	rev2, err := svc.SubmitJob(ctx, buyer, SubmitInput{DatasetID: dsID, EntitlementID: ent.ID, AlgorithmID: algo.ID})
+	if err != nil {
+		t.Fatalf("submit review job 2: %v", err)
+	}
+	waitStatus(t, repo, rev2.ID, JobOutputReviewing, 5*time.Second)
+	if _, err := svc.OpsRejectOutput(ctx, "ops-1", rev2.ID, "looks like raw data"); err != nil {
+		t.Fatalf("ops reject: %v", err)
+	}
+	rejected2, _ := repo.GetJob(ctx, rev2.ID)
+	if rejected2.Status != JobRejected {
+		t.Fatalf("ops-rejected job status=%s, want rejected", rejected2.Status)
+	}
+	usedAfter, _ := repo.GetEntitlement(ctx, ent.ID)
+	if usedAfter.JobsUsed != usedBefore.JobsUsed {
+		t.Fatalf("ops reject did not refund: before=%d after=%d", usedBefore.JobsUsed, usedAfter.JobsUsed)
+	}
 }
 
 // waitStatus polls a job until it reaches want or the timeout elapses.
