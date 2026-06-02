@@ -30,14 +30,50 @@ var (
 		Namespace: "marketplace", Subsystem: "quality",
 		Name: "jobs_total", Help: "Quality-check jobs by resulting dataset status (reviewing/draft).",
 	}, []string{"outcome"})
+
+	// Compute-to-Data (C2D) sandbox jobs (design §17 observability).
+	computeJobs = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "marketplace", Subsystem: "compute",
+		Name: "jobs_total", Help: "C2D jobs by terminal/transition outcome (released/failed/rejected/review_pending).",
+	}, []string{"outcome"})
+
+	computeJobDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "marketplace", Subsystem: "compute",
+		Name: "job_duration_seconds", Help: "C2D job run time (claim → terminal) by output kind.",
+		Buckets: []float64{0.25, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600},
+	}, []string{"kind"})
+
+	computeReclaims = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "marketplace", Subsystem: "compute",
+		Name: "lease_reclaims_total", Help: "C2D jobs reclaimed after a runner lease expired (crash recovery).",
+	})
 )
 
 func init() {
-	prometheus.MustRegister(httpRequests, httpDuration, qualityJobs)
+	prometheus.MustRegister(httpRequests, httpDuration, qualityJobs,
+		computeJobs, computeJobDuration, computeReclaims)
 }
 
 // RecordQualityJob counts a completed quality check by its outcome status.
 func RecordQualityJob(outcome string) { qualityJobs.WithLabelValues(outcome).Inc() }
+
+// RecordComputeJob counts a C2D job reaching a terminal/transition outcome.
+func RecordComputeJob(outcome string) { computeJobs.WithLabelValues(outcome).Inc() }
+
+// ObserveComputeJobDuration records a C2D job's run time by output kind.
+func ObserveComputeJobDuration(kind string, seconds float64) {
+	if kind == "" {
+		kind = "unknown"
+	}
+	computeJobDuration.WithLabelValues(kind).Observe(seconds)
+}
+
+// RecordComputeReclaims counts n jobs reclaimed by the stale-lease sweep.
+func RecordComputeReclaims(n int) {
+	if n > 0 {
+		computeReclaims.Add(float64(n))
+	}
+}
 
 // Middleware records request count and latency. Place it early in the chain so
 // it times the whole handler stack.
