@@ -89,3 +89,6 @@ jobs:
             "git+https://github.com/exergyleizhou-ux/PaperGuard.git@v2.17.0"
       - name: Test (end-to-end against real PaperGuard)
         run: pytest -q
+      - name: Test compute-to-data sandbox algorithms (logreg)
+        working-directory: algorithms/logreg
+        run: python test_train.py

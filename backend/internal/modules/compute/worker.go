@@ -7,11 +7,44 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
 )
+
+// stageData copies a dataset object from storage to a fresh local dir (as
+// input.csv) so a sandbox runner can mount it read-only. Returns the dir and a
+// cleanup func. This runs on the runner host BEFORE the algorithm container's
+// network is severed (design §18.3).
+func stageData(ctx context.Context, store storage.Storage, key string) (string, func(), error) {
+	rc, _, err := store.Open(ctx, key)
+	if err != nil {
+		return "", nil, fmt.Errorf("open dataset object: %w", err)
+	}
+	defer rc.Close()
+	dir, err := os.MkdirTemp("", "c2d-data-")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	f, err := os.Create(filepath.Join(dir, "input.csv"))
+	if err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if _, err := io.Copy(f, rc); err != nil {
+		f.Close()
+		cleanup()
+		return "", nil, err
+	}
+	if err := f.Close(); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return dir, cleanup, nil
+}
 
 // randSuffix builds a per-process runner id (pid + start nanos) for lease
 // ownership. Uniqueness across processes is enough; within a process all
@@ -128,8 +161,28 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 		dataKey, _ = s.data.CurrentObjectKey(ctx, job.DatasetID) // best-effort; mock ignores
 	}
 
+	// Stage the dataset to a local read-only dir for runners that mount real
+	// data (docker/gVisor/TEE). The host pulls + verifies the data BEFORE the
+	// algorithm container has its network severed (design §18.3). The mock
+	// runner needs nothing staged.
+	dataPath := ""
+	if s.runner.NeedsStagedData() {
+		if dataKey == "" {
+			s.failJob(ctx, jobID, "dataset_object_missing")
+			return
+		}
+		dir, cleanup, serr := stageData(ctx, s.store, dataKey)
+		if serr != nil {
+			slog.Error("compute: data staging failed", "job_id", jobID, "err", serr)
+			s.failJob(ctx, jobID, "data_staging_error")
+			return
+		}
+		defer cleanup()
+		dataPath = dir
+	}
+
 	res, err := s.runner.Run(ctx, RunRequest{
-		Job: job, Algorithm: algo, DataKey: dataKey,
+		Job: job, Algorithm: algo, DataKey: dataKey, DataPath: dataPath,
 		MaxOutputBytes: offer.MaxOutputBytes, MaxOutputFiles: offer.MaxOutputFiles,
 		MaxRuntimeSecs: offer.MaxRuntimeSecs,
 	})

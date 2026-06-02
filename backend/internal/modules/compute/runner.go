@@ -14,6 +14,7 @@ type RunRequest struct {
 	Job            Job
 	Algorithm      Algorithm
 	DataKey        string // dataset object-storage key (read-only input)
+	DataPath       string // local dir holding the staged dataset (set by the worker for runners that NeedStagedData)
 	MaxOutputBytes int64
 	MaxOutputFiles int
 	MaxRuntimeSecs int
@@ -38,6 +39,10 @@ type RunResult struct {
 type Runner interface {
 	Run(ctx context.Context, req RunRequest) (RunResult, error)
 	Kind() string
+	// NeedsStagedData reports whether the worker must stage the dataset bytes to
+	// a local path (RunRequest.DataPath) before calling Run — true for runners
+	// that mount real data (docker/gVisor/TEE), false for the in-process mock.
+	NeedsStagedData() bool
 }
 
 // MockRunner is a deterministic in-process runner for tests and docker-less
@@ -54,6 +59,9 @@ func NewMockRunner() Runner { return MockRunner{} }
 
 // Kind identifies the runner in audit/metrics.
 func (MockRunner) Kind() string { return "mock" }
+
+// NeedsStagedData is false: the mock ignores the dataset.
+func (MockRunner) NeedsStagedData() bool { return false }
 
 // Run synthesizes a deterministic output for the algorithm's output kind.
 func (MockRunner) Run(_ context.Context, req RunRequest) (RunResult, error) {

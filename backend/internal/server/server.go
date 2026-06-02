@@ -269,11 +269,20 @@ func (s *Server) routes() {
 		// buy a compute entitlement → run a whitelisted algorithm → get the
 		// OUTPUT, never the raw data. The in-process worker runs only when object
 		// storage is available (it stores outputs there); without it, jobs stay
-		// queued for an out-of-process runner. P1 uses the MockRunner (no docker);
-		// a dockerRunner (--network none) lands with the algorithm image.
+		// queued for an out-of-process runner.
+		//
+		// Runner selection: COMPUTE_RUNNER=docker uses the hardened
+		// `docker run --network none` sandbox (requires a Docker daemon + a built,
+		// digest-pinned algorithm image); otherwise the in-process MockRunner
+		// (default, docker-less dev/CI).
+		var runner compute.Runner = compute.NewMockRunner()
+		if os.Getenv("COMPUTE_RUNNER") == "docker" {
+			runner = compute.NewDockerRunner(compute.DefaultDockerResources)
+			slog.Info("compute runner", "kind", "docker")
+		}
 		var computeOpts []compute.Option
 		if store != nil {
-			computeOpts = append(computeOpts, compute.WithWorker(compute.NewMockRunner(), store, dsSvc, 2, 64))
+			computeOpts = append(computeOpts, compute.WithWorker(runner, store, dsSvc, 2, 64))
 		}
 		computeSvc := compute.NewService(compute.NewRepository(s.db), authSvc,
 			computeDatasetAdapter{ds: dsSvc}, rec, computeOpts...)
