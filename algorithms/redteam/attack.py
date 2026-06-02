@@ -132,8 +132,20 @@ def main():
     elif m == "timeout":
         time.sleep(3600)  # runner must kill us
     elif m == "oom":
-        _ = bytearray(4 * (1 << 30))  # 4 GiB; --memory must kill us
-        write_result({"mode": m, "result": "allocated"})
+        # Touch every page so the memory is RESIDENT (a plain bytearray is
+        # calloc-lazy and stays on the shared zero page, never hitting the cgroup
+        # limit). Under --memory the cgroup OOM killer SIGKILLs us before we
+        # finish; if we DO finish, the limit was not enforced.
+        blocks = []
+        try:
+            for _ in range(64):  # 64 x 64 MiB = 4 GiB, all touched
+                b = bytearray(64 * 1024 * 1024)
+                for i in range(0, len(b), 4096):
+                    b[i] = 1
+                blocks.append(b)
+            write_result({"mode": m, "result": "allocated"})  # NOT contained
+        except MemoryError:
+            write_result({"mode": m, "result": "MemoryError"})
     else:
         log("unknown_mode", mode=m)
         sys.exit(2)
