@@ -109,3 +109,36 @@ func TestStageData(t *testing.T) {
 		t.Errorf("cleanup did not remove staging dir %s", dir)
 	}
 }
+
+func TestDockerRunArgs_RuntimeSelectable(t *testing.T) {
+	req := RunRequest{Algorithm: Algorithm{Image: "img", ImageDigest: "sha256:x", OutputKind: OutputModel}}
+
+	// Default runtime → no --runtime flag.
+	def := strings.Join(dockerRunArgs(req, DefaultDockerResources, "/d", "/o", "/p.json"), " ")
+	if strings.Contains(def, "--runtime") {
+		t.Errorf("default runtime should not pass --runtime: %s", def)
+	}
+
+	// gVisor (runsc) → --runtime=runsc present, and the run subcommand stays first.
+	res := DefaultDockerResources
+	res.Runtime = "runsc"
+	gv := dockerRunArgs(req, res, "/d", "/o", "/p.json")
+	if gv[0] != "run" {
+		t.Fatalf("first arg = %q, want run", gv[0])
+	}
+	if !strings.Contains(strings.Join(gv, " "), "--runtime=runsc") {
+		t.Errorf("gVisor runtime missing --runtime=runsc: %v", gv)
+	}
+	// Hardening flags must still be present alongside the runtime.
+	if !strings.Contains(strings.Join(gv, " "), "--network=none") {
+		t.Errorf("runtime selection dropped --network=none: %v", gv)
+	}
+}
+
+func TestNewDockerRunner_PreservesRuntimeWithDefaults(t *testing.T) {
+	// Setting only Runtime must keep the default caps (not wipe them).
+	r := NewDockerRunner(DockerResources{Runtime: "runsc"}).(dockerRunner)
+	if r.res.Runtime != "runsc" || r.res.Memory != DefaultDockerResources.Memory || r.res.PidsLimit != DefaultDockerResources.PidsLimit {
+		t.Fatalf("withDefaults dropped fields: %+v", r.res)
+	}
+}
