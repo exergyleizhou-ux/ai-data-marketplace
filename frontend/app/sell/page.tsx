@@ -6,6 +6,7 @@ import { api, yuan, type Dataset } from "@/lib/api";
 import { Protected } from "@/components/Protected";
 import { Alert, Badge, Button, Card, Empty, Field, Input, Select, Spinner, Textarea } from "@/components/ui";
 import { DatasheetEditor } from "@/components/Datasheet";
+import { ComputeOfferEditor } from "@/components/Compute";
 
 export default function SellPage() {
   return (
@@ -185,6 +186,7 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [editingSheet, setEditingSheet] = useState(false);
+  const [editingOffer, setEditingOffer] = useState(false);
 
   async function sign() {
     setErr("");
@@ -239,6 +241,11 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
           <Button variant="ghost" onClick={() => setEditingSheet((s) => !s)}>
             {editingSheet ? "收起说明卡" : "数据说明卡"}
           </Button>
+          {d.status === "published" && (
+            <Button variant="ghost" onClick={() => setEditingOffer((s) => !s)}>
+              {editingOffer ? "收起沙箱售卖" : "沙箱售卖"}
+            </Button>
+          )}
           {!d.source_signed_at && (
             <Button variant="secondary" onClick={sign} disabled={!!busy}>
               签署来源承诺
@@ -278,6 +285,11 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
               onChange();
             }}
           />
+        </div>
+      )}
+      {editingOffer && d.status === "published" && (
+        <div className="mt-4 border-t border-neutral-100 pt-4">
+          <ComputeOfferEditor datasetId={d.id} />
         </div>
       )}
     </Card>

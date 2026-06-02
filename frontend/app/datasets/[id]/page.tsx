@@ -17,6 +17,7 @@ import { Alert, Badge, Button, Card, Empty, Spinner } from "@/components/ui";
 import { QualityReport } from "@/components/QualityReport";
 import { DatasheetView } from "@/components/Datasheet";
 import { SchemaTable, hasSchema } from "@/components/SchemaTable";
+import { ComputeBuyer } from "@/components/Compute";
 
 export default function DatasetDetailPage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -252,6 +253,9 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
             <p className="text-center text-xs text-neutral-400">下载前需签署数据使用许可协议</p>
           </div>
         </Card>
+        <div className="mt-4">
+          <ComputeBuyer datasetId={id} sellerId={ds.seller_id} />
+        </div>
       </div>
     </div>
   );
