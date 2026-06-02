@@ -22,6 +22,7 @@ type Repository interface {
 	RegisterAlgorithm(ctx context.Context, a Algorithm) (Algorithm, error)
 	GetAlgorithm(ctx context.Context, id string) (Algorithm, error)
 	ListApprovedAlgorithms(ctx context.Context) ([]Algorithm, error)
+	ListAlgorithmsByStatus(ctx context.Context, status string, limit int) ([]Algorithm, error)
 	ReviewAlgorithm(ctx context.Context, id, status string, trusted bool) (Algorithm, error)
 
 	// offers
@@ -176,6 +177,26 @@ func (r *pgRepo) ListApprovedAlgorithms(ctx context.Context) ([]Algorithm, error
 	rows, err := r.pool.Query(ctx, `SELECT `+algoCols+` FROM algorithms WHERE status=$1 ORDER BY name`, AlgoApproved)
 	if err != nil {
 		return nil, fmt.Errorf("list algorithms: %w", err)
+	}
+	defer rows.Close()
+	var out []Algorithm
+	for rows.Next() {
+		a, err := scanAlgo(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func (r *pgRepo) ListAlgorithmsByStatus(ctx context.Context, status string, limit int) ([]Algorithm, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	rows, err := r.pool.Query(ctx, `SELECT `+algoCols+` FROM algorithms WHERE status=$1 ORDER BY updated_at DESC LIMIT $2`, status, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list algorithms by status: %w", err)
 	}
 	defer rows.Close()
 	var out []Algorithm

@@ -219,6 +219,19 @@ func (s *Service) ReviewAlgorithm(ctx context.Context, opsID, id, status string,
 	return out, nil
 }
 
+// AdminListAlgorithms lists algorithms by review status (ops console).
+func (s *Service) AdminListAlgorithms(ctx context.Context, status string) ([]Algorithm, error) {
+	if status == "" {
+		status = AlgoPending
+	}
+	return s.repo.ListAlgorithmsByStatus(ctx, status, 100)
+}
+
+// AdminListJobs lists jobs by status (ops console; e.g. output_reviewing queue).
+func (s *Service) AdminListJobs(ctx context.Context, status string, limit int) ([]Job, error) {
+	return s.repo.ListJobsByStatus(ctx, status, clampLimit(limit))
+}
+
 // --- entitlements ---
 
 // GrantEntitlement creates compute credits for a buyer after payment succeeds

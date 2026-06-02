@@ -40,6 +40,13 @@ type RefundTrigger interface {
 	Refund(ctx context.Context, orderID string) error
 }
 
+// ComputeRevoker revokes a buyer's compute (C2D) entitlements tied to an order
+// when that order is refunded. Implemented by the compute module and injected
+// late so order does not import compute. Optional (may be nil).
+type ComputeRevoker interface {
+	RevokeEntitlementsForOrder(ctx context.Context, orderID string) (int, error)
+}
+
 // Service holds order business logic and drives the status state machine.
 type Service struct {
 	repo     Repository
@@ -48,6 +55,7 @@ type Service struct {
 	audit    audit.Recorder
 	settle   SettlementTrigger
 	refund   RefundTrigger
+	compute  ComputeRevoker
 }
 
 func NewService(repo Repository, identity IdentityChecker, datasets DatasetReader, rec audit.Recorder) *Service {
@@ -63,6 +71,10 @@ func (s *Service) SetSettlementTrigger(t SettlementTrigger) { s.settle = t }
 
 // SetRefundTrigger wires the refund hook (payment) after construction (H2).
 func (s *Service) SetRefundTrigger(t RefundTrigger) { s.refund = t }
+
+// SetComputeRevoker wires the compute-entitlement revoker (compute) so a refund
+// also revokes the buyer's C2D credits for the order. Optional.
+func (s *Service) SetComputeRevoker(r ComputeRevoker) { s.compute = r }
 
 // GetSystem returns an order without a party check — for internal callers
 // (payment/settlement) acting as the system, not an end user.
@@ -274,7 +286,18 @@ func (s *Service) ResolveDispute(ctx context.Context, opsID, orderID string, ref
 		if err := s.repo.ResolveDispute(ctx, orderID, "resolved_refund", note, opsID); err != nil {
 			return Order{}, err
 		}
-		return s.transition(ctx, opsID, orderID, StatusDisputed, StatusRefunded, false)
+		refunded, err := s.transition(ctx, opsID, orderID, StatusDisputed, StatusRefunded, false)
+		if err != nil {
+			return Order{}, err
+		}
+		// Revoke any compute (C2D) entitlements bought via this order. Best-effort:
+		// the refund already succeeded, so a revoke hiccup is logged, not fatal.
+		if s.compute != nil {
+			if _, rerr := s.compute.RevokeEntitlementsForOrder(ctx, orderID); rerr != nil {
+				slog.Error("compute entitlement revoke after refund failed (retriable)", "order_id", orderID, "err", rerr)
+			}
+		}
+		return refunded, nil
 	}
 	if err := s.repo.ResolveDispute(ctx, orderID, "resolved_release", note, opsID); err != nil {
 		return Order{}, err

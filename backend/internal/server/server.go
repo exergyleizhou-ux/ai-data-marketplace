@@ -18,6 +18,7 @@ import (
 
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/compute"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/dataset"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/delivery"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/order"
@@ -263,7 +264,45 @@ func (s *Server) routes() {
 				store, s.cfg.PIISecret, rec)
 			delivery.Register(api, delSvc, authMW)
 		}
+
+		// Compute-to-Data (隐私计算 / 可用不可见). The buyer-invisible L1 sandbox:
+		// buy a compute entitlement → run a whitelisted algorithm → get the
+		// OUTPUT, never the raw data. The in-process worker runs only when object
+		// storage is available (it stores outputs there); without it, jobs stay
+		// queued for an out-of-process runner. P1 uses the MockRunner (no docker);
+		// a dockerRunner (--network none) lands with the algorithm image.
+		var computeOpts []compute.Option
+		if store != nil {
+			computeOpts = append(computeOpts, compute.WithWorker(compute.NewMockRunner(), store, dsSvc, 2, 64))
+		}
+		computeSvc := compute.NewService(compute.NewRepository(s.db), authSvc,
+			computeDatasetAdapter{ds: dsSvc}, rec, computeOpts...)
+		s.closers = append(s.closers, computeSvc.Close)
+		// dev grant gated like payment's dev mark-paid (never in production).
+		compute.Register(api, computeSvc, authMW, auth.RequireRole("ops", "admin"), s.cfg.Env != "production")
+		// Refund→revoke (H2): when a dispute refund lands, revoke the buyer's
+		// compute credits tied to that order.
+		orderSvc.SetComputeRevoker(orderComputeAdapter{c: computeSvc})
 	}
+}
+
+// computeDatasetAdapter bridges dataset.Service to compute.DatasetReader.
+type computeDatasetAdapter struct{ ds *dataset.Service }
+
+func (a computeDatasetAdapter) ForCompute(ctx context.Context, id string) (compute.DatasetInfo, error) {
+	p, err := a.ds.ForPurchase(ctx, id)
+	if err != nil {
+		return compute.DatasetInfo{}, err
+	}
+	return compute.DatasetInfo{SellerID: p.SellerID, VersionID: p.VersionID, Published: p.Published}, nil
+}
+
+// orderComputeAdapter bridges compute.Service to order.ComputeRevoker so a
+// refund revokes the buyer's compute entitlements without order importing compute.
+type orderComputeAdapter struct{ c *compute.Service }
+
+func (a orderComputeAdapter) RevokeEntitlementsForOrder(ctx context.Context, orderID string) (int, error) {
+	return a.c.RevokeEntitlementsForOrder(ctx, orderID)
 }
 
 // orderDeliveryAdapter bridges order.Service to delivery.OrderGateway.
