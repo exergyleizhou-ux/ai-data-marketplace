@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
 )
 
 // IdentityChecker reports a user's KYC status (implemented by auth).
@@ -26,10 +28,15 @@ type DatasetReader interface {
 	ForCompute(ctx context.Context, datasetID string) (DatasetInfo, error)
 }
 
+// DataKeyResolver returns a dataset's current object-storage key so the runner
+// can stage the data read-only (implemented by dataset).
+type DataKeyResolver interface {
+	CurrentObjectKey(ctx context.Context, datasetID string) (string, error)
+}
+
 const kycVerified = "verified"
 
-// Lease / retry tuning for the runner-facing helpers (used by the worker in a
-// later PR; defined here so the contract is in one place).
+// Lease / retry tuning for the worker.
 const (
 	DefaultLeaseSecs   = 120
 	DefaultMaxAttempts = 3
@@ -42,14 +49,34 @@ type Service struct {
 	identity IdentityChecker
 	datasets DatasetReader
 	audit    audit.Recorder
+
+	// Execution engine (optional; set via WithWorker). When runner is nil,
+	// SubmitJob leaves the job queued for an out-of-process runner to claim.
+	runner      Runner
+	store       storage.Storage
+	data        DataKeyResolver
+	runnerID    string
+	leaseSecs   int
+	maxAttempts int
+	qCh         chan string // queued job ids
+	wg          sync.WaitGroup
+	stopSweep   chan struct{}
 }
 
+// Option configures optional Service dependencies.
+type Option func(*Service)
+
 // NewService builds the compute service.
-func NewService(repo Repository, identity IdentityChecker, datasets DatasetReader, rec audit.Recorder) *Service {
+func NewService(repo Repository, identity IdentityChecker, datasets DatasetReader, rec audit.Recorder, opts ...Option) *Service {
 	if rec == nil {
 		rec = audit.Noop{}
 	}
-	return &Service{repo: repo, identity: identity, datasets: datasets, audit: rec}
+	s := &Service{repo: repo, identity: identity, datasets: datasets, audit: rec,
+		leaseSecs: DefaultLeaseSecs, maxAttempts: DefaultMaxAttempts}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // --- seller: offer configuration ---
@@ -330,6 +357,7 @@ func (s *Service) SubmitJob(ctx context.Context, buyerID string, in SubmitInput)
 	s.audit.Record(ctx, audit.Entry{ActorID: buyerID, Action: "compute.job.submit",
 		ResourceType: "compute_job", ResourceID: out.ID,
 		Detail: map[string]any{"dataset_id": in.DatasetID, "algorithm_id": algo.ID, "output_kind": algo.OutputKind}})
+	s.enqueue(out.ID)
 	return out, nil
 }
 
