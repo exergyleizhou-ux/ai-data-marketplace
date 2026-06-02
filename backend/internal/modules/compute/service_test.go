@@ -66,6 +66,17 @@ func (f *fakeRepo) ListApprovedAlgorithms(_ context.Context) ([]Algorithm, error
 	}
 	return out, nil
 }
+func (f *fakeRepo) ListAlgorithmsByStatus(_ context.Context, status string, _ int) ([]Algorithm, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []Algorithm
+	for _, a := range f.algos {
+		if a.Status == status {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
 func (f *fakeRepo) ReviewAlgorithm(_ context.Context, id, status string, trusted bool) (Algorithm, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
