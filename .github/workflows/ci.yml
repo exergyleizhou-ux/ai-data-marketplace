@@ -92,3 +92,6 @@ jobs:
       - name: Test compute-to-data sandbox algorithms (logreg)
         working-directory: algorithms/logreg
         run: python test_train.py
+      - name: Test compute-to-data sandbox algorithms (dp_stats)
+        working-directory: algorithms/dp_stats
+        run: python test_stats.py

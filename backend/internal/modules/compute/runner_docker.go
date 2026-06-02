@@ -101,7 +101,11 @@ func (r dockerRunner) Run(ctx context.Context, req RunRequest) (RunResult, error
 	}
 	defer os.RemoveAll(outDir)
 
-	paramsFile, err := writeParams(req.Job.Params)
+	effParams := req.Params
+	if effParams == nil {
+		effParams = req.Job.Params
+	}
+	paramsFile, err := writeParams(effParams)
 	if err != nil {
 		return RunResult{}, err
 	}
