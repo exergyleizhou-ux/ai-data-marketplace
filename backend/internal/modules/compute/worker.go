@@ -188,6 +188,7 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 
 	res, err := s.runner.Run(ctx, RunRequest{
 		Job: job, Algorithm: algo, DataKey: dataKey, DataPath: dataPath,
+		Params:         effectiveParams(job),
 		MaxOutputBytes: offer.MaxOutputBytes, MaxOutputFiles: offer.MaxOutputFiles,
 		MaxRuntimeSecs: offer.MaxRuntimeSecs,
 	})
@@ -321,4 +322,21 @@ func uploadOutput(ctx context.Context, store storage.Storage, key string, data [
 		return 0, err
 	}
 	return obj.Size, nil
+}
+
+// effectiveParams merges the buyer's params with platform-injected keys. The DP
+// budget (_epsilon) comes from the offer (job.DPEpsilon), and any buyer-supplied
+// _epsilon is dropped — so the buyer cannot weaken or disable the noise (§8).
+func effectiveParams(j Job) map[string]any {
+	p := make(map[string]any, len(j.Params)+1)
+	for k, v := range j.Params {
+		if k == "_epsilon" {
+			continue
+		}
+		p[k] = v
+	}
+	if j.DPEpsilon != nil {
+		p["_epsilon"] = *j.DPEpsilon
+	}
+	return p
 }

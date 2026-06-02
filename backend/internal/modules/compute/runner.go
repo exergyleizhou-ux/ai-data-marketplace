@@ -13,8 +13,9 @@ import (
 type RunRequest struct {
 	Job            Job
 	Algorithm      Algorithm
-	DataKey        string // dataset object-storage key (read-only input)
-	DataPath       string // local dir holding the staged dataset (set by the worker for runners that NeedStagedData)
+	DataKey        string         // dataset object-storage key (read-only input)
+	DataPath       string         // local dir holding the staged dataset (set by the worker for runners that NeedStagedData)
+	Params         map[string]any // EFFECTIVE params handed to the algorithm = buyer params + platform-injected keys (e.g. _epsilon). The buyer cannot set _epsilon.
 	MaxOutputBytes int64
 	MaxOutputFiles int
 	MaxRuntimeSecs int
