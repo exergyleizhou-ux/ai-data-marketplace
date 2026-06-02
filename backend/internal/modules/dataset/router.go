@@ -19,9 +19,10 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	// Public browse/search + detail.
 	rg.GET("/datasets", h.list)
 	rg.GET("/datasets/:id", h.get)
-	rg.GET("/datasets/:id/quality", h.quality)     // public quality report (transparency)
-	rg.GET("/datasets/:id/versions", h.versions)   // public version history
-	rg.GET("/datasets/:id/croissant", h.croissant) // MLCommons Croissant JSON-LD (interop)
+	rg.GET("/datasets/:id/quality", h.quality)         // public quality report (transparency)
+	rg.GET("/datasets/:id/versions", h.versions)       // public version history
+	rg.GET("/datasets/:id/certificate", h.certificate) // integrity & registration certificate
+	rg.GET("/datasets/:id/croissant", h.croissant)     // MLCommons Croissant JSON-LD (interop)
 
 	// Sample preview: login required + rate-limited (anti-scrape, docs §2.3/§6.4).
 	preview := rg.Group("")

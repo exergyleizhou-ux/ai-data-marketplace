@@ -120,6 +120,15 @@ func (h *handler) get(c *gin.Context) {
 	httpx.OK(c, d)
 }
 
+func (h *handler) certificate(c *gin.Context) {
+	cert, err := h.svc.Certificate(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, cert)
+}
+
 func (h *handler) versions(c *gin.Context) {
 	vs, err := h.svc.Versions(c.Request.Context(), c.Param("id"))
 	if err != nil {
