@@ -72,6 +72,7 @@ export type Order = {
   platform_fee_cents: number;
   seller_amount_cents: number;
   status: string;
+  product_type?: string; // download | compute
   created_at?: string;
 };
 export type Earnings = {
@@ -379,6 +380,11 @@ export const api = {
     request<{ items: ComputeAlgorithm[] }>("/compute/algorithms", { query: { dataset_id } }),
   purchaseCompute: (id: string, quota: number) =>
     request<ComputeEntitlement>(`/datasets/${id}/compute/purchase`, { body: { quota } }),
+  // Real purchase: create a compute order, then pay it via the order page.
+  createComputeOrder: (id: string) =>
+    request<{ order_id: string }>(`/datasets/${id}/compute/order`, { method: "POST" }),
+  listMyComputeEntitlements: () =>
+    request<{ items: ComputeEntitlement[] }>("/users/me/compute/entitlements"),
   submitComputeJob: (b: { dataset_id: string; entitlement_id: string; algorithm_id: string; params?: Record<string, unknown> }) =>
     request<ComputeJob>("/compute/jobs", { body: b }),
   getComputeJob: (id: string) => request<ComputeJob>(`/compute/jobs/${id}`),

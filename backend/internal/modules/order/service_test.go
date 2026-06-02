@@ -25,6 +25,23 @@ func (r *fakeRepo) Create(_ context.Context, o Order) (Order, error) {
 	r.seq++
 	o.ID = "ord-" + itoa(r.seq)
 	o.Status = StatusCreated
+	if o.ProductType == "" {
+		o.ProductType = ProductDownload
+	}
+	r.orders[o.ID] = o
+	return o, nil
+}
+func (r *fakeRepo) CreateCompute(_ context.Context, o Order) (Order, error) {
+	for _, e := range r.orders {
+		if e.BuyerID == o.BuyerID && e.DatasetID == o.DatasetID && e.ProductType == ProductCompute &&
+			e.Status != StatusRefunded && e.Status != StatusCancelled && e.Status != StatusSettled {
+			return Order{}, ErrDuplicateOrder
+		}
+	}
+	r.seq++
+	o.ID = "ord-" + itoa(r.seq)
+	o.Status = StatusCreated
+	o.ProductType = ProductCompute
 	r.orders[o.ID] = o
 	return o, nil
 }
@@ -299,5 +316,66 @@ func TestDispute(t *testing.T) {
 	d, err := svc.Dispute(ctx, "buyer", o.ID, "数据有问题")
 	if err != nil || d.Status != StatusDisputed {
 		t.Fatalf("dispute: %v status=%q", err, d.Status)
+	}
+}
+
+// --- compute (C2D) orders ---
+
+type fakeGranter struct {
+	calls   int
+	orderID string
+	dataset string
+	buyer   string
+}
+
+func (f *fakeGranter) GrantForOrder(_ context.Context, orderID, datasetID, buyerID string) error {
+	f.calls++
+	f.orderID, f.dataset, f.buyer = orderID, datasetID, buyerID
+	return nil
+}
+
+func TestCreateComputeAndPayGrantsAndDelivers(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSvc(true, published())
+	g := &fakeGranter{}
+	svc.SetComputeGranter(g)
+
+	o, err := svc.CreateCompute(ctx, "buyer", "seller", "ds1", 5000)
+	if err != nil {
+		t.Fatalf("create compute: %v", err)
+	}
+	if o.ProductType != ProductCompute || o.VersionID != "" || o.AmountCents != 5000 {
+		t.Fatalf("compute order wrong: %+v", o)
+	}
+	if o.PlatformFeeCents != 500 || o.SellerAmountCents != 4500 {
+		t.Fatalf("fee split wrong: fee=%d seller=%d", o.PlatformFeeCents, o.SellerAmountCents)
+	}
+
+	paid, err := svc.MarkPaid(ctx, o.ID)
+	if err != nil {
+		t.Fatalf("mark paid: %v", err)
+	}
+	// Paying a compute order grants the entitlement and auto-delivers.
+	if paid.Status != StatusDelivered {
+		t.Fatalf("status = %q, want delivered", paid.Status)
+	}
+	if g.calls != 1 || g.orderID != o.ID || g.dataset != "ds1" || g.buyer != "buyer" {
+		t.Fatalf("granter not called correctly: %+v", g)
+	}
+}
+
+func TestCreateCompute_SelfPurchaseRejected(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSvc(true, published())
+	if _, err := svc.CreateCompute(ctx, "buyer", "buyer", "ds1", 5000); err != ErrSelfPurchase {
+		t.Fatalf("err = %v, want ErrSelfPurchase", err)
+	}
+}
+
+func TestCreateCompute_RequiresVerified(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSvc(false, published()) // buyer not verified
+	if _, err := svc.CreateCompute(ctx, "buyer", "seller", "ds1", 5000); err != ErrNotVerified {
+		t.Fatalf("err = %v, want ErrNotVerified", err)
 	}
 }

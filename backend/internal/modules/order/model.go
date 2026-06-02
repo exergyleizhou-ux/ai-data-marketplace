@@ -14,10 +14,18 @@ type Order struct {
 	PlatformFeeCents  int64  `json:"platform_fee_cents"`
 	SellerAmountCents int64  `json:"seller_amount_cents"`
 	Status            string `json:"status"`
+	ProductType       string `json:"product_type"` // download | compute
 	AutoConfirmAt     string `json:"auto_confirm_at,omitempty"`
 	CreatedAt         string `json:"created_at,omitempty"`
 	UpdatedAt         string `json:"updated_at,omitempty"`
 }
+
+// Product types: a download order delivers dataset bytes; a compute order grants
+// a compute (C2D) entitlement on payment (design §10).
+const (
+	ProductDownload = "download"
+	ProductCompute  = "compute"
+)
 
 // Order statuses and the state machine (docs §5.4).
 const (

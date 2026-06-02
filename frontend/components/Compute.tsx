@@ -21,10 +21,6 @@ const TRUST_LABEL: Record<string, string> = {
   L3: "L3 · 数据不出域",
 };
 
-function entKey(datasetId: string) {
-  return `c2d_ent_${datasetId}`;
-}
-
 // ---------------------------------------------------------------------------
 // Buyer: purchase a compute entitlement, run a whitelisted algorithm in the
 // sandbox, get the OUTPUT (model/metrics) — never the raw data.
@@ -47,6 +43,21 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
     try {
       const all = await api.listMyComputeJobs();
       setJobs(all.items.filter((j) => j.dataset_id === datasetId));
+    } catch {
+      /* ignore */
+    }
+  }, [user, datasetId]);
+
+  // The buyer's active entitlement for this dataset (server is the source of
+  // truth — granted when the compute order is paid).
+  const refreshEnt = useCallback(async () => {
+    if (!user) return;
+    try {
+      const all = await api.listMyComputeEntitlements();
+      const active = all.items.find(
+        (e) => e.dataset_id === datasetId && e.status === "active" && e.jobs_used < e.jobs_quota,
+      );
+      setEnt(active ?? null);
     } catch {
       /* ignore */
     }
@@ -76,19 +87,12 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
     };
   }, [datasetId]);
 
-  // Restore a previously-purchased entitlement from this browser.
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(entKey(datasetId));
-      if (raw) setEnt(JSON.parse(raw) as ComputeEntitlement);
-    } catch {
-      /* ignore */
+    if (user) {
+      void refreshJobs();
+      void refreshEnt();
     }
-  }, [datasetId]);
-
-  useEffect(() => {
-    if (user) void refreshJobs();
-  }, [user, refreshJobs]);
+  }, [user, refreshJobs, refreshEnt]);
 
   // Poll while any job is still in flight.
   const hasPending = jobs.some((j) => !TERMINAL.has(j.status));
@@ -98,24 +102,16 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
     return () => clearInterval(t);
   }, [hasPending, refreshJobs]);
 
-  function saveEnt(e: ComputeEntitlement | null) {
-    setEnt(e);
-    try {
-      if (e) localStorage.setItem(entKey(datasetId), JSON.stringify(e));
-      else localStorage.removeItem(entKey(datasetId));
-    } catch {
-      /* ignore */
-    }
-  }
-
+  // Real purchase: create a compute order and go to the payment page. After
+  // paying, the entitlement is granted server-side and appears via refreshEnt.
   async function purchase() {
     setErr("");
     setBusy("purchase");
     try {
-      saveEnt(await api.purchaseCompute(datasetId, 3));
+      const { order_id } = await api.createComputeOrder(datasetId);
+      router.push(`/orders/${order_id}`);
     } catch (e) {
       setErr((e as Error).message);
-    } finally {
       setBusy("");
     }
   }
@@ -126,15 +122,11 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
     setBusy("submit");
     try {
       await api.submitComputeJob({ dataset_id: datasetId, entitlement_id: ent.id, algorithm_id: selected });
-      // Optimistically count the spent credit.
-      saveEnt({ ...ent, jobs_used: ent.jobs_used + 1 });
       await refreshJobs();
+      await refreshEnt();
     } catch (e) {
-      const msg = (e as Error).message;
-      setErr(msg);
-      // Quota/entitlement problems → drop the stale entitlement so the buyer
-      // can re-purchase.
-      if (/quota|entitlement|active/i.test(msg)) saveEnt(null);
+      setErr((e as Error).message);
+      await refreshEnt();
     } finally {
       setBusy("");
     }
@@ -187,7 +179,7 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
           </Button>
         ) : !ent ? (
           <Button className="w-full" onClick={purchase} disabled={busy === "purchase"}>
-            {busy === "purchase" ? "购买中…" : `购买计算权益（${yuan(offer.price_cents)}）`}
+            {busy === "purchase" ? "前往支付…" : `购买计算权益（${yuan(offer.price_cents)}）`}
           </Button>
         ) : (
           <div className="space-y-2 rounded-lg border border-neutral-200 p-3">

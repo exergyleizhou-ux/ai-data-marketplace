@@ -292,7 +292,39 @@ func (s *Server) routes() {
 		// Refund→revoke (H2): when a dispute refund lands, revoke the buyer's
 		// compute credits tied to that order.
 		orderSvc.SetComputeRevoker(orderComputeAdapter{c: computeSvc})
+		// Real purchase: compute creates orders via order; paying an order grants
+		// the entitlement via compute. Two late-bound hooks (neither imports the
+		// other).
+		computeSvc.SetOrderCreator(computeOrderAdapter{o: orderSvc})
+		orderSvc.SetComputeGranter(orderComputeGranterAdapter{c: computeSvc})
 	}
+}
+
+// computeOrderAdapter bridges order.Service to compute.OrderCreator, translating
+// order's sentinels to compute's so the compute handler renders the right error.
+type computeOrderAdapter struct{ o *order.Service }
+
+func (a computeOrderAdapter) CreateComputeOrder(ctx context.Context, buyerID, sellerID, datasetID string, amountCents int64) (string, error) {
+	o, err := a.o.CreateCompute(ctx, buyerID, sellerID, datasetID, amountCents)
+	switch {
+	case errors.Is(err, order.ErrNotVerified):
+		return "", compute.ErrNotVerified
+	case errors.Is(err, order.ErrSelfPurchase):
+		return "", compute.ErrSelfPurchase
+	case errors.Is(err, order.ErrDuplicateOrder):
+		return "", compute.ErrPurchasePending
+	case err != nil:
+		return "", err
+	}
+	return o.ID, nil
+}
+
+// orderComputeGranterAdapter bridges compute.Service to order.ComputeGranter so
+// paying a compute order grants its entitlement.
+type orderComputeGranterAdapter struct{ c *compute.Service }
+
+func (a orderComputeGranterAdapter) GrantForOrder(ctx context.Context, orderID, datasetID, buyerID string) error {
+	return a.c.GrantForOrder(ctx, orderID, datasetID, buyerID)
 }
 
 // computeDatasetAdapter bridges dataset.Service to compute.DatasetReader.

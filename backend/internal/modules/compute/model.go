@@ -176,4 +176,6 @@ var (
 	ErrBadTransition    = errors.New("illegal job status transition")
 	ErrSelfPurchase     = errors.New("cannot buy compute on your own dataset")
 	ErrDuplicateJob     = errors.New("a job with this idempotency key already exists")
+	ErrDuplicateEnt     = errors.New("an entitlement for this order already exists")
+	ErrPurchasePending  = errors.New("a compute order for this dataset is already in progress")
 )

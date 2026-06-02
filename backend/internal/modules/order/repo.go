@@ -15,6 +15,9 @@ import (
 // the DB level too.
 type Repository interface {
 	Create(ctx context.Context, o Order) (Order, error)
+	// CreateCompute creates a compute (C2D) order: no version, license_type and
+	// product_type both 'compute'. Same fee split + state machine as a download.
+	CreateCompute(ctx context.Context, o Order) (Order, error)
 	GetByID(ctx context.Context, id string) (Order, error)
 	ListByBuyer(ctx context.Context, buyerID string, limit, offset int) ([]Order, error)
 	ListBySeller(ctx context.Context, sellerID string, limit, offset int) ([]Order, error)
@@ -34,14 +37,14 @@ type pgRepo struct{ pool *pgxpool.Pool }
 
 func NewRepository(pool *pgxpool.Pool) Repository { return &pgRepo{pool: pool} }
 
-const orderCols = `id, buyer_id, seller_id, dataset_id, version_id, license_type,
-	amount_cents, platform_fee_cents, seller_amount_cents, status,
+const orderCols = `id, buyer_id, seller_id, dataset_id, COALESCE(version_id::text,''), license_type,
+	amount_cents, platform_fee_cents, seller_amount_cents, status, product_type,
 	COALESCE(auto_confirm_at::text,''), created_at::text, updated_at::text`
 
 func scanOrder(row pgx.Row) (Order, error) {
 	var o Order
 	err := row.Scan(&o.ID, &o.BuyerID, &o.SellerID, &o.DatasetID, &o.VersionID, &o.LicenseType,
-		&o.AmountCents, &o.PlatformFeeCents, &o.SellerAmountCents, &o.Status,
+		&o.AmountCents, &o.PlatformFeeCents, &o.SellerAmountCents, &o.Status, &o.ProductType,
 		&o.AutoConfirmAt, &o.CreatedAt, &o.UpdatedAt)
 	return o, err
 }
@@ -63,6 +66,24 @@ func (r *pgRepo) Create(ctx context.Context, o Order) (Order, error) {
 			return Order{}, ErrDuplicateOrder
 		}
 		return Order{}, fmt.Errorf("create order: %w", err)
+	}
+	return out, nil
+}
+
+func (r *pgRepo) CreateCompute(ctx context.Context, o Order) (Order, error) {
+	const q = `
+		INSERT INTO orders (buyer_id, seller_id, dataset_id, version_id, license_type,
+			amount_cents, platform_fee_cents, seller_amount_cents, status, product_type)
+		VALUES ($1,$2,$3,NULL,'compute',$4,$5,$6,'created','compute')
+		RETURNING ` + orderCols
+	out, err := scanOrder(r.pool.QueryRow(ctx, q,
+		o.BuyerID, o.SellerID, o.DatasetID, o.AmountCents, o.PlatformFeeCents, o.SellerAmountCents))
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+			return Order{}, ErrDuplicateOrder
+		}
+		return Order{}, fmt.Errorf("create compute order: %w", err)
 	}
 	return out, nil
 }
