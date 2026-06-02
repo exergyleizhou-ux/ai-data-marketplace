@@ -115,6 +115,18 @@ export type QualityCheck = {
 
 export type VersionInfo = { version_no: number; changelog?: string; created_at: string };
 
+export type Certificate = {
+  status: "registered" | "pending" | string;
+  certificate_id?: string;
+  content_sha256?: string;
+  version_no?: number;
+  registered_at?: string;
+  operator?: string;
+  quality?: Record<string, string>;
+  statement_zh?: string;
+  statement_en?: string;
+};
+
 export class ApiError extends Error {
   code: number;
   status: number;
@@ -253,6 +265,8 @@ export const api = {
     request<{ checks: QualityCheck[] }>(`/datasets/${id}/quality`, { auth: false }),
   datasetVersions: (id: string) =>
     request<{ versions: VersionInfo[] }>(`/datasets/${id}/versions`, { auth: false }),
+  datasetCertificate: (id: string) =>
+    request<Certificate>(`/datasets/${id}/certificate`, { auth: false }),
   // Absolute URL to the dataset's MLCommons Croissant JSON-LD (machine-readable).
   croissantUrl: (id: string) => `${BASE}/datasets/${id}/croissant`,
   myDatasets: () => request<{ items: Dataset[] }>("/users/me/datasets"),

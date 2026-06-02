@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, yuan, type Dataset, type Preview, type QualityCheck, type Review, type VersionInfo } from "@/lib/api";
+import {
+  api,
+  yuan,
+  type Dataset,
+  type Preview,
+  type QualityCheck,
+  type Review,
+  type VersionInfo,
+  type Certificate,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Alert, Badge, Button, Card, Empty, Spinner } from "@/components/ui";
 import { QualityReport } from "@/components/QualityReport";
@@ -19,6 +28,7 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
   const [previewErr, setPreviewErr] = useState("");
   const [quality, setQuality] = useState<QualityCheck[] | null>(null);
   const [versions, setVersions] = useState<VersionInfo[]>([]);
+  const [cert, setCert] = useState<Certificate | null>(null);
   const [err, setErr] = useState("");
   const [buying, setBuying] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -28,6 +38,7 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
     api.datasetReviews(id).then((r) => setReviews(r.items)).catch(() => {});
     api.datasetQuality(id).then((r) => setQuality(r.checks)).catch(() => setQuality([]));
     api.datasetVersions(id).then((r) => setVersions(r.versions)).catch(() => {});
+    api.datasetCertificate(id).then(setCert).catch(() => {});
   }, [id]);
 
   async function loadPreview() {
@@ -164,6 +175,38 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
             </ul>
           )}
         </Card>
+
+        {cert?.status === "registered" && (
+          <Card>
+            <h2 className="mb-3 font-semibold">
+              数据存证凭证 <span className="font-normal text-neutral-400">/ Integrity Certificate</span>
+            </h2>
+            <div className="space-y-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-md bg-green-50 px-2 py-1 font-mono text-sm font-semibold text-green-800">
+                  {cert.certificate_id}
+                </span>
+                <span className="text-xs text-neutral-400">一数一码 · {cert.operator}</span>
+              </div>
+              <div className="grid gap-1 text-xs text-neutral-500 sm:grid-cols-2">
+                <span className="truncate">SHA-256: <span className="font-mono">{cert.content_sha256}</span></span>
+                {cert.registered_at && <span>登记时间: {cert.registered_at.slice(0, 10)}</span>}
+              </div>
+              {cert.quality && Object.keys(cert.quality).length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {Object.entries(cert.quality).map(([k, v]) => (
+                    <span key={k} className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-600">
+                      {k}: {v}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p className="border-t border-neutral-100 pt-2 text-[11px] leading-relaxed text-neutral-400">
+                {cert.statement_zh}
+              </p>
+            </div>
+          </Card>
+        )}
 
         {versions.length > 0 && (
           <Card>
