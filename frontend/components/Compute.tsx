@@ -11,15 +11,10 @@ import {
   type ComputeOffer,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 import { Alert, Badge, Button, Card, Field, Input, Select } from "@/components/ui";
 
 const TERMINAL = new Set(["released", "failed", "rejected", "canceled"]);
-
-const TRUST_LABEL: Record<string, string> = {
-  L1: "L1 · 数据沙箱（买方不可见）",
-  L2: "L2 · 机密计算（连平台也不可见）",
-  L3: "L3 · 数据不出域",
-};
 
 // ---------------------------------------------------------------------------
 // Buyer: purchase a compute entitlement, run a whitelisted algorithm in the
@@ -27,6 +22,7 @@ const TRUST_LABEL: Record<string, string> = {
 // ---------------------------------------------------------------------------
 export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; sellerId: string }) {
   const { user } = useAuth();
+  const { t } = useT();
   const router = useRouter();
   const [offer, setOffer] = useState<ComputeOffer | null | "none">(null);
   const [algos, setAlgos] = useState<ComputeAlgorithm[]>([]);
@@ -144,21 +140,33 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
   if (offer === null || offer === "none") return null; // loading or not offered
 
   const remaining = ent ? Math.max(ent.jobs_quota - ent.jobs_used, 0) : 0;
+  const trustText =
+    offer.trust_level === "L1"
+      ? t("L1 · 数据沙箱（买方不可见）", "L1 · Data sandbox (invisible to the buyer)")
+      : offer.trust_level === "L2"
+        ? t("L2 · 机密计算（连平台也不可见）", "L2 · Confidential computing (invisible to the platform too)")
+        : offer.trust_level === "L3"
+          ? t("L3 · 数据不出域", "L3 · Data never leaves its domain")
+          : offer.trust_level;
 
   return (
     <Card className="border-emerald-200">
       <div className="flex items-center gap-2">
-        <span className="text-lg font-semibold">可用不可见 · 沙箱计算</span>
+        <span className="text-lg font-semibold">{t("可用不可见 · 沙箱计算", "Available-but-Invisible · Sandbox Compute")}</span>
         <Badge>{offer.trust_level}</Badge>
       </div>
       <p className="mt-1 text-sm text-neutral-500">
-        在平台沙箱内对本数据集运行<strong>经审核的算法</strong>，你获得<strong>计算结果（模型 / 指标）</strong>，
-        而<strong>不获得原始数据</strong>。
+        {t(
+          "在平台沙箱内对本数据集运行经审核的算法，你获得计算结果（模型 / 指标），而不获得原始数据。",
+          "Run a platform-reviewed algorithm against this dataset inside the sandbox. You receive the computation output (model / metrics) — never the raw data.",
+        )}
       </p>
-      <p className="mt-1 text-xs text-neutral-400">{TRUST_LABEL[offer.trust_level] ?? offer.trust_level}</p>
+      <p className="mt-1 text-xs text-neutral-400">{trustText}</p>
 
       <div className="mt-3 text-2xl font-semibold">{yuan(offer.price_cents)}</div>
-      <div className="text-xs text-neutral-400">每份计算权益（含若干次作业额度）</div>
+      <div className="text-xs text-neutral-400">
+        {t("每份计算权益（含若干次作业额度）", "Per compute entitlement (includes several job credits)")}
+      </div>
 
       {err && (
         <div className="mt-3">
@@ -168,40 +176,51 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
 
       <div className="mt-4 space-y-3">
         {isSeller ? (
-          <Alert kind="info">这是你的数据集。</Alert>
+          <Alert kind="info">{t("这是你的数据集。", "This is your own dataset.")}</Alert>
         ) : !user ? (
           <Button className="w-full" onClick={() => router.push("/login")}>
-            登录后购买计算权益
+            {t("登录后购买计算权益", "Sign in to buy a compute entitlement")}
           </Button>
         ) : user.kyc_status !== "verified" ? (
           <Button className="w-full" onClick={() => router.push("/account")}>
-            需先实名认证
+            {t("需先实名认证", "Real-name verification required")}
           </Button>
         ) : !ent ? (
           <Button className="w-full" onClick={purchase} disabled={busy === "purchase"}>
-            {busy === "purchase" ? "前往支付…" : `购买计算权益（${yuan(offer.price_cents)}）`}
+            {busy === "purchase"
+              ? t("前往支付…", "Going to payment…")
+              : t(`购买计算权益（${yuan(offer.price_cents)}）`, `Buy compute entitlement (${yuan(offer.price_cents)})`)}
           </Button>
         ) : (
           <div className="space-y-2 rounded-lg border border-neutral-200 p-3">
             <div className="text-xs text-neutral-500">
-              已购计算权益 · 剩余约 <strong>{remaining}</strong> / {ent.jobs_quota} 次
+              {t(
+                `已购计算权益 · 剩余约 ${remaining} / ${ent.jobs_quota} 次`,
+                `Entitlement active · ~${remaining} / ${ent.jobs_quota} runs left`,
+              )}
             </div>
             {algos.length === 0 ? (
-              <p className="text-xs text-neutral-400">该数据集暂无可用的已审核算法。</p>
+              <p className="text-xs text-neutral-400">
+                {t("该数据集暂无可用的已审核算法。", "No approved algorithms are available for this dataset yet.")}
+              </p>
             ) : (
               <>
-                <Field label="选择算法">
+                <Field label={t("选择算法", "Choose an algorithm")}>
                   <Select value={selected} onChange={(e) => setSelected(e.target.value)}>
                     {algos.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name} · {a.output_kind}
-                        {a.trusted ? " · 可信" : ""}
+                        {a.trusted ? t(" · 可信", " · trusted") : ""}
                       </option>
                     ))}
                   </Select>
                 </Field>
                 <Button className="w-full" onClick={submit} disabled={busy === "submit" || remaining <= 0 || !selected}>
-                  {busy === "submit" ? "提交中…" : remaining <= 0 ? "额度已用尽（请重新购买）" : "提交计算作业"}
+                  {busy === "submit"
+                    ? t("提交中…", "Submitting…")
+                    : remaining <= 0
+                      ? t("额度已用尽（请重新购买）", "No credits left (buy again)")
+                      : t("提交计算作业", "Submit compute job")}
                 </Button>
               </>
             )}
@@ -211,7 +230,7 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
 
       {jobs.length > 0 && (
         <div className="mt-4 border-t border-neutral-100 pt-3">
-          <div className="mb-2 text-sm font-medium text-neutral-700">我的计算作业</div>
+          <div className="mb-2 text-sm font-medium text-neutral-700">{t("我的计算作业", "My compute jobs")}</div>
           <ul className="space-y-2">
             {jobs.map((j) => (
               <li key={j.id} className="flex items-center justify-between gap-2 text-sm">
@@ -222,14 +241,14 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
                 </div>
                 {j.status === "released" ? (
                   <Button variant="secondary" onClick={() => void download(j.id)}>
-                    下载输出
+                    {t("下载输出", "Download output")}
                   </Button>
                 ) : TERMINAL.has(j.status) ? (
                   <span className="text-xs text-neutral-400">—</span>
                 ) : j.status === "output_reviewing" ? (
-                  <span className="text-xs text-amber-600">运营审核中…</span>
+                  <span className="text-xs text-amber-600">{t("运营审核中…", "Under review…")}</span>
                 ) : (
-                  <span className="text-xs text-neutral-400">运行中…</span>
+                  <span className="text-xs text-neutral-400">{t("运行中…", "Running…")}</span>
                 )}
               </li>
             ))}
@@ -238,7 +257,10 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
       )}
 
       <p className="mt-3 text-xs text-neutral-400">
-        诚实标注：L1 为<strong>买方</strong>可用不可见——平台运营方仍可访问数据。需「连平台也不可见」请选 L2（机密计算 / TEE，规划中）。
+        {t(
+          "诚实标注：L1 为买方可用不可见——平台运营方仍可访问数据。需「连平台也不可见」请选 L2（机密计算 / TEE，规划中）。",
+          "Honest note: L1 is buyer-invisible — the platform operator can still access the data. For platform-invisible, choose L2 (confidential computing / TEE, planned).",
+        )}
       </p>
     </Card>
   );
@@ -248,6 +270,7 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
 // Seller: enable & configure the sandbox-sale offer for a dataset.
 // ---------------------------------------------------------------------------
 export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
+  const { t } = useT();
   const [loaded, setLoaded] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [priceYuan, setPriceYuan] = useState("10.00");
@@ -295,34 +318,37 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
     }
   }
 
-  if (!loaded) return <p className="text-xs text-neutral-400">加载沙箱售卖配置…</p>;
+  if (!loaded)
+    return <p className="text-xs text-neutral-400">{t("加载沙箱售卖配置…", "Loading sandbox-sale settings…")}</p>;
 
   return (
     <div className="space-y-3">
       <p className="text-sm text-neutral-600">
-        开启「可用不可见」售卖：买方在沙箱内对本数据集运行<strong>经平台审核的算法</strong>，只取走计算结果，
-        <strong>不获得原始数据</strong>（L1 信任级别）。
+        {t(
+          "开启「可用不可见」售卖：买方在沙箱内对本数据集运行经平台审核的算法，只取走计算结果，不获得原始数据（L1 信任级别）。",
+          "Enable available-but-invisible sale: buyers run platform-reviewed algorithms against this dataset in the sandbox and take away only the result, not the raw data (L1 trust level).",
+        )}
       </p>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        开启沙箱计算售卖
+        {t("开启沙箱计算售卖", "Enable sandbox-compute sale")}
       </label>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="计算权益单价（元）">
+        <Field label={t("计算权益单价（元）", "Price per entitlement (CNY)")}>
           <Input value={priceYuan} onChange={(e) => setPriceYuan(e.target.value)} inputMode="decimal" />
         </Field>
-        <Field label="输出上限（MiB）" hint="防止把整库塞进输出">
+        <Field label={t("输出上限（MiB）", "Output cap (MiB)")} hint={t("防止把整库塞进输出", "Stops dumping the whole dataset into the output")}>
           <Input value={maxOutputMiB} onChange={(e) => setMaxOutputMiB(e.target.value)} inputMode="numeric" />
         </Field>
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={reviewOutput} onChange={(e) => setReviewOutput(e.target.checked)} />
-        放行前需运营人工复核输出（高敏感数据建议开启）
+        {t("放行前需运营人工复核输出（高敏感数据建议开启）", "Require ops human review of output before release (recommended for sensitive data)")}
       </label>
       {err && <Alert>{err}</Alert>}
-      {saved && <Alert kind="success">已保存沙箱售卖配置。</Alert>}
+      {saved && <Alert kind="success">{t("已保存沙箱售卖配置。", "Sandbox-sale settings saved.")}</Alert>}
       <Button onClick={save} disabled={busy}>
-        {busy ? "保存中…" : "保存配置"}
+        {busy ? t("保存中…", "Saving…") : t("保存配置", "Save settings")}
       </Button>
     </div>
   );
