@@ -9,10 +9,11 @@ import (
 )
 
 type federatedSubmitRequest struct {
-	AlgorithmID string         `json:"algorithm_id"`
-	DatasetIDs  []string       `json:"dataset_ids"`
-	Params      map[string]any `json:"params"`
-	DPEpsilon   *float64       `json:"dp_epsilon"`
+	AlgorithmID     string         `json:"algorithm_id"`
+	DatasetIDs      []string       `json:"dataset_ids"`
+	Params          map[string]any `json:"params"`
+	DPEpsilon       *float64       `json:"dp_epsilon"`
+	MinParticipants int            `json:"min_participants"` // 0 ⇒ all datasets; else tolerate dropouts down to this many
 }
 
 func (h *handler) submitFederated(c *gin.Context) {
@@ -23,6 +24,7 @@ func (h *handler) submitFederated(c *gin.Context) {
 	}
 	fed, err := h.svc.SubmitFederatedJob(c.Request.Context(), httpx.UserID(c), FederatedSubmitInput{
 		AlgorithmID: req.AlgorithmID, DatasetIDs: req.DatasetIDs, Params: req.Params, DPEpsilon: req.DPEpsilon,
+		MinParticipants: req.MinParticipants,
 	})
 	if err != nil {
 		fail(c, err)

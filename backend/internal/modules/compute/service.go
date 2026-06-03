@@ -614,6 +614,9 @@ func (s *Service) CancelJob(ctx context.Context, buyerID, id string) (Job, error
 	if j.BuyerID != buyerID {
 		return Job{}, ErrForbidden
 	}
+	if j.FederatedJobID != "" {
+		return Job{}, ErrForbidden // federated sub-jobs are coordinated internally, not cancelable directly
+	}
 	out, err := s.repo.Transition(ctx, id, JobQueued, JobCanceled)
 	if err != nil {
 		// Also allow canceling a freshly-created (not yet queued) job.

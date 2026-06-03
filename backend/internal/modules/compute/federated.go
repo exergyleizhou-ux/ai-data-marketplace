@@ -16,10 +16,11 @@ const fedMaxOutputBytes = 64 << 20
 
 // FederatedSubmitInput is a buyer's request to run one federated job across N datasets.
 type FederatedSubmitInput struct {
-	AlgorithmID string
-	DatasetIDs  []string
-	Params      map[string]any
-	DPEpsilon   *float64
+	AlgorithmID     string
+	DatasetIDs      []string
+	Params          map[string]any
+	DPEpsilon       *float64
+	MinParticipants int // 0 ⇒ all datasets (every party required); else tolerate dropouts down to this many
 }
 
 // SubmitFederatedJob validates each participating dataset (offer enabled +
@@ -30,6 +31,14 @@ type FederatedSubmitInput struct {
 func (s *Service) SubmitFederatedJob(ctx context.Context, buyerID string, in FederatedSubmitInput) (FederatedJob, error) {
 	if len(in.DatasetIDs) < 2 {
 		return FederatedJob{}, ErrFederatedParties
+	}
+	// Resolve the minimum participants: 0 ⇒ require every party; else 2..N.
+	minP := in.MinParticipants
+	if minP <= 0 {
+		minP = len(in.DatasetIDs)
+	}
+	if minP < 2 || minP > len(in.DatasetIDs) {
+		return FederatedJob{}, fmt.Errorf("%w: min_participants must be between 2 and the number of datasets", ErrValidation)
 	}
 	// Pre-flight every dataset BEFORE creating anything, so we never fan out a
 	// partially-valid job. Resolve the active entitlement per dataset up front.
@@ -51,7 +60,7 @@ func (s *Service) SubmitFederatedJob(ctx context.Context, buyerID string, in Fed
 
 	fed, err := s.repo.CreateFederatedJob(ctx, FederatedJob{
 		BuyerID: buyerID, AlgorithmID: in.AlgorithmID, DatasetIDs: in.DatasetIDs,
-		Mode: ModeFederated, MinParticipants: len(in.DatasetIDs), Params: in.Params, DPEpsilon: in.DPEpsilon,
+		Mode: ModeFederated, MinParticipants: minP, Params: in.Params, DPEpsilon: in.DPEpsilon,
 	})
 	if err != nil {
 		return FederatedJob{}, err
@@ -136,9 +145,12 @@ func (s *Service) OpenFederatedOutput(ctx context.Context, userID, id string) (i
 }
 
 // tryAdvanceFederated is called after each sub-job reaches a terminal state. It
-// is idempotent: only the transition that finds the job advanceable proceeds.
-// If any sub-job failed/rejected, the whole federated job fails (refunding all).
-// When all sub-jobs are released, it triggers aggregation.
+// waits until EVERY sub-job has settled, then decides once (idempotent via the
+// state transition): if at least min_participants released, it aggregates the
+// survivors (refunding the dropouts, who aren't billed); otherwise it fails the
+// whole job and refunds everyone (the buyer got no usable output). Tolerating
+// dropouts down to min_participants is the federated fault-tolerance contract
+// (design P4 §4).
 func (s *Service) tryAdvanceFederated(ctx context.Context, fedID string) {
 	fed, err := s.repo.GetFederatedJob(ctx, fedID)
 	if err != nil || fed.Status != FedFanout {
@@ -148,32 +160,40 @@ func (s *Service) tryAdvanceFederated(ctx context.Context, fedID string) {
 	if err != nil {
 		return
 	}
-	released := 0
+	var released, dropouts []Job
+	pending := 0
 	for _, j := range subs {
 		switch j.Status {
 		case JobReleased:
-			released++
+			released = append(released, j)
 		case JobFailed, JobRejected, JobCanceled:
-			// First caller to flip fanout→failed wins and refunds everyone once.
-			if _, ferr := s.repo.FailFederated(ctx, fedID, "subjob_"+j.Status); ferr == nil {
-				s.refundFederated(ctx, subs)
-			}
-			return
+			dropouts = append(dropouts, j)
+		default:
+			pending++
 		}
 	}
-	if released < len(subs) {
-		return // not all sub-jobs done yet
+	if pending > 0 {
+		return // wait until every sub-job has settled before deciding
 	}
-	// All released → claim the aggregation step (only one goroutine wins).
-	if _, err := s.repo.TransitionFederated(ctx, fedID, FedFanout, FedAggregating); err != nil {
+	// All settled. Proceed if enough parties succeeded; otherwise fail the job.
+	if len(released) >= fed.MinParticipants && len(released) >= 1 {
+		if _, err := s.repo.TransitionFederated(ctx, fedID, FedFanout, FedAggregating); err != nil {
+			return // another goroutine won the race
+		}
+		s.refundFederated(ctx, dropouts) // dropouts aren't billed (their refund was deferred)
+		s.aggregateAndRelease(ctx, fed, released)
 		return
 	}
-	s.aggregateAndRelease(ctx, fed, subs)
+	// Too few survivors → fail and refund everyone (released + dropouts) once.
+	if _, ferr := s.repo.FailFederated(ctx, fedID, "insufficient_participants"); ferr == nil {
+		s.refundFederated(ctx, subs)
+	}
 }
 
-// aggregateAndRelease reads each sub-job's local params, runs the aggregator,
-// gates the joint output, and releases it. On any error it fails the federated
-// job and refunds all participants.
+// aggregateAndRelease reads each released sub-job's local params, runs the
+// aggregator, gates the joint output, and releases it. `subs` is the set of
+// released participants (dropouts are excluded and refunded by the caller). On
+// any error it fails the federated job and refunds these released participants.
 func (s *Service) aggregateAndRelease(ctx context.Context, fed FederatedJob, subs []Job) {
 	partials := make([]Partial, 0, len(subs))
 	for _, j := range subs {
