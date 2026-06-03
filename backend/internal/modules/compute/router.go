@@ -25,6 +25,7 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	buyer.POST("/compute/jobs", h.submitJob)
 	buyer.GET("/compute/jobs/:id", h.getJob)
 	buyer.GET("/compute/jobs/:id/output", h.downloadOutput)
+	buyer.GET("/compute/jobs/:id/attestation", h.jobAttestation) // L2 remote-attestation (P3)
 	buyer.POST("/compute/jobs/:id/cancel", h.cancelJob)
 	buyer.GET("/users/me/compute/jobs", h.listMyJobs)
 	buyer.GET("/users/me/compute/entitlements", h.listMyEntitlements)

@@ -271,18 +271,28 @@ func (s *Server) routes() {
 		// storage is available (it stores outputs there); without it, jobs stay
 		// queued for an out-of-process runner.
 		//
-		// Runner selection: COMPUTE_RUNNER=docker uses the hardened
-		// `docker run --network none` sandbox (requires a Docker daemon + a built,
-		// digest-pinned algorithm image); otherwise the in-process MockRunner
-		// (default, docker-less dev/CI).
+		// Runner selection (COMPUTE_RUNNER):
+		//   ""/mock  in-process MockRunner (default, docker-less dev/CI)
+		//   docker   hardened `docker run --network none` sandbox (L1)
+		//   tee      docker sandbox wrapped with remote attestation (L2, P3)
 		var runner compute.Runner = compute.NewMockRunner()
-		if os.Getenv("COMPUTE_RUNNER") == "docker" {
+		var computeOpts []compute.Option
+		switch os.Getenv("COMPUTE_RUNNER") {
+		case "docker":
 			res := compute.DefaultDockerResources
-			res.Runtime = os.Getenv("COMPUTE_DOCKER_RUNTIME") // "" runc | "runsc" gVisor | "kata" (P2 isolation, §7.2)
+			res.Runtime = os.Getenv("COMPUTE_DOCKER_RUNTIME") // "" runc | "runsc" gVisor | "kata" (P2, §7.2)
 			runner = compute.NewDockerRunner(res)
 			slog.Info("compute runner", "kind", "docker", "runtime", res.Runtime)
+		case "tee":
+			res := compute.DefaultDockerResources
+			res.Runtime = os.Getenv("COMPUTE_DOCKER_RUNTIME")
+			// TODO real TEE attester (Intel TDX / AMD SEV-SNP / SGX DCAP); MockAttester
+			// is a non-hardware stand-in (HMAC-bound, tamper-evident) for now.
+			att := compute.NewMockAttester()
+			runner = compute.NewTEERunner(compute.NewDockerRunner(res), att)
+			computeOpts = append(computeOpts, compute.WithAttester(att))
+			slog.Info("compute runner", "kind", "tee", "runtime", res.Runtime)
 		}
-		var computeOpts []compute.Option
 		if store != nil {
 			computeOpts = append(computeOpts, compute.WithWorker(runner, store, dsSvc, 2, 64))
 		}

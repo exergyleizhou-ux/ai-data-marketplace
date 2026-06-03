@@ -2,6 +2,7 @@ package compute
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -64,6 +65,7 @@ type Service struct {
 	runner      Runner
 	store       storage.Storage
 	data        DataKeyResolver
+	attester    Attester // optional; verifies stored L2 attestation reports (design P3)
 	runnerID    string
 	leaseSecs   int
 	maxAttempts int
@@ -75,6 +77,10 @@ type Service struct {
 // SetOrderCreator wires the real purchase path (compute order via order+payment)
 // after construction.
 func (s *Service) SetOrderCreator(o OrderCreator) { s.orders = o }
+
+// WithAttester wires an attestation verifier so GetAttestation can re-verify L2
+// reports server-side (design P3).
+func WithAttester(a Attester) Option { return func(s *Service) { s.attester = a } }
 
 // Option configures optional Service dependencies.
 type Option func(*Service)
@@ -548,6 +554,37 @@ func (s *Service) GetJob(ctx context.Context, userID, id string) (Job, error) {
 // ListJobs returns the buyer's jobs.
 func (s *Service) ListJobs(ctx context.Context, buyerID string, limit, offset int) ([]Job, error) {
 	return s.repo.ListJobsByBuyer(ctx, buyerID, clampLimit(limit), max0(offset))
+}
+
+// GetAttestation returns a job's L2 remote-attestation report, re-verified
+// server-side when an Attester is wired (design P3). Viewable by the job's buyer
+// or the dataset's seller. ErrNotFound if the job has no attestation (e.g. L1).
+func (s *Service) GetAttestation(ctx context.Context, userID, jobID string) (Attestation, error) {
+	j, err := s.repo.GetJob(ctx, jobID)
+	if err != nil {
+		return Attestation{}, err
+	}
+	if j.BuyerID != userID {
+		ds, derr := s.datasets.ForCompute(ctx, j.DatasetID)
+		if derr != nil {
+			return Attestation{}, derr
+		}
+		if ds.SellerID != userID {
+			return Attestation{}, ErrForbidden
+		}
+	}
+	if len(j.Attestation) == 0 {
+		return Attestation{}, ErrNotFound
+	}
+	report, _ := json.Marshal(j.Attestation)
+	if s.attester != nil {
+		return s.attester.Verify(ctx, report)
+	}
+	var a Attestation
+	if err := json.Unmarshal(report, &a); err != nil {
+		return Attestation{}, err
+	}
+	return a, nil
 }
 
 // CancelJob lets the buyer cancel a job that has not started running, refunding

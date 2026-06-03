@@ -6,6 +6,7 @@ import {
   api,
   yuan,
   type ComputeAlgorithm,
+  type ComputeAttestation,
   type ComputeEntitlement,
   type ComputeJob,
   type ComputeOffer,
@@ -238,6 +239,7 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
                   <span className="font-mono text-xs text-neutral-400">{j.id.slice(0, 8)}</span>{" "}
                   <Badge>{j.status}</Badge>
                   {j.error && <span className="ml-1 text-xs text-red-500">{j.error}</span>}
+                  {offer.trust_level === "L2" && j.status === "released" && <AttestationChip jobId={j.id} />}
                 </div>
                 {j.status === "released" ? (
                   <Button variant="secondary" onClick={() => void download(j.id)}>
@@ -351,5 +353,39 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
         {busy ? t("保存中…", "Saving…") : t("保存配置", "Save settings")}
       </Button>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// L2 remote-attestation chip: shows whether the platform-verified attestation
+// for a released confidential-compute job checks out (design P3).
+// ---------------------------------------------------------------------------
+function AttestationChip({ jobId }: { jobId: string }) {
+  const { t } = useT();
+  const [att, setAtt] = useState<ComputeAttestation | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .getComputeAttestation(jobId)
+      .then((a) => alive && setAtt(a))
+      .catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
+    };
+  }, [jobId]);
+
+  if (failed || !att) return null;
+  const ok = att.verified;
+  return (
+    <span
+      title={`${t("度量值", "measurement")}: ${att.measurement} · ${t("证明者", "signer")}: ${att.signer}`}
+      className={`ml-1 rounded-full px-2 py-0.5 text-[11px] ${
+        ok ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+      }`}
+    >
+      {ok ? t("🔒 机密计算·已验证", "🔒 Confidential · attested") : t("⚠ 证明未通过", "⚠ attestation failed")}
+    </span>
   );
 }

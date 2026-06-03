@@ -181,6 +181,17 @@ func (h *handler) cancelJob(c *gin.Context) {
 	httpx.OK(c, j)
 }
 
+// jobAttestation returns a job's L2 remote-attestation report (design P3),
+// viewable by the buyer or the dataset's seller, re-verified server-side.
+func (h *handler) jobAttestation(c *gin.Context) {
+	a, err := h.svc.GetAttestation(c.Request.Context(), httpx.UserID(c), c.Param("id"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, a)
+}
+
 func (h *handler) listMyEntitlements(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
