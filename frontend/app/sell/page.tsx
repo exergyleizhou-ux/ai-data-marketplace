@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api, yuan, type Dataset } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
 import { Alert, Badge, Button, Card, Empty, Field, Input, Select, Spinner, Textarea } from "@/components/ui";
 import { DatasheetEditor } from "@/components/Datasheet";
@@ -17,6 +18,7 @@ export default function SellPage() {
 }
 
 function SellInner() {
+  const { t } = useT();
   const [items, setItems] = useState<Dataset[] | null>(null);
   const [err, setErr] = useState("");
 
@@ -34,16 +36,16 @@ function SellInner() {
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold">卖家工作台</h1>
+      <h1 className="text-2xl font-semibold">{t("卖家工作台", "Seller Workbench")}</h1>
       {err && <Alert>{err}</Alert>}
       <CreateForm onCreated={reload} />
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">我的数据集</h2>
+        <h2 className="text-lg font-semibold">{t("我的数据集", "My datasets")}</h2>
         {items === null ? (
           <Spinner />
         ) : items.length === 0 ? (
-          <Empty>还没有数据集，先在上方创建一个</Empty>
+          <Empty>{t("还没有数据集，先在上方创建一个", "No datasets yet — create one above")}</Empty>
         ) : (
           <div className="space-y-3">
             {items.map((d) => (
@@ -57,6 +59,7 @@ function SellInner() {
 }
 
 function CreateForm({ onCreated }: { onCreated: () => void }) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -75,7 +78,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
     e.preventDefault();
     setErr("");
     if (!commitment) {
-      setErr("请勾选来源合法性承诺");
+      setErr(t("请勾选来源合法性承诺", "Please check the provenance-legality commitment"));
       return;
     }
     setBusy(true);
@@ -111,67 +114,67 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
 
   if (!open)
     return (
-      <Button onClick={() => setOpen(true)}>+ 创建数据集</Button>
+      <Button onClick={() => setOpen(true)}>{t("+ 创建数据集", "+ Create dataset")}</Button>
     );
 
   return (
     <Card>
-      <h2 className="mb-4 text-lg font-semibold">创建数据集</h2>
+      <h2 className="mb-4 text-lg font-semibold">{t("创建数据集", "Create dataset")}</h2>
       <form onSubmit={submit} className="space-y-4">
         {err && <Alert>{err}</Alert>}
-        <Field label="标题">
+        <Field label={t("标题", "Title")}>
           <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
         </Field>
-        <Field label="描述">
+        <Field label={t("描述", "Description")}>
           <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="数据类型">
+          <Field label={t("数据类型", "Data type")}>
             <Select value={dataType} onChange={(e) => setDataType(e.target.value)}>
               <option value="text">text</option>
               <option value="code">code</option>
               <option value="structured">structured</option>
             </Select>
           </Field>
-          <Field label="许可类型">
+          <Field label={t("许可类型", "License")}>
             <Select value={licenseType} onChange={(e) => setLicenseType(e.target.value)}>
               <option value="commercial">commercial</option>
               <option value="research">research</option>
               <option value="train_only">train_only</option>
             </Select>
           </Field>
-          <Field label="建议价（元）">
+          <Field label={t("建议价（元）", "Suggested price (CNY)")}>
             <Input type="number" step="0.01" min="0" value={price} onChange={(e) => setPrice(e.target.value)} />
           </Field>
         </div>
-        <Field label="领域标签（可选）">
-          <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="如 medical / finance / general" />
+        <Field label={t("领域标签（可选）", "Domain tag (optional)")}>
+          <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder={t("如 medical / finance / general", "e.g. medical / finance / general")} />
         </Field>
         <div className="rounded-lg border border-neutral-200 p-4">
-          <div className="mb-3 text-sm font-medium text-neutral-700">来源合法性声明</div>
+          <div className="mb-3 text-sm font-medium text-neutral-700">{t("来源合法性声明", "Provenance-legality declaration")}</div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="数据来源">
-              <Input value={source} onChange={(e) => setSource(e.target.value)} required placeholder="如 自有采集 / 授权获得" />
+            <Field label={t("数据来源", "Data source")}>
+              <Input value={source} onChange={(e) => setSource(e.target.value)} required placeholder={t("如 自有采集 / 授权获得", "e.g. self-collected / licensed")} />
             </Field>
-            <Field label="采集方式">
-              <Input value={collection} onChange={(e) => setCollection(e.target.value)} required placeholder="如 公开网页 / 内部生产" />
+            <Field label={t("采集方式", "Collection method")}>
+              <Input value={collection} onChange={(e) => setCollection(e.target.value)} required placeholder={t("如 公开网页 / 内部生产", "e.g. public web / internal")} />
             </Field>
           </div>
           <label className="mt-3 flex items-center gap-2 text-sm">
             <input type="checkbox" checked={containsPII} onChange={(e) => setContainsPII(e.target.checked)} />
-            数据包含个人信息（如实声明；未声明却检出 PII 会被退回）
+            {t("数据包含个人信息（如实声明；未声明却检出 PII 会被退回）", "The data contains personal information (declare honestly; undeclared PII that is detected will be bounced)")}
           </label>
           <label className="mt-2 flex items-start gap-2 text-sm">
             <input type="checkbox" checked={commitment} onChange={(e) => setCommitment(e.target.checked)} className="mt-1" />
-            我承诺数据来源合法、拥有授权，并承担相应法律责任。
+            {t("我承诺数据来源合法、拥有授权，并承担相应法律责任。", "I warrant the data is lawfully sourced and authorized, and accept the corresponding legal responsibility.")}
           </label>
         </div>
         <div className="flex gap-2">
           <Button type="submit" disabled={busy}>
-            {busy ? "创建中…" : "创建草稿"}
+            {busy ? t("创建中…", "Creating…") : t("创建草稿", "Create draft")}
           </Button>
           <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-            取消
+            {t("取消", "Cancel")}
           </Button>
         </div>
       </form>
@@ -182,6 +185,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
 const PART_SIZE = 4 << 20; // 4 MiB
 
 function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
+  const { t } = useT();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
@@ -190,7 +194,7 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
 
   async function sign() {
     setErr("");
-    setBusy("签约中…");
+    setBusy(t("签约中…", "Signing…"));
     try {
       await api.signSource(d.id);
       onChange();
@@ -207,11 +211,11 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
       const init = await api.uploadInit(d.id, file.name);
       const parts = Math.max(1, Math.ceil(file.size / PART_SIZE));
       for (let i = 0; i < parts; i++) {
-        setBusy(`上传中 ${i + 1}/${parts}…`);
+        setBusy(t(`上传中 ${i + 1}/${parts}…`, `Uploading ${i + 1}/${parts}…`));
         const chunk = file.slice(i * PART_SIZE, (i + 1) * PART_SIZE);
         await api.uploadPart(d.id, init.upload_id, i + 1, chunk);
       }
-      setBusy("质检中…");
+      setBusy(t("质检中…", "Running quality checks…"));
       await api.uploadComplete(d.id, init.upload_id);
       onChange();
     } catch (e) {
@@ -234,21 +238,21 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
             <Badge>{d.status}</Badge>
             <span>{d.data_type}</span>
             <span>{yuan(d.final_price_cents ?? d.suggested_price_cents)}</span>
-            <span>{d.sample_count} 样本</span>
+            <span>{t(`${d.sample_count} 样本`, `${d.sample_count} samples`)}</span>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="ghost" onClick={() => setEditingSheet((s) => !s)}>
-            {editingSheet ? "收起说明卡" : "数据说明卡"}
+            {editingSheet ? t("收起说明卡", "Hide datasheet") : t("数据说明卡", "Datasheet")}
           </Button>
           {d.status === "published" && (
             <Button variant="ghost" onClick={() => setEditingOffer((s) => !s)}>
-              {editingOffer ? "收起沙箱售卖" : "沙箱售卖"}
+              {editingOffer ? t("收起沙箱售卖", "Hide sandbox sale") : t("沙箱售卖", "Sandbox sale")}
             </Button>
           )}
           {!d.source_signed_at && (
             <Button variant="secondary" onClick={sign} disabled={!!busy}>
-              签署来源承诺
+              {t("签署来源承诺", "Sign provenance")}
             </Button>
           )}
           {canUpload && (
@@ -263,7 +267,7 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
                 }}
               />
               <Button onClick={() => fileRef.current?.click()} disabled={!!busy}>
-                {busy || "上传数据文件"}
+                {busy || t("上传数据文件", "Upload data file")}
               </Button>
             </>
           )}
@@ -271,10 +275,10 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
       </div>
       {err && <div className="mt-2"><Alert>{err}</Alert></div>}
       {d.status === "reviewing" && (
-        <p className="mt-2 text-xs text-neutral-500">已过质检，等待运营审核上架。</p>
+        <p className="mt-2 text-xs text-neutral-500">{t("已过质检，等待运营审核上架。", "Passed quality checks; awaiting ops review to publish.")}</p>
       )}
       {d.status === "draft" && d.source_signed_at && (
-        <p className="mt-2 text-xs text-neutral-500">已签约，请上传数据文件以进入质检。</p>
+        <p className="mt-2 text-xs text-neutral-500">{t("已签约，请上传数据文件以进入质检。", "Provenance signed; upload a data file to start quality checks.")}</p>
       )}
       {editingSheet && (
         <div className="mt-4 border-t border-neutral-100 pt-4">

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, yuan, type Dataset, type KYC, type Order } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
 import { Alert, Badge, Button, Card, Empty, Input, Spinner } from "@/components/ui";
 
@@ -17,21 +18,26 @@ export default function AdminPage() {
 }
 
 function AdminInner() {
+  const { t } = useT();
   const [tab, setTab] = useState<Tab>("review");
-  const labels: Record<Tab, string> = { review: "数据集审核", kyc: "实名审核", tx: "交易 / 纠纷" };
+  const labels: Record<Tab, string> = {
+    review: t("数据集审核", "Dataset review"),
+    kyc: t("实名审核", "KYC review"),
+    tx: t("交易 / 纠纷", "Transactions / disputes"),
+  };
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">运营后台</h1>
+      <h1 className="text-2xl font-semibold">{t("运营后台", "Ops Console")}</h1>
       <div className="flex gap-2">
-        {(["review", "kyc", "tx"] as const).map((t) => (
+        {(["review", "kyc", "tx"] as const).map((tb) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={tb}
+            onClick={() => setTab(tb)}
             className={`rounded-md px-4 py-1.5 text-sm ${
-              tab === t ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700"
+              tab === tb ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700"
             }`}
           >
-            {labels[t]}
+            {labels[tb]}
           </button>
         ))}
       </div>
@@ -43,6 +49,7 @@ function AdminInner() {
 }
 
 function ReviewQueue() {
+  const { t } = useT();
   const [items, setItems] = useState<Dataset[] | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [err, setErr] = useState("");
@@ -78,7 +85,7 @@ function ReviewQueue() {
     <div className="space-y-3">
       {err && <Alert>{err}</Alert>}
       {items.length === 0 ? (
-        <Empty>审核队列为空 🎉（质检通过的数据集会出现在这里）</Empty>
+        <Empty>{t("审核队列为空 🎉（质检通过的数据集会出现在这里）", "Review queue is empty 🎉 (datasets that pass quality checks appear here)")}</Empty>
       ) : (
         items.map((ds) => (
           <Card key={ds.id}>
@@ -89,22 +96,22 @@ function ReviewQueue() {
               <Badge>{ds.status}</Badge>
             </div>
             <div className="mt-1 text-sm text-neutral-500">
-              {ds.data_type} · {yuan(ds.final_price_cents ?? ds.suggested_price_cents)} · {ds.sample_count} 样本 ·
-              来源签约 {ds.source_signed_at ? "✓" : "✗"} ·
-              {ds.source_declaration?.contains_pii ? " 声明含PII" : " 声明无PII"}
+              {ds.data_type} · {yuan(ds.final_price_cents ?? ds.suggested_price_cents)} · {t(`${ds.sample_count} 样本`, `${ds.sample_count} samples`)} ·
+              {" "}{t("来源签约", "Provenance")} {ds.source_signed_at ? "✓" : "✗"} ·
+              {ds.source_declaration?.contains_pii ? t(" 声明含PII", " declared PII") : t(" 声明无PII", " declared no PII")}
             </div>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <Input
                 value={notes[ds.id] ?? ""}
                 onChange={(e) => setNotes((n) => ({ ...n, [ds.id]: e.target.value }))}
-                placeholder="审核备注（可选）"
+                placeholder={t("审核备注（可选）", "Review note (optional)")}
               />
               <div className="flex gap-2">
                 <Button disabled={busy === ds.id} onClick={() => decide(ds.id, true)}>
-                  通过上架
+                  {t("通过上架", "Approve & list")}
                 </Button>
                 <Button variant="danger" disabled={busy === ds.id} onClick={() => decide(ds.id, false)}>
-                  拒绝
+                  {t("拒绝", "Reject")}
                 </Button>
               </div>
             </div>
@@ -116,6 +123,7 @@ function ReviewQueue() {
 }
 
 function KYCQueue() {
+  const { t } = useT();
   const [items, setItems] = useState<KYC[] | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
@@ -150,26 +158,28 @@ function KYCQueue() {
     <div className="space-y-3">
       {err && <Alert>{err}</Alert>}
       {items.length === 0 ? (
-        <Empty>没有待审实名申请</Empty>
+        <Empty>{t("没有待审实名申请", "No pending KYC applications")}</Empty>
       ) : (
         items.map((k) => (
           <Card key={k.id}>
             <div className="flex items-center justify-between">
               <div className="font-medium">
-                {k.type === "company" ? `企业：${k.company_name || "—"}` : `个人：${k.real_name || "—"}`}
+                {k.type === "company"
+                  ? t(`企业：${k.company_name || "—"}`, `Company: ${k.company_name || "—"}`)
+                  : t(`个人：${k.real_name || "—"}`, `Individual: ${k.real_name || "—"}`)}
               </div>
               <Badge>{k.type}</Badge>
             </div>
-            <div className="mt-1 font-mono text-xs text-neutral-500">用户 {k.user_id?.slice(0, 8)} · 提交于 {k.created_at?.slice(0, 19) || "—"}</div>
+            <div className="mt-1 font-mono text-xs text-neutral-500">{t("用户", "User")} {k.user_id?.slice(0, 8)} · {t("提交于", "submitted")} {k.created_at?.slice(0, 19) || "—"}</div>
             {k.material_urls && k.material_urls.length > 0 && (
-              <div className="mt-1 text-xs text-neutral-500">材料：{k.material_urls.length} 份</div>
+              <div className="mt-1 text-xs text-neutral-500">{t(`材料：${k.material_urls.length} 份`, `Materials: ${k.material_urls.length}`)}</div>
             )}
             <div className="mt-3 flex gap-2">
               <Button disabled={busy === k.id} onClick={() => decide(k.id, true)}>
-                通过实名
+                {t("通过实名", "Approve KYC")}
               </Button>
               <Button variant="danger" disabled={busy === k.id} onClick={() => decide(k.id, false)}>
-                拒绝
+                {t("拒绝", "Reject")}
               </Button>
             </div>
           </Card>
@@ -180,6 +190,7 @@ function KYCQueue() {
 }
 
 function Transactions() {
+  const { t } = useT();
   const [items, setItems] = useState<Order[] | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
@@ -199,7 +210,7 @@ function Transactions() {
     setBusy(id);
     setErr("");
     try {
-      await api.adminResolveDispute(id, refund, refund ? "ops 裁决退款" : "ops 裁决放行");
+      await api.adminResolveDispute(id, refund, refund ? "ops resolve: refund" : "ops resolve: release");
       await load();
     } catch (e) {
       setErr((e as Error).message);
@@ -209,7 +220,7 @@ function Transactions() {
   }
 
   if (items === null) return <Spinner />;
-  if (items.length === 0) return <Empty>暂无交易</Empty>;
+  if (items.length === 0) return <Empty>{t("暂无交易", "No transactions yet")}</Empty>;
 
   const totalGmv = items.reduce((s, o) => s + (o.status === "settled" ? o.amount_cents : 0), 0);
   const totalFee = items.reduce((s, o) => s + (o.status === "settled" ? o.platform_fee_cents : 0), 0);
@@ -220,22 +231,22 @@ function Transactions() {
       {err && <Alert>{err}</Alert>}
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
-          <div className="text-sm text-neutral-500">已结算 GMV</div>
+          <div className="text-sm text-neutral-500">{t("已结算 GMV", "Settled GMV")}</div>
           <div className="text-2xl font-semibold">{yuan(totalGmv)}</div>
         </Card>
         <Card>
-          <div className="text-sm text-neutral-500">平台累计佣金</div>
+          <div className="text-sm text-neutral-500">{t("平台累计佣金", "Platform fees")}</div>
           <div className="text-2xl font-semibold">{yuan(totalFee)}</div>
         </Card>
         <Card>
-          <div className="text-sm text-neutral-500">待裁决纠纷</div>
+          <div className="text-sm text-neutral-500">{t("待裁决纠纷", "Open disputes")}</div>
           <div className="text-2xl font-semibold">{disputes.length}</div>
         </Card>
       </div>
 
       {disputes.length > 0 && (
         <Card>
-          <h3 className="mb-2 font-semibold text-amber-700">纠纷待裁决</h3>
+          <h3 className="mb-2 font-semibold text-amber-700">{t("纠纷待裁决", "Disputes to resolve")}</h3>
           <div className="space-y-2">
             {disputes.map((o) => (
               <div key={o.id} className="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 p-3">
@@ -244,10 +255,10 @@ function Transactions() {
                 </Link>
                 <div className="flex gap-2">
                   <Button variant="danger" disabled={busy === o.id} onClick={() => resolve(o.id, true)}>
-                    退款
+                    {t("退款", "Refund")}
                   </Button>
                   <Button disabled={busy === o.id} onClick={() => resolve(o.id, false)}>
-                    放行结算
+                    {t("放行结算", "Release & settle")}
                   </Button>
                 </div>
               </div>
@@ -260,11 +271,11 @@ function Transactions() {
         <table className="w-full text-sm">
           <thead className="border-b border-neutral-200 text-left text-neutral-500">
             <tr>
-              <th className="px-4 py-2 font-medium">订单</th>
-              <th className="px-4 py-2 font-medium">金额</th>
-              <th className="px-4 py-2 font-medium">佣金</th>
-              <th className="px-4 py-2 font-medium">卖家</th>
-              <th className="px-4 py-2 font-medium">状态</th>
+              <th className="px-4 py-2 font-medium">{t("订单", "Order")}</th>
+              <th className="px-4 py-2 font-medium">{t("金额", "Amount")}</th>
+              <th className="px-4 py-2 font-medium">{t("佣金", "Fee")}</th>
+              <th className="px-4 py-2 font-medium">{t("卖家", "Seller")}</th>
+              <th className="px-4 py-2 font-medium">{t("状态", "Status")}</th>
             </tr>
           </thead>
           <tbody>
