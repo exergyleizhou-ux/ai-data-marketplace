@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { API_ORIGIN, api, yuan, type Order } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
 import { Alert, Badge, Button, Card, Field, Input, Spinner, Textarea } from "@/components/ui";
 import { StripeCheckout, stripeConfigured } from "@/components/StripeCheckout";
@@ -21,6 +22,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
 
 function OrderInner({ id }: { id: string }) {
   const { user } = useAuth();
+  const { t } = useT();
   const [o, setO] = useState<Order | null>(null);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
@@ -44,15 +46,15 @@ function OrderInner({ id }: { id: string }) {
       if (fresh.status !== "created") {
         setO(fresh);
         setPay(null);
-        setMsg("支付成功，资金已冻结在持牌方。");
+        setMsg(t("支付成功，资金已冻结在持牌方。", "Payment successful; funds are held in escrow by the licensed custodian."));
         return;
       }
       await new Promise((r) => setTimeout(r, 1500));
     }
     // Charge captured at Stripe but the webhook hasn't landed yet; let the user retry the read.
     await load();
-    setMsg("支付已提交，正在等待结算回调确认，请稍后刷新。");
-  }, [id, load]);
+    setMsg(t("支付已提交，正在等待结算回调确认，请稍后刷新。", "Payment submitted; awaiting the settlement callback — please refresh shortly."));
+  }, [id, load, t]);
 
   useEffect(() => {
     void load();
@@ -79,18 +81,18 @@ function OrderInner({ id }: { id: string }) {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">订单详情</h1>
+        <h1 className="text-xl font-semibold">{t("订单详情", "Order details")}</h1>
         <Badge>{o.status}</Badge>
       </div>
 
       <Card>
         <dl className="grid grid-cols-2 gap-3 text-sm">
-          <Row label="订单号" value={`#${o.id.slice(0, 8)}`} />
-          <Row label="数据集" value={<Link href={`/datasets/${o.dataset_id}`} className="text-neutral-900 underline">查看</Link>} />
-          <Row label="金额" value={yuan(o.amount_cents)} />
-          <Row label="平台佣金" value={yuan(o.platform_fee_cents)} />
-          <Row label="卖家所得" value={yuan(o.seller_amount_cents)} />
-          <Row label="许可" value={o.license_type} />
+          <Row label={t("订单号", "Order #")} value={`#${o.id.slice(0, 8)}`} />
+          <Row label={t("数据集", "Dataset")} value={<Link href={`/datasets/${o.dataset_id}`} className="text-neutral-900 underline">{t("查看", "View")}</Link>} />
+          <Row label={t("金额", "Amount")} value={yuan(o.amount_cents)} />
+          <Row label={t("平台佣金", "Platform fee")} value={yuan(o.platform_fee_cents)} />
+          <Row label={t("卖家所得", "Seller receives")} value={yuan(o.seller_amount_cents)} />
+          <Row label={t("许可", "License")} value={o.license_type} />
         </dl>
       </Card>
 
@@ -99,7 +101,7 @@ function OrderInner({ id }: { id: string }) {
 
       {isBuyer && (
         <Card>
-          <h2 className="mb-3 font-semibold">操作</h2>
+          <h2 className="mb-3 font-semibold">{t("操作", "Actions")}</h2>
           <div className="space-y-3">
             {o.status === "created" && (
               <div className="space-y-2">
@@ -113,7 +115,7 @@ function OrderInner({ id }: { id: string }) {
                       })
                     }
                   >
-                    {busy === "pay" ? "创建支付…" : "去支付"}
+                    {busy === "pay" ? t("创建支付…", "Creating payment…") : t("去支付", "Pay")}
                   </Button>
                 ) : pay.channel === "stripe" && stripeConfigured() ? (
                   // Real Stripe.js card form bound to the PaymentIntent client secret.
@@ -125,7 +127,7 @@ function OrderInner({ id }: { id: string }) {
                 ) : (
                   // No real gateway configured (mock channel / missing pk): sandbox shortcut.
                   <>
-                    <Alert kind="info">沙箱支付单已创建（{pay.channel_txn_id}）。真实环境会跳转至收银台。</Alert>
+                    <Alert kind="info">{t(`沙箱支付单已创建（${pay.channel_txn_id}）。真实环境会跳转至收银台。`, `Sandbox payment created (${pay.channel_txn_id}). In production you'd be redirected to the checkout.`)}</Alert>
                     <Button
                       className="w-full"
                       disabled={!!busy}
@@ -134,11 +136,11 @@ function OrderInner({ id }: { id: string }) {
                           await api.devMarkPaid(o.id);
                           setPay(null);
                           await load();
-                          setMsg("支付成功，资金已冻结在持牌方。");
+                          setMsg(t("支付成功，资金已冻结在持牌方。", "Payment successful; funds are held in escrow by the licensed custodian."));
                         })
                       }
                     >
-                      {busy === "paid" ? "确认中…" : "模拟支付成功（沙箱）"}
+                      {busy === "paid" ? t("确认中…", "Confirming…") : t("模拟支付成功（沙箱）", "Simulate payment (sandbox)")}
                     </Button>
                   </>
                 )}
@@ -149,11 +151,11 @@ function OrderInner({ id }: { id: string }) {
               <div className="space-y-2">
                 {o.product_type === "compute" ? (
                   <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                    计算权益已发放。前往{" "}
+                    {t("计算权益已发放。前往", "Compute entitlement granted. Go to the")}{" "}
                     <a className="font-medium underline" href={`/datasets/${o.dataset_id}`}>
-                      数据集页
+                      {t("数据集页", "dataset page")}
                     </a>{" "}
-                    使用「可用不可见」沙箱计算（提交作业、下载结果）。本订单不交付原始数据。
+                    {t("使用「可用不可见」沙箱计算（提交作业、下载结果）。本订单不交付原始数据。", "to use available-but-invisible sandbox compute (submit jobs, download results). This order does not deliver raw data.")}
                   </div>
                 ) : !downloadUrl ? (
                   <Button
@@ -167,7 +169,7 @@ function OrderInner({ id }: { id: string }) {
                       })
                     }
                   >
-                    {busy === "dl" ? "生成链接…" : "签署许可并获取下载链接"}
+                    {busy === "dl" ? t("生成链接…", "Generating link…") : t("签署许可并获取下载链接", "Sign the license & get the download link")}
                   </Button>
                 ) : (
                   <a
@@ -175,7 +177,7 @@ function OrderInner({ id }: { id: string }) {
                     className="block w-full rounded-md bg-neutral-900 px-4 py-2 text-center text-sm font-medium text-white hover:bg-neutral-700"
                     download
                   >
-                    下载数据（一次性链接，15 分钟有效）
+                    {t("下载数据（一次性链接，15 分钟有效）", "Download data (one-time link, valid 15 min)")}
                   </a>
                 )}
                 <Button
@@ -186,11 +188,11 @@ function OrderInner({ id }: { id: string }) {
                     act("confirm", async () => {
                       await api.confirmDelivery(o.id);
                       await load();
-                      setMsg("已确认收货，平台已自动结算给卖家。");
+                      setMsg(t("已确认收货，平台已自动结算给卖家。", "Receipt confirmed; the platform has auto-settled the seller."));
                     })
                   }
                 >
-                  确认收货（触发分账结算）
+                  {t("确认收货（触发分账结算）", "Confirm receipt (trigger settlement)")}
                 </Button>
               </div>
             )}
@@ -217,15 +219,16 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 function ReviewBox({ orderId }: { orderId: string }) {
+  const { t } = useT();
   const [score, setScore] = useState(5);
   const [comment, setComment] = useState("");
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
 
-  if (done) return <Alert kind="success">感谢评价！</Alert>;
+  if (done) return <Alert kind="success">{t("感谢评价！", "Thanks for your review!")}</Alert>;
   return (
     <div className="rounded-lg border border-neutral-200 p-4">
-      <div className="mb-2 font-medium">评价这单数据</div>
+      <div className="mb-2 font-medium">{t("评价这单数据", "Review this purchase")}</div>
       {err && <div className="mb-2"><Alert>{err}</Alert></div>}
       <div className="mb-2 flex gap-1 text-2xl">
         {[1, 2, 3, 4, 5].map((s) => (
@@ -234,7 +237,7 @@ function ReviewBox({ orderId }: { orderId: string }) {
           </button>
         ))}
       </div>
-      <Textarea rows={2} placeholder="说点什么（可选）" value={comment} onChange={(e) => setComment(e.target.value)} />
+      <Textarea rows={2} placeholder={t("说点什么（可选）", "Say something (optional)")} value={comment} onChange={(e) => setComment(e.target.value)} />
       <div className="mt-2">
         <Button
           onClick={async () => {
@@ -247,7 +250,7 @@ function ReviewBox({ orderId }: { orderId: string }) {
             }
           }}
         >
-          提交评价
+          {t("提交评价", "Submit review")}
         </Button>
       </div>
     </div>
@@ -255,19 +258,20 @@ function ReviewBox({ orderId }: { orderId: string }) {
 }
 
 function DisputeBox({ orderId, onDone }: { orderId: string; onDone: () => Promise<void> }) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [err, setErr] = useState("");
   if (!open)
     return (
       <Button variant="ghost" className="w-full text-red-600" onClick={() => setOpen(true)}>
-        对该订单有问题？发起纠纷
+        {t("对该订单有问题？发起纠纷", "Issue with this order? Open a dispute")}
       </Button>
     );
   return (
     <div className="rounded-lg border border-red-200 p-4">
       {err && <div className="mb-2"><Alert>{err}</Alert></div>}
-      <Field label="纠纷原因">
+      <Field label={t("纠纷原因", "Dispute reason")}>
         <Input value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>
       <div className="mt-2 flex gap-2">
@@ -283,10 +287,10 @@ function DisputeBox({ orderId, onDone }: { orderId: string; onDone: () => Promis
             }
           }}
         >
-          提交纠纷
+          {t("提交纠纷", "Submit dispute")}
         </Button>
         <Button variant="ghost" onClick={() => setOpen(false)}>
-          取消
+          {t("取消", "Cancel")}
         </Button>
       </div>
     </div>

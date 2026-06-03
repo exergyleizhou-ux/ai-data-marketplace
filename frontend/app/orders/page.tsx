@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, yuan, type Order } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
 import { Badge, Card, Empty, Spinner } from "@/components/ui";
 
@@ -15,6 +16,7 @@ export default function OrdersPage() {
 }
 
 function OrdersInner() {
+  const { t } = useT();
   const [tab, setTab] = useState<"buyer" | "seller">("buyer");
   const [items, setItems] = useState<Order[] | null>(null);
 
@@ -30,17 +32,17 @@ function OrdersInner() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">订单</h1>
+      <h1 className="text-2xl font-semibold">{t("订单", "Orders")}</h1>
       <div className="flex gap-2">
-        {(["buyer", "seller"] as const).map((t) => (
+        {(["buyer", "seller"] as const).map((tb) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={tb}
+            onClick={() => setTab(tb)}
             className={`rounded-md px-4 py-1.5 text-sm ${
-              tab === t ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700"
+              tab === tb ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700"
             }`}
           >
-            {t === "buyer" ? "我买的" : "我卖的"}
+            {tb === "buyer" ? t("我买的", "Bought") : t("我卖的", "Sold")}
           </button>
         ))}
       </div>
@@ -48,7 +50,7 @@ function OrdersInner() {
       {items === null ? (
         <Spinner />
       ) : items.length === 0 ? (
-        <Empty>暂无订单</Empty>
+        <Empty>{t("暂无订单", "No orders yet")}</Empty>
       ) : (
         <div className="space-y-3">
           {items.map((o) => (
