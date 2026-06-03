@@ -83,6 +83,14 @@ type Repository interface {
 	// differential-privacy budget
 	SpendDP(ctx context.Context, datasetID, buyerID, jobID string, eps float64) error
 	SumDP(ctx context.Context, datasetID, buyerID string) (float64, error)
+
+	// federated (P4-a)
+	CreateFederatedJob(ctx context.Context, f FederatedJob) (FederatedJob, error)
+	GetFederatedJob(ctx context.Context, id string) (FederatedJob, error)
+	ListSubJobs(ctx context.Context, federatedID string) ([]Job, error)
+	TransitionFederated(ctx context.Context, id, from, to string) (FederatedJob, error)
+	ReleaseFederated(ctx context.Context, id, outputKey string, outputBytes int64) (FederatedJob, error)
+	FailFederated(ctx context.Context, id, code string) (FederatedJob, error)
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }
@@ -234,14 +242,14 @@ func (r *pgRepo) ReviewAlgorithm(ctx context.Context, id, status string, trusted
 
 const offerCols = `dataset_id, enabled, allow_custom, allowed_algorithm_ids::text[],
 	price_cents, max_runtime_secs, max_output_bytes, max_output_files,
-	dp_epsilon, dp_epsilon_total, return_logs, review_output, trust_level, updated_at::text`
+	dp_epsilon, dp_epsilon_total, return_logs, review_output, trust_level, allow_federated, updated_at::text`
 
 func scanOffer(row pgx.Row) (Offer, error) {
 	var o Offer
 	var eps, epsTotal sql.NullFloat64
 	err := row.Scan(&o.DatasetID, &o.Enabled, &o.AllowCustom, &o.AllowedAlgoIDs,
 		&o.PriceCents, &o.MaxRuntimeSecs, &o.MaxOutputBytes, &o.MaxOutputFiles,
-		&eps, &epsTotal, &o.ReturnLogs, &o.ReviewOutput, &o.TrustLevel, &o.UpdatedAt)
+		&eps, &epsTotal, &o.ReturnLogs, &o.ReviewOutput, &o.TrustLevel, &o.AllowFederated, &o.UpdatedAt)
 	o.DPEpsilon = ptrF(eps)
 	o.DPEpsilonTotal = ptrF(epsTotal)
 	if o.AllowedAlgoIDs == nil {
@@ -260,20 +268,21 @@ func (r *pgRepo) UpsertOffer(ctx context.Context, o Offer) (Offer, error) {
 	const q = `
 		INSERT INTO dataset_compute_offers (dataset_id, enabled, allow_custom, allowed_algorithm_ids,
 			price_cents, max_runtime_secs, max_output_bytes, max_output_files,
-			dp_epsilon, dp_epsilon_total, return_logs, review_output, trust_level, updated_at)
-		VALUES ($1,$2,$3,$4::uuid[],$5,$6,$7,$8,$9,$10,$11,$12,$13, now())
+			dp_epsilon, dp_epsilon_total, return_logs, review_output, trust_level, allow_federated, updated_at)
+		VALUES ($1,$2,$3,$4::uuid[],$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
 		ON CONFLICT (dataset_id) DO UPDATE SET
 			enabled=EXCLUDED.enabled, allow_custom=EXCLUDED.allow_custom,
 			allowed_algorithm_ids=EXCLUDED.allowed_algorithm_ids, price_cents=EXCLUDED.price_cents,
 			max_runtime_secs=EXCLUDED.max_runtime_secs, max_output_bytes=EXCLUDED.max_output_bytes,
 			max_output_files=EXCLUDED.max_output_files, dp_epsilon=EXCLUDED.dp_epsilon,
 			dp_epsilon_total=EXCLUDED.dp_epsilon_total, return_logs=EXCLUDED.return_logs,
-			review_output=EXCLUDED.review_output, trust_level=EXCLUDED.trust_level, updated_at=now()
+			review_output=EXCLUDED.review_output, trust_level=EXCLUDED.trust_level,
+			allow_federated=EXCLUDED.allow_federated, updated_at=now()
 		RETURNING ` + offerCols
 	out, err := scanOffer(r.pool.QueryRow(ctx, q,
 		o.DatasetID, o.Enabled, o.AllowCustom, o.AllowedAlgoIDs,
 		o.PriceCents, o.MaxRuntimeSecs, o.MaxOutputBytes, o.MaxOutputFiles,
-		nullF(o.DPEpsilon), nullF(o.DPEpsilonTotal), o.ReturnLogs, o.ReviewOutput, o.TrustLevel))
+		nullF(o.DPEpsilon), nullF(o.DPEpsilonTotal), o.ReturnLogs, o.ReviewOutput, o.TrustLevel, o.AllowFederated))
 	if err != nil {
 		return Offer{}, fmt.Errorf("upsert offer: %w", err)
 	}
@@ -418,7 +427,7 @@ func (r *pgRepo) RevokeByOrder(ctx context.Context, orderID string) (int, error)
 const jobCols = `id, dataset_id, COALESCE(version_id::text,''), buyer_id, entitlement_id,
 	COALESCE(algorithm_id::text,''), COALESCE(algorithm_version,0), params, status, attempts,
 	dp_epsilon, COALESCE(output_key,''), COALESCE(output_bytes,0), COALESCE(output_kind,''),
-	COALESCE(logs_key,''), COALESCE(error,''), attestation, created_at::text,
+	COALESCE(logs_key,''), COALESCE(error,''), attestation, COALESCE(federated_job_id::text,''), created_at::text,
 	COALESCE(started_at::text,''), COALESCE(finished_at::text,'')`
 
 func scanJob(row pgx.Row) (Job, error) {
@@ -428,7 +437,7 @@ func scanJob(row pgx.Row) (Job, error) {
 	err := row.Scan(&j.ID, &j.DatasetID, &j.VersionID, &j.BuyerID, &j.EntitlementID,
 		&j.AlgorithmID, &j.AlgorithmVersion, &params, &j.Status, &j.Attempts,
 		&eps, &j.OutputKey, &j.OutputBytes, &j.OutputKind,
-		&j.LogsKey, &j.Error, &attestation, &j.CreatedAt, &j.StartedAt, &j.FinishedAt)
+		&j.LogsKey, &j.Error, &attestation, &j.FederatedJobID, &j.CreatedAt, &j.StartedAt, &j.FinishedAt)
 	j.Params = fromJSONB(params)
 	j.Attestation = fromJSONB(attestation)
 	j.DPEpsilon = ptrF(eps)
@@ -451,9 +460,9 @@ func (r *pgRepo) CreateJob(ctx context.Context, j Job) (Job, error) {
 	}
 	const q = `
 		INSERT INTO compute_jobs (dataset_id, version_id, buyer_id, entitlement_id,
-			algorithm_id, algorithm_version, params, idempotency_key, status, dp_epsilon)
+			algorithm_id, algorithm_version, params, idempotency_key, status, dp_epsilon, federated_job_id)
 		VALUES ($1, NULLIF($2,'')::uuid, $3, $4, NULLIF($5,'')::uuid, NULLIF($6,0), $7,
-			NULLIF($8,''), $9, $10)
+			NULLIF($8,''), $9, $10, NULLIF($11,'')::uuid)
 		RETURNING ` + jobCols
 	status := j.Status
 	if status == "" {
@@ -461,7 +470,7 @@ func (r *pgRepo) CreateJob(ctx context.Context, j Job) (Job, error) {
 	}
 	out, err := scanJob(r.pool.QueryRow(ctx, q,
 		j.DatasetID, j.VersionID, j.BuyerID, j.EntitlementID,
-		j.AlgorithmID, j.AlgorithmVersion, params, j.idemKey, status, nullF(j.DPEpsilon)))
+		j.AlgorithmID, j.AlgorithmVersion, params, j.idemKey, status, nullF(j.DPEpsilon), j.FederatedJobID))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
