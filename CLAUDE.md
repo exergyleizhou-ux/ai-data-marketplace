@@ -56,6 +56,11 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
   `CreateFederatedJob`). Scan back via `dataset_ids::text[]` into `[]string`.
 - **Optimistic state machine**: status changes are `UPDATE ... WHERE status=$from RETURNING ...`;
   0 rows ⇒ `ErrBadTransition`. Concurrency-safe; use it for idempotent coordination.
+- **"enqueue-then-mark-ready" race** (cost a CI flake): if you enqueue async work and only THEN flip
+  the parent to a "ready/advanceable" status, fast workers can finish before the flip and their
+  completion callbacks no-op (parent not ready yet) → parent hangs forever. Fix: after flipping to
+  ready, **explicitly run the advance check once** (idempotent), and guard early callbacks on the
+  ready status so they don't make a premature partial decision. See `SubmitFederatedJob`→`tryAdvanceFederated`.
 - Timestamps on DTOs are `string` (scanned via `::text`), not `time.Time` — match the existing style.
 - Run `gofmt -w` on touched files before committing (struct-field alignment shifts after edits).
 - macOS has no `tac`/`timeout`/`migrate`/`brew`; use `tail -r`, Go context timeouts, embedded migrations.

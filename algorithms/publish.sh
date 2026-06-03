@@ -25,10 +25,13 @@ publish() { # name  dir  tag
   printf '   %-9s image=%s  digest=%s\n' "${name}" "${REGISTRY}" "${repodigest#*@}"
 }
 
-publish logreg   logreg   "logreg-1.0.0"
-publish dp_stats dp_stats "dp-stats-1.0.0"
+publish logreg     logreg     "logreg-1.0.0"
+publish dp_stats   dp_stats   "dp-stats-1.0.0"
+publish fed-logreg fed-logreg "fed-logreg-1.0.0"
 
 echo
 echo "Register each via the ops API with image=${REGISTRY}, image_digest=<digest above>,"
-echo "output_kind (logreg=model, dp_stats=aggregate), then approve with trusted=true."
+echo "output_kind (logreg=model, dp_stats=aggregate, fed-logreg=model), then approve with"
+echo "trusted=true. fed-logreg uses runtime=fed-logreg and is driven by"
+echo "POST /compute/federated-jobs (one sub-job per dataset → FedAvg)."
 echo "Run the platform with COMPUTE_RUNNER=docker (+ optional COMPUTE_DOCKER_RUNTIME=runsc)."
