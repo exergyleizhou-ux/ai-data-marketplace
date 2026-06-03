@@ -78,6 +78,25 @@ func (MockRunner) Run(_ context.Context, req RunRequest) (RunResult, error) {
 		return RunResult{OutputKind: req.Algorithm.OutputKind, Output: blob}, nil
 	}
 
+	// Federated sub-job (P4-a): emit deterministic-but-dataset-varying local
+	// params (fedparams-v1) so FedAvg has real numbers to average. The real
+	// training image is P4-b; the schema stays the same.
+	if req.Algorithm.Runtime == RuntimeFedLogreg {
+		seed := 0
+		for _, c := range req.Job.DatasetID {
+			seed += int(c)
+		}
+		w0 := float64(seed%7) + 1
+		params := map[string]any{
+			"_format":   "fedparams-v1",
+			"weights":   []float64{w0, w0 / 2, 1},
+			"intercept": float64(seed % 3),
+			"n":         10 + seed%5,
+		}
+		b, _ := json.Marshal(params)
+		return RunResult{OutputKind: OutputModel, Output: b, Logs: []byte("mock: fed-logreg local params")}, nil
+	}
+
 	kind := req.Algorithm.OutputKind
 	switch kind {
 	case OutputModel:
