@@ -118,6 +118,7 @@ type Job struct {
 	OutputKind       string         `json:"output_kind,omitempty"`
 	LogsKey          string         `json:"logs_key,omitempty"`
 	Error            string         `json:"error,omitempty"`
+	Attestation      map[string]any `json:"attestation,omitempty"` // L2 TEE remote-attestation report (design P3)
 	CreatedAt        string         `json:"created_at,omitempty"`
 	StartedAt        string         `json:"started_at,omitempty"`
 	FinishedAt       string         `json:"finished_at,omitempty"`

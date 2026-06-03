@@ -73,6 +73,8 @@ type Repository interface {
 	// Reject marks a job's output rejected by the output gate (size/DP/leak/
 	// human review) — distinct from Fail (execution error); billing differs (§21).
 	Reject(ctx context.Context, id, reason string) (Job, error)
+	// SetAttestation stores a job's L2 TEE remote-attestation report (design P3).
+	SetAttestation(ctx context.Context, id string, report []byte) error
 	// ReclaimStaleLeases requeues running jobs whose lease expired (runner
 	// presumed crashed): attempts < maxAttempts -> queued, else -> failed.
 	// Returns the number of jobs reclaimed. Used by the recovery sweep (§17).
@@ -416,20 +418,30 @@ func (r *pgRepo) RevokeByOrder(ctx context.Context, orderID string) (int, error)
 const jobCols = `id, dataset_id, COALESCE(version_id::text,''), buyer_id, entitlement_id,
 	COALESCE(algorithm_id::text,''), COALESCE(algorithm_version,0), params, status, attempts,
 	dp_epsilon, COALESCE(output_key,''), COALESCE(output_bytes,0), COALESCE(output_kind,''),
-	COALESCE(logs_key,''), COALESCE(error,''), created_at::text,
+	COALESCE(logs_key,''), COALESCE(error,''), attestation, created_at::text,
 	COALESCE(started_at::text,''), COALESCE(finished_at::text,'')`
 
 func scanJob(row pgx.Row) (Job, error) {
 	var j Job
-	var params []byte
+	var params, attestation []byte
 	var eps sql.NullFloat64
 	err := row.Scan(&j.ID, &j.DatasetID, &j.VersionID, &j.BuyerID, &j.EntitlementID,
 		&j.AlgorithmID, &j.AlgorithmVersion, &params, &j.Status, &j.Attempts,
 		&eps, &j.OutputKey, &j.OutputBytes, &j.OutputKind,
-		&j.LogsKey, &j.Error, &j.CreatedAt, &j.StartedAt, &j.FinishedAt)
+		&j.LogsKey, &j.Error, &attestation, &j.CreatedAt, &j.StartedAt, &j.FinishedAt)
 	j.Params = fromJSONB(params)
+	j.Attestation = fromJSONB(attestation)
 	j.DPEpsilon = ptrF(eps)
 	return j, err
+}
+
+// SetAttestation stores a job's L2 remote-attestation report (design P3).
+func (r *pgRepo) SetAttestation(ctx context.Context, id string, report []byte) error {
+	_, err := r.pool.Exec(ctx, `UPDATE compute_jobs SET attestation=$2 WHERE id=$1`, id, report)
+	if err != nil {
+		return fmt.Errorf("set attestation: %w", err)
+	}
+	return nil
 }
 
 func (r *pgRepo) CreateJob(ctx context.Context, j Job) (Job, error) {

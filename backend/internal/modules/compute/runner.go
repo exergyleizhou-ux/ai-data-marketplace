@@ -29,6 +29,9 @@ type RunResult struct {
 	OutputKind string
 	Output     []byte
 	Logs       []byte
+	// Attestation is the L2 TEE remote-attestation report (raw JSON), set only
+	// by a confidential (TEE) runner (design P3); nil for L1 runners.
+	Attestation []byte
 }
 
 // Runner executes an algorithm against a dataset in isolation and returns ONLY

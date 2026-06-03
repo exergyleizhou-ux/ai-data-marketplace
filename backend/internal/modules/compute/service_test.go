@@ -331,6 +331,17 @@ func (f *fakeRepo) Reject(_ context.Context, id, reason string) (Job, error) {
 	f.jobs[id] = j
 	return j, nil
 }
+func (f *fakeRepo) SetAttestation(_ context.Context, id string, report []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	j, ok := f.jobs[id]
+	if !ok {
+		return ErrNotFound
+	}
+	j.Attestation = fromJSONB(report)
+	f.jobs[id] = j
+	return nil
+}
 func (f *fakeRepo) ReclaimStaleLeases(_ context.Context, _ int) (int, error) { return 0, nil }
 func (f *fakeRepo) SpendDP(_ context.Context, datasetID, buyerID, _ string, eps float64) error {
 	f.mu.Lock()

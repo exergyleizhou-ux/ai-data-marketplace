@@ -221,6 +221,14 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 		}
 	}
 
+	// L2 (confidential computing): store the runner's remote-attestation report
+	// so the buyer/seller can independently verify it (design P3).
+	if len(res.Attestation) > 0 {
+		if err := s.repo.SetAttestation(ctx, jobID, res.Attestation); err != nil {
+			slog.Error("compute: store attestation failed", "job_id", jobID, "err", err)
+		}
+	}
+
 	// Logs are returned to the buyer only when the seller opted in; even then
 	// they would pass a scrub gate. P1: store nothing by default (design §7.4).
 	logsKey := ""

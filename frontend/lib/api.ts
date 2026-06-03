@@ -183,6 +183,15 @@ export type ComputeJob = {
   error?: string;
   created_at?: string;
 };
+// L2 remote-attestation report (design P3).
+export type ComputeAttestation = {
+  format: string;
+  measurement: string; // algorithm image digest the enclave ran
+  job_id: string;
+  output_sha: string;
+  signer: string; // mock-tee | tdx | sev-snp | sgx-dcap
+  verified?: boolean;
+};
 
 export const tokenStore = {
   get access() {
@@ -388,6 +397,8 @@ export const api = {
   submitComputeJob: (b: { dataset_id: string; entitlement_id: string; algorithm_id: string; params?: Record<string, unknown> }) =>
     request<ComputeJob>("/compute/jobs", { body: b }),
   getComputeJob: (id: string) => request<ComputeJob>(`/compute/jobs/${id}`),
+  getComputeAttestation: (id: string) =>
+    request<ComputeAttestation>(`/compute/jobs/${id}/attestation`),
   listMyComputeJobs: () => request<{ items: ComputeJob[] }>("/users/me/compute/jobs"),
   cancelComputeJob: (id: string) => request<ComputeJob>(`/compute/jobs/${id}/cancel`, { method: "POST" }),
   // The output endpoint streams raw bytes (auth-gated); fetch with the bearer
