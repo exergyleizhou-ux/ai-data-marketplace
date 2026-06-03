@@ -154,6 +154,7 @@ export type ComputeOffer = {
   return_logs: boolean;
   review_output: boolean;
   trust_level: string; // L1 | L2 | L3
+  allow_federated?: boolean; // P4-a: opt dataset into federated (L3) use
 };
 export type ComputeAlgorithm = {
   id: string;
