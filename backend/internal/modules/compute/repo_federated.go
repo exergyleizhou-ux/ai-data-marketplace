@@ -34,6 +34,9 @@ func (r *pgRepo) CreateFederatedJob(ctx context.Context, f FederatedJob) (Federa
 	if err != nil {
 		return FederatedJob{}, fmt.Errorf("marshal federated params: %w", err)
 	}
+	if params == nil {
+		params = []byte("{}") // column is NOT NULL DEFAULT '{}'; explicit NULL would violate it
+	}
 	const q = `
 		INSERT INTO compute_federated_jobs (buyer_id, algorithm_id, dataset_ids, mode, status,
 			min_participants, params, dp_epsilon)
