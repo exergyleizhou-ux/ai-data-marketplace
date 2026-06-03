@@ -10,7 +10,7 @@
 // render both use zh, so there is no hydration mismatch — the locale switch
 // happens in an effect.
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 export type Lang = "zh" | "en";
 
@@ -42,18 +42,21 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const setLang = (l: Lang) => {
+  const setLang = useCallback((l: Lang) => {
     setLangState(l);
     try {
       localStorage.setItem(STORAGE_KEY, l);
     } catch {
       /* ignore */
     }
-  };
+  }, []);
 
-  const t = (zh: string, en: string) => (lang === "en" ? en : zh);
+  // t is stable across renders and only changes when lang changes, so it is safe
+  // to list in hook dependency arrays.
+  const t = useCallback((zh: string, en: string) => (lang === "en" ? en : zh), [lang]);
 
-  return <LocaleContext.Provider value={{ lang, setLang, t }}>{children}</LocaleContext.Provider>;
+  const value = useMemo(() => ({ lang, setLang, t }), [lang, setLang, t]);
+  return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }
 
 // useT returns the current language, a setter, and t(zh, en).
