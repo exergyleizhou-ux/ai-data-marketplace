@@ -280,6 +280,7 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
   const [maxOutputMiB, setMaxOutputMiB] = useState("10");
   const [reviewOutput, setReviewOutput] = useState(false);
   const [allowFederated, setAllowFederated] = useState(false);
+  const [trustLevel, setTrustLevel] = useState("L1");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [saved, setSaved] = useState(false);
@@ -296,6 +297,7 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
         if (o.max_output_bytes) setMaxOutputMiB(String(Math.round(o.max_output_bytes / (1 << 20))));
         setReviewOutput(o.review_output);
         setAllowFederated(!!o.allow_federated);
+        if (o.trust_level) setTrustLevel(o.trust_level);
       })
       .catch(() => {
         /* no offer yet — keep defaults */
@@ -310,7 +312,7 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
     try {
       await api.putComputeOffer(datasetId, {
         enabled,
-        trust_level: "L1",
+        trust_level: trustLevel,
         price_cents: Math.round(parseFloat(priceYuan || "0") * 100),
         max_output_bytes: Math.max(1, Math.round(parseFloat(maxOutputMiB || "10"))) * (1 << 20),
         review_output: reviewOutput,
@@ -339,6 +341,19 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         {t("开启沙箱计算售卖", "Enable sandbox-compute sale")}
       </label>
+      <Field
+        label={t("信任级别", "Trust level")}
+        hint={
+          trustLevel === "L2"
+            ? t("L2 需平台以 TEE 运行时部署（COMPUTE_RUNNER=tee）", "L2 requires the platform deployed with a TEE runtime (COMPUTE_RUNNER=tee)")
+            : t("L1：买方不可见、平台运营方仍可见", "L1: invisible to the buyer; the platform operator can still see the data")
+        }
+      >
+        <Select value={trustLevel} onChange={(e) => setTrustLevel(e.target.value)}>
+          <option value="L1">{t("L1 · 数据沙箱（买方不可见）", "L1 · Data sandbox (buyer-invisible)")}</option>
+          <option value="L2">{t("L2 · 机密计算 / TEE（连平台也不可见）", "L2 · Confidential computing / TEE (platform-invisible)")}</option>
+        </Select>
+      </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label={t("计算权益单价（元）", "Price per entitlement (CNY)")}>
           <Input value={priceYuan} onChange={(e) => setPriceYuan(e.target.value)} inputMode="decimal" />
