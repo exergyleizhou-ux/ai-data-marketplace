@@ -2,6 +2,7 @@ package compute
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -31,6 +32,20 @@ func (h *handler) submitFederated(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, fed)
+}
+
+func (h *handler) listMyFederated(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	items, err := h.svc.ListFederatedJobs(c.Request.Context(), httpx.UserID(c), limit, offset)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	if items == nil {
+		items = []FederatedJob{}
+	}
+	httpx.OK(c, gin.H{"items": items})
 }
 
 func (h *handler) getFederated(c *gin.Context) {

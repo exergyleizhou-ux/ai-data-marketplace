@@ -57,6 +57,18 @@ func (f *fakeRepo) GetFederatedJob(_ context.Context, id string) (FederatedJob, 
 	return fj, nil
 }
 
+func (f *fakeRepo) ListFederatedJobsByBuyer(_ context.Context, buyerID string, _, _ int) ([]FederatedJob, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []FederatedJob
+	for _, fj := range f.feds {
+		if fj.BuyerID == buyerID {
+			out = append(out, fj)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) ListSubJobs(_ context.Context, federatedID string) ([]Job, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

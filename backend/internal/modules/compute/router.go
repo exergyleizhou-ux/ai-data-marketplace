@@ -32,6 +32,7 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	buyer.POST("/compute/federated-jobs", h.submitFederated)
 	buyer.GET("/compute/federated-jobs/:id", h.getFederated)
 	buyer.GET("/compute/federated-jobs/:id/output", h.federatedOutput)
+	buyer.GET("/users/me/compute/federated-jobs", h.listMyFederated)
 	buyer.GET("/users/me/compute/jobs", h.listMyJobs)
 	buyer.GET("/users/me/compute/entitlements", h.listMyEntitlements)
 	// Real purchase: create a compute order, then pay it via the payment flow.

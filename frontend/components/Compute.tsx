@@ -10,6 +10,7 @@ import {
   type ComputeEntitlement,
   type ComputeJob,
   type ComputeOffer,
+  type FederatedJob,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
@@ -278,6 +279,7 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
   const [priceYuan, setPriceYuan] = useState("10.00");
   const [maxOutputMiB, setMaxOutputMiB] = useState("10");
   const [reviewOutput, setReviewOutput] = useState(false);
+  const [allowFederated, setAllowFederated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [saved, setSaved] = useState(false);
@@ -293,6 +295,7 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
         if (o.price_cents) setPriceYuan((o.price_cents / 100).toFixed(2));
         if (o.max_output_bytes) setMaxOutputMiB(String(Math.round(o.max_output_bytes / (1 << 20))));
         setReviewOutput(o.review_output);
+        setAllowFederated(!!o.allow_federated);
       })
       .catch(() => {
         /* no offer yet — keep defaults */
@@ -311,6 +314,7 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
         price_cents: Math.round(parseFloat(priceYuan || "0") * 100),
         max_output_bytes: Math.max(1, Math.round(parseFloat(maxOutputMiB || "10"))) * (1 << 20),
         review_output: reviewOutput,
+        allow_federated: allowFederated,
       });
       setSaved(true);
     } catch (e) {
@@ -347,12 +351,234 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
         <input type="checkbox" checked={reviewOutput} onChange={(e) => setReviewOutput(e.target.checked)} />
         {t("放行前需运营人工复核输出（高敏感数据建议开启）", "Require ops human review of output before release (recommended for sensitive data)")}
       </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={allowFederated} onChange={(e) => setAllowFederated(e.target.checked)} />
+        {t(
+          "允许联邦学习（L3 · 数据不出域）：本数据集可与其他方联合训练，只贡献模型参数，原始数据不出本沙箱",
+          "Allow federated learning (L3 · data-stays-home): this dataset can co-train with others, contributing only model params — raw data never leaves its sandbox",
+        )}
+      </label>
       {err && <Alert>{err}</Alert>}
       {saved && <Alert kind="success">{t("已保存沙箱售卖配置。", "Sandbox-sale settings saved.")}</Alert>}
       <Button onClick={save} disabled={busy}>
         {busy ? t("保存中…", "Saving…") : t("保存配置", "Save settings")}
       </Button>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Buyer: federated (L3) compute across N datasets the buyer holds entitlements
+// on. Each dataset trains locally in its own sandbox; only the FedAvg joint
+// model is returned. Raw data never leaves a sandbox.
+// ---------------------------------------------------------------------------
+export function FederatedComputePanel() {
+  const { user } = useAuth();
+  const { t } = useT();
+  const [ents, setEnts] = useState<ComputeEntitlement[]>([]);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [algos, setAlgos] = useState<ComputeAlgorithm[]>([]);
+  const [algo, setAlgo] = useState("");
+  const [minParticipants, setMinParticipants] = useState("");
+  const [feds, setFeds] = useState<FederatedJob[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const refreshFeds = useCallback(async () => {
+    if (!user) return;
+    try {
+      setFeds((await api.listMyFederatedJobs()).items);
+    } catch {
+      /* ignore */
+    }
+  }, [user]);
+
+  // Candidate datasets = the buyer's active entitlements with credits left.
+  useEffect(() => {
+    if (!user) return;
+    api
+      .listMyComputeEntitlements()
+      .then((r) => setEnts(r.items.filter((e) => e.status === "active" && e.jobs_used < e.jobs_quota)))
+      .catch(() => {});
+    void refreshFeds();
+  }, [user, refreshFeds]);
+
+  // Algorithms come from any picked dataset; only federated runtimes apply.
+  useEffect(() => {
+    const first = [...picked][0];
+    if (!first) {
+      setAlgos([]);
+      return;
+    }
+    api
+      .listComputeAlgorithms(first)
+      .then((r) => {
+        const fed = r.items.filter((a) => a.runtime === "fed-logreg");
+        const list = fed.length ? fed : r.items;
+        setAlgos(list);
+        setAlgo((prev) => prev || list[0]?.id || "");
+      })
+      .catch(() => setAlgos([]));
+  }, [picked]);
+
+  const hasPending = feds.some((f) => !TERMINAL.has(f.status));
+  useEffect(() => {
+    if (!hasPending) return;
+    const iv = setInterval(() => void refreshFeds(), 1800);
+    return () => clearInterval(iv);
+  }, [hasPending, refreshFeds]);
+
+  if (!user) return null;
+
+  function toggle(dsId: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(dsId)) next.delete(dsId);
+      else next.add(dsId);
+      return next;
+    });
+  }
+
+  async function submit() {
+    setErr("");
+    setBusy(true);
+    try {
+      const ds = [...picked];
+      const min = parseInt(minParticipants || "0", 10);
+      await api.submitFederatedJob({
+        algorithm_id: algo,
+        dataset_ids: ds,
+        min_participants: Number.isFinite(min) && min > 0 ? min : undefined,
+      });
+      setPicked(new Set());
+      setMinParticipants("");
+      await refreshFeds();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canSubmit = picked.size >= 2 && !!algo && !busy;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2">
+        <h2 className="text-lg font-semibold">{t("联邦计算 · 数据不出域", "Federated compute · data-stays-home")}</h2>
+        <Badge>L3</Badge>
+      </div>
+      <p className="mt-1 text-sm text-neutral-500">
+        {t(
+          "选择你已购计算权益的 ≥2 个数据集联合训练：每个数据集只在自己的沙箱内本地训练，平台仅聚合模型参数（FedAvg），原始数据互不可见、不出域。",
+          "Pick ≥2 datasets you hold entitlements on to co-train: each trains locally in its own sandbox; the platform only aggregates model params (FedAvg). Raw data stays in each domain, invisible to others.",
+        )}
+      </p>
+
+      {err && (
+        <div className="mt-3">
+          <Alert>{err}</Alert>
+        </div>
+      )}
+
+      {ents.length < 2 ? (
+        <div className="mt-3">
+          <Alert kind="info">
+            {t(
+              "需要至少 2 个「已购计算权益」的数据集才能发起联邦作业。请先在数据集页购买计算权益（卖家需开启「允许联邦学习」）。",
+              "You need active compute entitlements on at least 2 datasets. Buy compute on dataset pages first (the seller must enable “Allow federated learning”).",
+            )}
+          </Alert>
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3 rounded-lg border border-neutral-200 p-3">
+          <div className="text-xs font-medium text-neutral-600">{t("参与数据集", "Participating datasets")}</div>
+          <ul className="space-y-1">
+            {ents.map((e) => (
+              <li key={e.dataset_id}>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={picked.has(e.dataset_id)} onChange={() => toggle(e.dataset_id)} />
+                  <span className="font-mono text-xs text-neutral-500">{e.dataset_id.slice(0, 8)}</span>
+                  <span className="text-xs text-neutral-400">
+                    {t(`剩余 ${e.jobs_quota - e.jobs_used} 次`, `${e.jobs_quota - e.jobs_used} runs left`)}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t("联邦算法", "Federated algorithm")}>
+              <Select value={algo} onChange={(e) => setAlgo(e.target.value)}>
+                {algos.length === 0 && <option value="">{t("（选数据集后加载）", "(pick a dataset)")}</option>}
+                {algos.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} · {a.runtime}
+                    {a.trusted ? t(" · 可信", " · trusted") : ""}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field
+              label={t("最少参与方", "Min participants")}
+              hint={t("留空=全部；可容忍掉队", "blank = all; tolerates dropouts")}
+            >
+              <Input
+                value={minParticipants}
+                onChange={(e) => setMinParticipants(e.target.value)}
+                inputMode="numeric"
+                placeholder={String(picked.size || "")}
+              />
+            </Field>
+          </div>
+          <Button className="w-full" onClick={submit} disabled={!canSubmit}>
+            {busy
+              ? t("提交中…", "Submitting…")
+              : picked.size < 2
+                ? t("至少选择 2 个数据集", "Select at least 2 datasets")
+                : t(`发起联邦作业（${picked.size} 方）`, `Start federated job (${picked.size} parties)`)}
+          </Button>
+        </div>
+      )}
+
+      {feds.length > 0 && (
+        <div className="mt-4 border-t border-neutral-100 pt-3">
+          <div className="mb-2 text-sm font-medium text-neutral-700">{t("我的联邦作业", "My federated jobs")}</div>
+          <ul className="space-y-2">
+            {feds.map((f) => (
+              <li key={f.id} className="flex items-center justify-between gap-2 text-sm">
+                <div className="min-w-0">
+                  <span className="font-mono text-xs text-neutral-400">{f.id.slice(0, 8)}</span>{" "}
+                  <Badge>{f.status}</Badge>{" "}
+                  <span className="text-xs text-neutral-400">
+                    {t(`${f.dataset_ids.length} 方 · 最少 ${f.min_participants}`, `${f.dataset_ids.length} parties · min ${f.min_participants}`)}
+                    {f.dp_epsilon ? t(` · DP ε=${f.dp_epsilon}`, ` · DP ε=${f.dp_epsilon}`) : ""}
+                  </span>
+                  {f.status === "failed" && f.failure_code && (
+                    <span className="ml-1 text-xs text-red-500">{f.failure_code}</span>
+                  )}
+                </div>
+                {f.status === "released" ? (
+                  <Button variant="secondary" onClick={() => void api.downloadFederatedOutput(f.id).catch((e) => setErr((e as Error).message))}>
+                    {t("下载联合模型", "Download joint model")}
+                  </Button>
+                ) : TERMINAL.has(f.status) ? (
+                  <span className="text-xs text-neutral-400">—</span>
+                ) : (
+                  <span className="text-xs text-neutral-400">{t("运行中…", "Running…")}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="mt-3 text-xs text-neutral-400">
+        {t(
+          "诚实标注：当前为中心化 FedAvg——平台聚合时可见各方模型参数（非原始数据）。安全聚合（掩码求和）与真 TEE 在规划中；联合模型仍可能经参数泄漏，可叠加差分隐私（DP）。",
+          "Honest note: this is central FedAvg — the platform sees each party's model params (not raw data) during aggregation. Secure aggregation and real TEE are planned; the joint model can still leak via params, so differential privacy (DP) can be layered on.",
+        )}
+      </p>
+    </Card>
   );
 }
 

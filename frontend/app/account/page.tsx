@@ -5,6 +5,7 @@ import { api, type KYC } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
+import { FederatedComputePanel } from "@/components/Compute";
 import { Alert, Badge, Button, Card, Field, Input, Select } from "@/components/ui";
 
 export default function AccountPage() {
@@ -140,6 +141,8 @@ function AccountInner() {
           </Button>
         </form>
       </Card>
+
+      <FederatedComputePanel />
     </div>
   );
 }
