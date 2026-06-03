@@ -30,6 +30,7 @@ type offerRequest struct {
 	ReturnLogs     bool     `json:"return_logs"`
 	ReviewOutput   bool     `json:"review_output"`
 	TrustLevel     string   `json:"trust_level"`
+	AllowFederated bool     `json:"allow_federated"`
 }
 
 func (h *handler) putOffer(c *gin.Context) {
@@ -43,6 +44,7 @@ func (h *handler) putOffer(c *gin.Context) {
 		PriceCents: req.PriceCents, MaxRuntimeSecs: req.MaxRuntimeSecs, MaxOutputBytes: req.MaxOutputBytes,
 		MaxOutputFiles: req.MaxOutputFiles, DPEpsilon: req.DPEpsilon, DPEpsilonTotal: req.DPEpsilonTotal,
 		ReturnLogs: req.ReturnLogs, ReviewOutput: req.ReviewOutput, TrustLevel: req.TrustLevel,
+		AllowFederated: req.AllowFederated,
 	})
 	if err != nil {
 		fail(c, err)
@@ -355,6 +357,10 @@ func fail(c *gin.Context, err error) {
 		httpx.Fail(c, httpx.ErrConflict.WithMessage("cannot buy compute on your own dataset"))
 	case errors.Is(err, ErrPurchasePending):
 		httpx.Fail(c, httpx.ErrConflict.WithMessage("a compute order for this dataset is already in progress"))
+	case errors.Is(err, ErrFederatedParties):
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("federated jobs require at least two datasets"))
+	case errors.Is(err, ErrOutputNotReady):
+		httpx.Fail(c, httpx.ErrConflict.WithMessage("output is not ready for download"))
 	default:
 		httpx.Fail(c, httpx.ErrInternal)
 	}

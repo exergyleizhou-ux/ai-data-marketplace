@@ -56,6 +56,7 @@ type Offer struct {
 	Enabled        bool     `json:"enabled"`
 	AllowCustom    bool     `json:"allow_custom"`
 	AllowedAlgoIDs []string `json:"allowed_algorithm_ids"`
+	AllowFederated bool     `json:"allow_federated"` // P4-a: seller opts dataset into federated use
 	PriceCents     int64    `json:"price_cents"`
 	MaxRuntimeSecs int      `json:"max_runtime_secs"`
 	MaxOutputBytes int64    `json:"max_output_bytes"`
@@ -118,7 +119,8 @@ type Job struct {
 	OutputKind       string         `json:"output_kind,omitempty"`
 	LogsKey          string         `json:"logs_key,omitempty"`
 	Error            string         `json:"error,omitempty"`
-	Attestation      map[string]any `json:"attestation,omitempty"` // L2 TEE remote-attestation report (design P3)
+	Attestation      map[string]any `json:"attestation,omitempty"`      // L2 TEE remote-attestation report (design P3)
+	FederatedJobID   string         `json:"federated_job_id,omitempty"` // P4-a: set on federated sub-jobs; partials are internal-only
 	CreatedAt        string         `json:"created_at,omitempty"`
 	StartedAt        string         `json:"started_at,omitempty"`
 	FinishedAt       string         `json:"finished_at,omitempty"`
@@ -160,6 +162,49 @@ func JobTerminal(status string) bool {
 	return false
 }
 
+// --- federated (P4-a) ---
+
+// FederatedJob is one federated-learning job: it references N datasets, fans out
+// N sandbox sub-jobs (compute_jobs with FederatedJobID set), then aggregates
+// their local model params into a joint model with FedAvg. Raw data never leaves
+// each seller's sandbox; only model parameters are aggregated (design P4 §2.1).
+type FederatedJob struct {
+	ID              string         `json:"id"`
+	BuyerID         string         `json:"buyer_id"`
+	AlgorithmID     string         `json:"algorithm_id,omitempty"`
+	DatasetIDs      []string       `json:"dataset_ids"`
+	Mode            string         `json:"mode"`
+	Status          string         `json:"status"`
+	MinParticipants int            `json:"min_participants"`
+	Params          map[string]any `json:"params,omitempty"`
+	DPEpsilon       *float64       `json:"dp_epsilon,omitempty"`
+	OutputKey       string         `json:"-"` // joint model object key; never serialized to the wire
+	OutputBytes     int64          `json:"output_bytes,omitempty"`
+	FailureCode     string         `json:"failure_code,omitempty"`
+	CreatedAt       string         `json:"created_at,omitempty"`
+	UpdatedAt       string         `json:"updated_at,omitempty"`
+}
+
+// Federated job lifecycle (spec §2):
+//
+//	created → fanout → aggregating → released
+//	                 ↘ failed (a sub-job failed / aggregation error)
+const (
+	FedCreated     = "created"
+	FedFanout      = "fanout"
+	FedAggregating = "aggregating"
+	FedReleased    = "released"
+	FedFailed      = "failed"
+	FedRejected    = "rejected"
+)
+
+// ModeFederated is the FedAvg mode; 'mpc' is reserved for P4-c.
+const ModeFederated = "federated"
+
+// RuntimeFedLogreg is the MVP federated algorithm runtime: sub-jobs emit
+// fedparams-v1 local params, aggregated by FedAvg. Real training image is P4-b.
+const RuntimeFedLogreg = "fed-logreg"
+
 // --- errors (sentinels; handler maps these to the 7xxx httpx code band) ---
 
 var (
@@ -179,4 +224,6 @@ var (
 	ErrDuplicateJob     = errors.New("a job with this idempotency key already exists")
 	ErrDuplicateEnt     = errors.New("an entitlement for this order already exists")
 	ErrPurchasePending  = errors.New("a compute order for this dataset is already in progress")
+	ErrOutputNotReady   = errors.New("output is not ready for download")
+	ErrFederatedParties = errors.New("federated jobs require at least two datasets")
 )

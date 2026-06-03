@@ -65,7 +65,8 @@ type Service struct {
 	runner      Runner
 	store       storage.Storage
 	data        DataKeyResolver
-	attester    Attester // optional; verifies stored L2 attestation reports (design P3)
+	attester    Attester   // optional; verifies stored L2 attestation reports (design P3)
+	aggregator  Aggregator // federated aggregation (P4-a); defaults to FedAvgAggregator
 	runnerID    string
 	leaseSecs   int
 	maxAttempts int
@@ -91,12 +92,16 @@ func NewService(repo Repository, identity IdentityChecker, datasets DatasetReade
 		rec = audit.Noop{}
 	}
 	s := &Service{repo: repo, identity: identity, datasets: datasets, audit: rec,
-		leaseSecs: DefaultLeaseSecs, maxAttempts: DefaultMaxAttempts}
+		leaseSecs: DefaultLeaseSecs, maxAttempts: DefaultMaxAttempts,
+		aggregator: FedAvgAggregator{}}
 	for _, o := range opts {
 		o(s)
 	}
 	return s
 }
+
+// WithAggregator overrides the federated aggregation strategy (default FedAvg).
+func WithAggregator(a Aggregator) Option { return func(s *Service) { s.aggregator = a } }
 
 // --- seller: offer configuration ---
 
@@ -114,6 +119,7 @@ type OfferInput struct {
 	ReturnLogs     bool
 	ReviewOutput   bool
 	TrustLevel     string
+	AllowFederated bool // P4-a: opt this dataset into federated use
 }
 
 // ConfigureOffer lets the dataset's seller enable/configure sandbox sale.
@@ -151,6 +157,7 @@ func (s *Service) ConfigureOffer(ctx context.Context, sellerID, datasetID string
 		MaxRuntimeSecs: in.MaxRuntimeSecs, MaxOutputBytes: in.MaxOutputBytes, MaxOutputFiles: in.MaxOutputFiles,
 		DPEpsilon: in.DPEpsilon, DPEpsilonTotal: in.DPEpsilonTotal,
 		ReturnLogs: in.ReturnLogs, ReviewOutput: in.ReviewOutput, TrustLevel: in.TrustLevel,
+		AllowFederated: in.AllowFederated,
 	})
 	if err != nil {
 		return Offer{}, err
@@ -396,6 +403,13 @@ type SubmitInput struct {
 // idempotency pre-check → algorithm/offer validation → DP budget → atomic quota
 // spend → create. On a duplicate-key race the spent quota is refunded.
 func (s *Service) SubmitJob(ctx context.Context, buyerID string, in SubmitInput) (Job, error) {
+	return s.submitJobTagged(ctx, buyerID, in, "")
+}
+
+// submitJobTagged is the shared submit path. federatedID is "" for a normal
+// single-dataset job, or the parent federated job's id for a federated sub-job
+// (whose output is internal-only and feeds aggregation, never released to the buyer).
+func (s *Service) submitJobTagged(ctx context.Context, buyerID string, in SubmitInput, federatedID string) (Job, error) {
 	offer, err := s.repo.GetOffer(ctx, in.DatasetID)
 	if err != nil {
 		return Job{}, err
@@ -474,7 +488,7 @@ func (s *Service) SubmitJob(ctx context.Context, buyerID string, in SubmitInput)
 	job := Job{
 		DatasetID: in.DatasetID, VersionID: ds.VersionID, BuyerID: buyerID, EntitlementID: in.EntitlementID,
 		AlgorithmID: algo.ID, AlgorithmVersion: algo.Version, Params: in.Params,
-		Status: JobQueued, DPEpsilon: jobEps,
+		Status: JobQueued, DPEpsilon: jobEps, FederatedJobID: federatedID,
 	}.WithIdempotencyKey(in.IdempotencyKey)
 
 	out, err := s.repo.CreateJob(ctx, job)
@@ -547,6 +561,9 @@ func (s *Service) GetJob(ctx context.Context, userID, id string) (Job, error) {
 	}
 	if j.BuyerID != userID {
 		return Job{}, ErrForbidden
+	}
+	if j.FederatedJobID != "" {
+		return Job{}, ErrForbidden // federated sub-jobs are internal; use the federated job APIs
 	}
 	return j, nil
 }

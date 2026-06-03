@@ -233,6 +233,20 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 	// they would pass a scrub gate. P1: store nothing by default (design §7.4).
 	logsKey := ""
 
+	// Federated sub-job (P4-a): release internally (output is a local-params
+	// partial, NEVER surfaced to the buyer) and notify the federated coordinator.
+	// No ops review path — only the aggregated joint model is buyer-visible.
+	if job.FederatedJobID != "" {
+		if _, err := s.repo.Release(ctx, jobID, key, res.OutputKind, size, logsKey); err != nil {
+			slog.Error("compute: federated sub-job release failed", "job_id", jobID, "err", err)
+			return
+		}
+		metrics.RecordComputeJob("released")
+		metrics.ObserveComputeJobDuration(res.OutputKind, time.Since(start).Seconds())
+		s.tryAdvanceFederated(ctx, job.FederatedJobID)
+		return
+	}
+
 	// High-sensitivity offers park the output for ops human review before it is
 	// released to the buyer (design §8 gate ⑤). Otherwise release directly.
 	if offer.ReviewOutput {
@@ -265,7 +279,10 @@ func (s *Service) rejectJob(ctx context.Context, jobID, entitlementID, reason st
 		slog.Error("compute: reject failed", "job_id", jobID, "err", err)
 		return
 	}
-	if entitlementID != "" {
+	// Federated sub-job: defer refund to the coordinator (refunds all once).
+	job, gerr := s.repo.GetJob(ctx, jobID)
+	federated := gerr == nil && job.FederatedJobID != ""
+	if entitlementID != "" && !federated {
 		if err := s.repo.RefundQuota(ctx, entitlementID); err != nil {
 			slog.Error("compute: quota refund on reject failed", "job_id", jobID, "err", err)
 		}
@@ -273,6 +290,9 @@ func (s *Service) rejectJob(ctx context.Context, jobID, entitlementID, reason st
 	s.audit.Record(ctx, audit.Entry{Action: "compute.job.reject", ResourceType: "compute_job",
 		ResourceID: jobID, Detail: map[string]any{"reason": reason}})
 	metrics.RecordComputeJob("rejected")
+	if federated {
+		s.tryAdvanceFederated(ctx, job.FederatedJobID)
+	}
 }
 
 func (s *Service) failJob(ctx context.Context, jobID, code string) {
@@ -281,7 +301,10 @@ func (s *Service) failJob(ctx context.Context, jobID, code string) {
 		return
 	}
 	// A platform/runner-side failure should not consume the buyer's credit (§21).
-	if job, gerr := s.repo.GetJob(ctx, jobID); gerr == nil {
+	// For a federated sub-job we defer the refund to the federated coordinator,
+	// which refunds ALL participants exactly once when it fails the parent job.
+	job, gerr := s.repo.GetJob(ctx, jobID)
+	if gerr == nil && job.FederatedJobID == "" {
 		if rerr := s.repo.RefundQuota(ctx, job.EntitlementID); rerr != nil {
 			slog.Error("compute: quota refund on fail failed", "job_id", jobID, "err", rerr)
 		}
@@ -289,6 +312,9 @@ func (s *Service) failJob(ctx context.Context, jobID, code string) {
 	s.audit.Record(ctx, audit.Entry{Action: "compute.job.fail", ResourceType: "compute_job",
 		ResourceID: jobID, Detail: map[string]any{"error": code}})
 	metrics.RecordComputeJob("failed")
+	if gerr == nil && job.FederatedJobID != "" {
+		s.tryAdvanceFederated(ctx, job.FederatedJobID)
+	}
 }
 
 // OpenOutput streams a released job's output to its buyer. Returns ErrForbidden
@@ -300,6 +326,9 @@ func (s *Service) OpenOutput(ctx context.Context, userID, jobID string) (io.Read
 	}
 	if job.BuyerID != userID {
 		return nil, 0, Job{}, ErrForbidden
+	}
+	if job.FederatedJobID != "" {
+		return nil, 0, Job{}, ErrForbidden // federated sub-job partials are internal-only
 	}
 	if job.Status != JobReleased || job.OutputKey == "" {
 		return nil, 0, Job{}, ErrBadTransition

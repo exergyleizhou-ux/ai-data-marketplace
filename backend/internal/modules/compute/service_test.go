@@ -20,13 +20,96 @@ type fakeRepo struct {
 	jobs  map[string]Job
 	idem  map[string]string // entitlementID|key -> jobID
 	dp    map[string]float64
+	feds  map[string]FederatedJob
 }
 
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
 		algos: map[string]Algorithm{}, offrs: map[string]Offer{}, ents: map[string]Entitlement{},
 		jobs: map[string]Job{}, idem: map[string]string{}, dp: map[string]float64{},
+		feds: map[string]FederatedJob{},
 	}
+}
+
+// --- federated (in-memory fake, P4-a) ---
+
+func (f *fakeRepo) CreateFederatedJob(_ context.Context, fj FederatedJob) (FederatedJob, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if fj.ID == "" {
+		fj.ID = f.id("fed")
+	}
+	if fj.Mode == "" {
+		fj.Mode = ModeFederated
+	}
+	fj.Status = FedCreated
+	f.feds[fj.ID] = fj
+	return fj, nil
+}
+
+func (f *fakeRepo) GetFederatedJob(_ context.Context, id string) (FederatedJob, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	fj, ok := f.feds[id]
+	if !ok {
+		return FederatedJob{}, ErrNotFound
+	}
+	return fj, nil
+}
+
+func (f *fakeRepo) ListSubJobs(_ context.Context, federatedID string) ([]Job, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []Job
+	for _, j := range f.jobs {
+		if j.FederatedJobID == federatedID {
+			out = append(out, j)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeRepo) TransitionFederated(_ context.Context, id, from, to string) (FederatedJob, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	fj, ok := f.feds[id]
+	if !ok || fj.Status != from {
+		return FederatedJob{}, ErrBadTransition
+	}
+	fj.Status = to
+	f.feds[id] = fj
+	return fj, nil
+}
+
+func (f *fakeRepo) ReleaseFederated(_ context.Context, id, outputKey string, outputBytes int64) (FederatedJob, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	fj, ok := f.feds[id]
+	if !ok || fj.Status != FedAggregating {
+		return FederatedJob{}, ErrBadTransition
+	}
+	fj.Status = FedReleased
+	fj.OutputKey = outputKey
+	fj.OutputBytes = outputBytes
+	f.feds[id] = fj
+	return fj, nil
+}
+
+func (f *fakeRepo) FailFederated(_ context.Context, id, code string) (FederatedJob, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	fj, ok := f.feds[id]
+	if !ok {
+		return FederatedJob{}, ErrBadTransition
+	}
+	switch fj.Status {
+	case FedReleased, FedFailed, FedRejected:
+		return FederatedJob{}, ErrBadTransition
+	}
+	fj.Status = FedFailed
+	fj.FailureCode = code
+	f.feds[id] = fj
+	return fj, nil
 }
 
 func (f *fakeRepo) id(prefix string) string { f.seq++; return fmt.Sprintf("%s-%d", prefix, f.seq) }

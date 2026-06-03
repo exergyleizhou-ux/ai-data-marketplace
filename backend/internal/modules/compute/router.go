@@ -27,6 +27,11 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	buyer.GET("/compute/jobs/:id/output", h.downloadOutput)
 	buyer.GET("/compute/jobs/:id/attestation", h.jobAttestation) // L2 remote-attestation (P3)
 	buyer.POST("/compute/jobs/:id/cancel", h.cancelJob)
+	// Federated learning (P4-a): one job across N datasets; sub-jobs run in each
+	// dataset's sandbox, only the aggregated joint model is buyer-visible.
+	buyer.POST("/compute/federated-jobs", h.submitFederated)
+	buyer.GET("/compute/federated-jobs/:id", h.getFederated)
+	buyer.GET("/compute/federated-jobs/:id/output", h.federatedOutput)
 	buyer.GET("/users/me/compute/jobs", h.listMyJobs)
 	buyer.GET("/users/me/compute/entitlements", h.listMyEntitlements)
 	// Real purchase: create a compute order, then pay it via the payment flow.
