@@ -88,6 +88,11 @@ func (s *Service) SubmitFederatedJob(ctx context.Context, buyerID string, in Fed
 	s.audit.Record(ctx, audit.Entry{ActorID: buyerID, Action: "compute.federated.submit",
 		ResourceType: "compute_federated_job", ResourceID: fed.ID,
 		Detail: map[string]any{"datasets": len(in.DatasetIDs), "algorithm_id": in.AlgorithmID}})
+	// Startup-race guard: sub-jobs run very fast (esp. MockRunner) and may all
+	// finish BEFORE this fanout transition — their tryAdvance callbacks no-op while
+	// status is still 'created'. Without this explicit kick nothing would advance
+	// the job and it would hang in 'fanout'. Safe + idempotent (state-transition gated).
+	s.tryAdvanceFederated(ctx, fed.ID)
 	return fed, nil
 }
 
