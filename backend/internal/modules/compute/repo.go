@@ -87,6 +87,7 @@ type Repository interface {
 	// federated (P4-a)
 	CreateFederatedJob(ctx context.Context, f FederatedJob) (FederatedJob, error)
 	GetFederatedJob(ctx context.Context, id string) (FederatedJob, error)
+	ListFederatedJobsByBuyer(ctx context.Context, buyerID string, limit, offset int) ([]FederatedJob, error)
 	ListSubJobs(ctx context.Context, federatedID string) ([]Job, error)
 	TransitionFederated(ctx context.Context, id, from, to string) (FederatedJob, error)
 	ReleaseFederated(ctx context.Context, id, outputKey string, outputBytes int64) (FederatedJob, error)

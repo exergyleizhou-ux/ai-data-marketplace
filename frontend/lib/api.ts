@@ -184,6 +184,23 @@ export type ComputeJob = {
   error?: string;
   created_at?: string;
 };
+// Federated (L3) job: fans out one sandbox sub-job per dataset, aggregates the
+// local model params with FedAvg into a joint model. Raw data never leaves a
+// sandbox; only the joint model is buyer-visible.
+export type FederatedJob = {
+  id: string;
+  buyer_id: string;
+  algorithm_id?: string;
+  dataset_ids: string[];
+  mode: string;
+  status: string; // created|fanout|aggregating|released|failed|rejected
+  min_participants: number;
+  dp_epsilon?: number | null;
+  output_bytes?: number;
+  failure_code?: string;
+  created_at?: string;
+};
+
 // L2 remote-attestation report (design P3).
 export type ComputeAttestation = {
   format: string;
@@ -414,6 +431,34 @@ export const api = {
     const a = document.createElement("a");
     a.href = url;
     a.download = `compute-output-${id}.bin`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  // federated (L3) compute
+  submitFederatedJob: (b: {
+    algorithm_id: string;
+    dataset_ids: string[];
+    min_participants?: number;
+    dp_epsilon?: number;
+    params?: Record<string, unknown>;
+  }) => request<FederatedJob>("/compute/federated-jobs", { body: b }),
+  getFederatedJob: (id: string) =>
+    request<{ federated_job: FederatedJob; sub_jobs: ComputeJob[] }>(`/compute/federated-jobs/${id}`),
+  listMyFederatedJobs: () =>
+    request<{ items: FederatedJob[] }>("/users/me/compute/federated-jobs"),
+  downloadFederatedOutput: async (id: string) => {
+    const res = await fetch(buildURL(`/compute/federated-jobs/${id}/output`), {
+      headers: tokenStore.access ? { Authorization: `Bearer ${tokenStore.access}` } : {},
+    });
+    if (!res.ok) throw new ApiError(-1, res.status, "下载失败");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `federated-model-${id}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();

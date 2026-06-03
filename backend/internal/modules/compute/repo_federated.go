@@ -68,6 +68,28 @@ func (r *pgRepo) ListSubJobs(ctx context.Context, federatedID string) ([]Job, er
 		federatedID)
 }
 
+func (r *pgRepo) ListFederatedJobsByBuyer(ctx context.Context, buyerID string, limit, offset int) ([]FederatedJob, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+fedCols+` FROM compute_federated_jobs WHERE buyer_id=$1 ORDER BY created_at DESC, id LIMIT $2 OFFSET $3`,
+		buyerID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list federated jobs: %w", err)
+	}
+	defer rows.Close()
+	var out []FederatedJob
+	for rows.Next() {
+		f, serr := scanFed(rows)
+		if serr != nil {
+			return nil, serr
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
 func (r *pgRepo) TransitionFederated(ctx context.Context, id, from, to string) (FederatedJob, error) {
 	out, err := scanFed(r.pool.QueryRow(ctx,
 		`UPDATE compute_federated_jobs SET status=$3, updated_at=now() WHERE id=$1 AND status=$2 RETURNING `+fedCols,

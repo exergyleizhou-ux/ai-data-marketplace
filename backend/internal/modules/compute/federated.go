@@ -96,6 +96,11 @@ func (s *Service) SubmitFederatedJob(ctx context.Context, buyerID string, in Fed
 	return fed, nil
 }
 
+// ListFederatedJobs returns the buyer's federated jobs, newest first.
+func (s *Service) ListFederatedJobs(ctx context.Context, buyerID string, limit, offset int) ([]FederatedJob, error) {
+	return s.repo.ListFederatedJobsByBuyer(ctx, buyerID, limit, offset)
+}
+
 // activeEntitlementFor finds the buyer's first active entitlement with remaining
 // quota for a dataset.
 func (s *Service) activeEntitlementFor(ctx context.Context, buyerID, datasetID string) (Entitlement, error) {
