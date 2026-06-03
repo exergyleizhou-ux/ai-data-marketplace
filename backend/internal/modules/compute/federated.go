@@ -88,6 +88,11 @@ func (s *Service) SubmitFederatedJob(ctx context.Context, buyerID string, in Fed
 	s.audit.Record(ctx, audit.Entry{ActorID: buyerID, Action: "compute.federated.submit",
 		ResourceType: "compute_federated_job", ResourceID: fed.ID,
 		Detail: map[string]any{"datasets": len(in.DatasetIDs), "algorithm_id": in.AlgorithmID}})
+	// Startup-race guard: sub-jobs run very fast (esp. MockRunner) and may all
+	// finish BEFORE this fanout transition — their tryAdvance callbacks no-op while
+	// status is still 'created'. Without this explicit kick nothing would advance
+	// the job and it would hang in 'fanout'. Safe + idempotent (state-transition gated).
+	s.tryAdvanceFederated(ctx, fed.ID)
 	return fed, nil
 }
 
@@ -215,7 +220,19 @@ func (s *Service) aggregateAndRelease(ctx context.Context, fed FederatedJob, sub
 		}
 		partials = append(partials, p)
 	}
-	joint, err := s.aggregator.Aggregate(partials)
+	// When the federated job sets dp_epsilon, release a central-DP (Laplace) noised
+	// joint model instead of the raw mean (design §5; honest central DP, not DP-SGD).
+	var joint []byte
+	var err error
+	if fed.DPEpsilon != nil {
+		clip := defaultDPClip
+		if c, ok := fed.Params["dp_clip"].(float64); ok && c > 0 {
+			clip = c
+		}
+		joint, err = dpFedAvg(partials, *fed.DPEpsilon, clip, laplaceNoise)
+	} else {
+		joint, err = s.aggregator.Aggregate(partials)
+	}
 	if err != nil {
 		s.failFederatedWithRefund(ctx, fed.ID, "aggregate_error", subs)
 		return
@@ -234,8 +251,17 @@ func (s *Service) aggregateAndRelease(ctx context.Context, fed FederatedJob, sub
 		slog.Error("compute: release federated failed", "federated_job_id", fed.ID, "err", err)
 		return
 	}
+	// Record DP spend per participating dataset (ledger keys on the sub-job id,
+	// which is a real compute_jobs row — design §8 budget tracking).
+	if fed.DPEpsilon != nil {
+		for _, j := range subs {
+			if err := s.repo.SpendDP(ctx, j.DatasetID, fed.BuyerID, j.ID, *fed.DPEpsilon); err != nil {
+				slog.Error("compute: federated dp ledger write failed", "federated_job_id", fed.ID, "sub_job", j.ID, "err", err)
+			}
+		}
+	}
 	s.audit.Record(ctx, audit.Entry{Action: "compute.federated.release", ResourceType: "compute_federated_job",
-		ResourceID: fed.ID, Detail: map[string]any{"participants": len(partials), "output_bytes": size}})
+		ResourceID: fed.ID, Detail: map[string]any{"participants": len(partials), "output_bytes": size, "dp": fed.DPEpsilon != nil}})
 }
 
 // failFederatedWithRefund fails the job (idempotently) and refunds all sub-jobs once.
