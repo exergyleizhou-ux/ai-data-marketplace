@@ -62,17 +62,18 @@ type Service struct {
 
 	// Execution engine (optional; set via WithWorker). When runner is nil,
 	// SubmitJob leaves the job queued for an out-of-process runner to claim.
-	runner      Runner
-	store       storage.Storage
-	data        DataKeyResolver
-	attester    Attester   // optional; verifies stored L2 attestation reports (design P3)
-	aggregator  Aggregator // federated aggregation (P4-a); defaults to FedAvgAggregator
-	runnerID    string
-	leaseSecs   int
-	maxAttempts int
-	qCh         chan string // queued job ids
-	wg          sync.WaitGroup
-	stopSweep   chan struct{}
+	runner       Runner
+	store        storage.Storage
+	data         DataKeyResolver
+	attester     Attester        // optional; verifies stored L2 attestation reports (design P3)
+	aggregator   Aggregator      // federated aggregation (P4-a); defaults to FedAvgAggregator
+	orchestrator MPCOrchestrator // PSI/MPC orchestration (Direction D); defaults to mockMPC
+	runnerID     string
+	leaseSecs    int
+	maxAttempts  int
+	qCh          chan string // queued job ids
+	wg           sync.WaitGroup
+	stopSweep    chan struct{}
 }
 
 // SetOrderCreator wires the real purchase path (compute order via order+payment)
@@ -93,7 +94,7 @@ func NewService(repo Repository, identity IdentityChecker, datasets DatasetReade
 	}
 	s := &Service{repo: repo, identity: identity, datasets: datasets, audit: rec,
 		leaseSecs: DefaultLeaseSecs, maxAttempts: DefaultMaxAttempts,
-		aggregator: FedAvgAggregator{}}
+		aggregator: FedAvgAggregator{}, orchestrator: NewMockMPC()}
 	for _, o := range opts {
 		o(s)
 	}
@@ -102,6 +103,9 @@ func NewService(repo Repository, identity IdentityChecker, datasets DatasetReade
 
 // WithAggregator overrides the federated aggregation strategy (default FedAvg).
 func WithAggregator(a Aggregator) Option { return func(s *Service) { s.aggregator = a } }
+
+// WithOrchestrator overrides the PSI/MPC orchestrator (default in-process mockMPC).
+func WithOrchestrator(o MPCOrchestrator) Option { return func(s *Service) { s.orchestrator = o } }
 
 // --- seller: offer configuration ---
 

@@ -2,7 +2,9 @@ package compute
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 )
 
@@ -82,4 +84,34 @@ func (mockMPC) RunPSI(_ context.Context, parties [][]string) (PSIResult, error) 
 	}
 	sort.Strings(inter)
 	return PSIResult{Intersection: inter, Cardinality: len(inter)}, nil
+}
+
+// parsePSISet decodes a sub-job's psi-set-v1 output into a party's element set.
+func parsePSISet(raw []byte) ([]string, error) {
+	var p struct {
+		Format   string   `json:"_format"`
+		Elements []string `json:"elements"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, fmt.Errorf("compute: parse psi set: %w", err)
+	}
+	if p.Format != "psi-set-v1" {
+		return nil, fmt.Errorf("compute: unexpected psi set format %q", p.Format)
+	}
+	return p.Elements, nil
+}
+
+// marshalPSIResult renders a PSI intersection as the buyer-facing joint output.
+func marshalPSIResult(res PSIResult, participants int) ([]byte, error) {
+	out := map[string]any{
+		"_format":      "psi-result-v1",
+		"intersection": res.Intersection,
+		"cardinality":  res.Cardinality,
+		"participants": participants,
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("compute: marshal psi result: %w", err)
+	}
+	return b, nil
 }
