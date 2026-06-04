@@ -97,6 +97,22 @@ func (MockRunner) Run(_ context.Context, req RunRequest) (RunResult, error) {
 		return RunResult{OutputKind: OutputModel, Output: b, Logs: []byte("mock: fed-logreg local params")}, nil
 	}
 
+	// PSI sub-job (Direction D 阶段1): emit this party's set (psi-set-v1). Every
+	// dataset shares the common elements (so an intersection is non-trivial) plus
+	// one dataset-specific element. The real privacy-preserving extractor is 阶段2.
+	if req.Algorithm.Runtime == RuntimePSIExtract {
+		only := req.Job.DatasetID
+		if len(only) > 8 {
+			only = only[:8]
+		}
+		set := map[string]any{
+			"_format":  "psi-set-v1",
+			"elements": []string{"shared-a", "shared-b", "only-" + only},
+		}
+		b, _ := json.Marshal(set)
+		return RunResult{OutputKind: OutputAggregate, Output: b, Logs: []byte("mock: psi-extract party set")}, nil
+	}
+
 	kind := req.Algorithm.OutputKind
 	switch kind {
 	case OutputModel:

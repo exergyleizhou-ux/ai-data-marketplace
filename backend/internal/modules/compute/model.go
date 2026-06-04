@@ -198,12 +198,21 @@ const (
 	FedRejected    = "rejected"
 )
 
-// ModeFederated is the FedAvg mode; 'mpc' is reserved for P4-c.
-const ModeFederated = "federated"
+// Federated/MPC job modes. ModeFederated aggregates model params with FedAvg;
+// ModePSI computes a private set intersection across the parties (Direction D).
+const (
+	ModeFederated = "federated"
+	ModePSI       = "psi"
+)
 
 // RuntimeFedLogreg is the MVP federated algorithm runtime: sub-jobs emit
 // fedparams-v1 local params, aggregated by FedAvg. Real training image is P4-b.
 const RuntimeFedLogreg = "fed-logreg"
+
+// RuntimePSIExtract is the PSI runtime (Direction D 阶段1): each sub-job emits its
+// party's set (psi-set-v1) and the orchestrator intersects them. The real
+// privacy-preserving extractor (Secretflow/SPU) is 阶段2; the MVP uses MockRunner.
+const RuntimePSIExtract = "psi-extract"
 
 // --- errors (sentinels; handler maps these to the 7xxx httpx code band) ---
 

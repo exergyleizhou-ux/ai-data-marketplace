@@ -60,9 +60,18 @@ func (s *Service) SubmitFederatedJob(ctx context.Context, buyerID string, in Fed
 		entByDataset[ds] = ent.ID
 	}
 
+	// The job's aggregation mode follows the algorithm's runtime: a psi-extract
+	// algorithm makes this a private set intersection (Direction D), otherwise it
+	// is FedAvg federated learning. An unknown/unfetchable algorithm defaults to
+	// federated — the per-sub-job validation still rejects an invalid algorithm.
+	mode := ModeFederated
+	if algo, aerr := s.repo.GetAlgorithm(ctx, in.AlgorithmID); aerr == nil && algo.Runtime == RuntimePSIExtract {
+		mode = ModePSI
+	}
+
 	fed, err := s.repo.CreateFederatedJob(ctx, FederatedJob{
 		BuyerID: buyerID, AlgorithmID: in.AlgorithmID, DatasetIDs: in.DatasetIDs,
-		Mode: ModeFederated, MinParticipants: minP, Params: in.Params, DPEpsilon: in.DPEpsilon,
+		Mode: mode, MinParticipants: minP, Params: in.Params, DPEpsilon: in.DPEpsilon,
 	})
 	if err != nil {
 		return FederatedJob{}, err
@@ -212,6 +221,10 @@ func (s *Service) tryAdvanceFederated(ctx context.Context, fedID string) {
 // released participants (dropouts are excluded and refunded by the caller). On
 // any error it fails the federated job and refunds these released participants.
 func (s *Service) aggregateAndRelease(ctx context.Context, fed FederatedJob, subs []Job) {
+	if fed.Mode == ModePSI {
+		s.aggregatePSIAndRelease(ctx, fed, subs)
+		return
+	}
 	aggStart := time.Now()
 	partials := make([]Partial, 0, len(subs))
 	for _, j := range subs {
@@ -277,6 +290,62 @@ func (s *Service) aggregateAndRelease(ctx context.Context, fed FederatedJob, sub
 	}
 	s.audit.Record(ctx, audit.Entry{Action: "compute.federated.release", ResourceType: "compute_federated_job",
 		ResourceID: fed.ID, Detail: map[string]any{"participants": len(partials), "output_bytes": size, "dp": fed.DPEpsilon != nil}})
+}
+
+// aggregatePSIAndRelease reads each released sub-job's party set and computes a
+// private set intersection (Direction D), releasing the intersection as the joint
+// output. Mirrors aggregateAndRelease's gating/refund contract. 阶段1 uses the
+// in-process mockMPC (platform-visible); 阶段2 delegates to Secretflow/SPU.
+func (s *Service) aggregatePSIAndRelease(ctx context.Context, fed FederatedJob, subs []Job) {
+	aggStart := time.Now()
+	parties := make([][]string, 0, len(subs))
+	for _, j := range subs {
+		rc, _, err := s.store.Open(ctx, j.OutputKey)
+		if err != nil {
+			s.failFederatedWithRefund(ctx, fed.ID, "read_partial", subs)
+			return
+		}
+		raw, rerr := io.ReadAll(rc)
+		rc.Close()
+		if rerr != nil {
+			s.failFederatedWithRefund(ctx, fed.ID, "read_partial", subs)
+			return
+		}
+		set, perr := parsePSISet(raw)
+		if perr != nil {
+			s.failFederatedWithRefund(ctx, fed.ID, "bad_partial", subs)
+			return
+		}
+		parties = append(parties, set)
+	}
+	res, err := s.orchestrator.RunPSI(ctx, parties)
+	if err != nil {
+		s.failFederatedWithRefund(ctx, fed.ID, "psi_error", subs)
+		return
+	}
+	joint, err := marshalPSIResult(res, len(parties))
+	if err != nil {
+		s.failFederatedWithRefund(ctx, fed.ID, "psi_error", subs)
+		return
+	}
+	if int64(len(joint)) > fedMaxOutputBytes {
+		s.failFederatedWithRefund(ctx, fed.ID, "joint_output_too_large", subs)
+		return
+	}
+	key := "compute/federated/" + fed.ID + "/psi-result.json"
+	size, err := uploadOutput(ctx, s.store, key, joint)
+	if err != nil {
+		s.failFederatedWithRefund(ctx, fed.ID, "store_error", subs)
+		return
+	}
+	if _, err := s.repo.ReleaseFederated(ctx, fed.ID, key, size); err != nil {
+		slog.Error("compute: release psi failed", "federated_job_id", fed.ID, "err", err)
+		return
+	}
+	metrics.ObserveFederatedAggregation(time.Since(aggStart).Seconds())
+	metrics.RecordFederatedJob("released")
+	s.audit.Record(ctx, audit.Entry{Action: "compute.federated.psi.release", ResourceType: "compute_federated_job",
+		ResourceID: fed.ID, Detail: map[string]any{"participants": len(parties), "cardinality": res.Cardinality, "output_bytes": size}})
 }
 
 // failFederatedWithRefund fails the job (idempotently) and refunds all sub-jobs once.
