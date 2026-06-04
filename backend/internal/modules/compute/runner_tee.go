@@ -93,23 +93,62 @@ func (m MockAttester) Verify(_ context.Context, report []byte) (Attestation, err
 // attaches a remote attestation bound to the algorithm digest + job + output.
 // An L2 job that cannot be attested is failed by the worker rather than released
 // unattested (design P3).
+//
+// When a KeyBroker is set, the runner ALSO enforces an attestation-based key
+// release BEFORE the algorithm can touch data: it presents a pre-run attestation
+// (bound to the approved algorithm digest) to the broker, which releases the
+// dataset key only if the attestation verifies and its measurement is permitted.
+// No key ⇒ no data access ⇒ the job fails closed. This is the L2 "invisible even
+// to the platform" gate (design P3 §4 / Direction B §4).
 type teeRunner struct {
 	base     Runner
 	attester Attester
+	broker   KeyBroker // optional; when non-nil, gates data access on key release
 }
 
-// NewTEERunner wraps base with attestation (zero attester -> MockAttester).
+// NewTEERunner wraps base with attestation (zero attester -> MockAttester). No
+// key broker: the runner attests the output but does not gate data access.
 func NewTEERunner(base Runner, attester Attester) Runner {
+	return NewTEERunnerWithKBS(base, attester, nil)
+}
+
+// NewTEERunnerWithKBS wraps base with attestation AND an attestation-based key
+// release gate (broker). A nil broker behaves exactly like NewTEERunner.
+func NewTEERunnerWithKBS(base Runner, attester Attester, broker KeyBroker) Runner {
 	if attester == nil {
 		attester = NewMockAttester()
 	}
-	return teeRunner{base: base, attester: attester}
+	return teeRunner{base: base, attester: attester, broker: broker}
 }
 
 func (r teeRunner) Kind() string          { return "tee:" + r.base.Kind() }
 func (r teeRunner) NeedsStagedData() bool { return r.base.NeedsStagedData() }
 
 func (r teeRunner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
+	// L2 KBS gate: obtain the dataset key BEFORE running, so a denied attestation
+	// means the algorithm never sees the data (fail closed). Skipped when no broker
+	// is configured (the attestation-of-output path below still runs).
+	if r.broker != nil {
+		preReport, err := r.attester.Attest(ctx, AttestInput{
+			Measurement: req.Algorithm.ImageDigest,
+			JobID:       req.Job.ID,
+			// OutputSHA empty: pre-run, no output yet — the broker binds to measurement+job.
+		})
+		if err != nil {
+			return RunResult{}, fmt.Errorf("pre-run attestation failed: %w", err)
+		}
+		key, err := r.broker.ReleaseDataKey(ctx, preReport, req.Job.DatasetID)
+		if err != nil {
+			return RunResult{}, fmt.Errorf("attestation-gated key release denied: %w", err)
+		}
+		if len(key) == 0 {
+			return RunResult{}, fmt.Errorf("key broker released an empty data key")
+		}
+		// In a real TEE the released key decrypts the staged dataset INSIDE the
+		// enclave; the platform never sees the plaintext. The skeleton models the
+		// release/deny gate — in-enclave decryption is real-KBS territory (gated).
+	}
+
 	res, err := r.base.Run(ctx, req)
 	if err != nil {
 		return res, err
