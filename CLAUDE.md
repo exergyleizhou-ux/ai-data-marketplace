@@ -64,6 +64,11 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
 - Timestamps on DTOs are `string` (scanned via `::text`), not `time.Time` — match the existing style.
 - Run `gofmt -w` on touched files before committing (struct-field alignment shifts after edits).
 - macOS has no `tac`/`timeout`/`migrate`/`brew`; use `tail -r`, Go context timeouts, embedded migrations.
+- **Smart/curly quotes in `.tsx`**: large Write/Edit blocks can introduce `“` `”` (U+201C/U+201D)
+  instead of straight `"`. They're **invalid as JSX attribute or string delimiters** and tsc fails with
+  cryptic `TS1127 Invalid character` / `TS1005 ',' expected`. Fix: replace curly→straight quotes
+  (`python3 -c "...replace('“','\"')..."`), but keep curly quotes that are intentional *inside*
+  visible string content — escape the conflict by using curly quotes only in the text, straight as delimiters.
 
 ## C2D / privacy compute (信任阶梯 L0→L3)
 
