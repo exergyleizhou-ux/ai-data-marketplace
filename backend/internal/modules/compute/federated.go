@@ -2,6 +2,8 @@ package compute
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -172,6 +174,43 @@ func (s *Service) OpenFederatedOutput(ctx context.Context, userID, id string) (i
 		return nil, 0, FederatedJob{}, err
 	}
 	return rc, n, fed, nil
+}
+
+// GetFederatedCertificate returns a provenance & integrity certificate for a
+// buyer's released joint result (federated model or PSI intersection): it hashes
+// the joint output and binds it to the audited algorithm and the participating
+// datasets (存证, extends the compute-result certificate to L3 results).
+func (s *Service) GetFederatedCertificate(ctx context.Context, userID, id string) (map[string]any, error) {
+	fed, err := s.repo.GetFederatedJob(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if fed.BuyerID != userID {
+		return nil, ErrForbidden
+	}
+	if fed.Status != FedReleased || fed.OutputKey == "" {
+		return BuildFederatedCertificate(fed, Algorithm{}, ""), nil // pending
+	}
+	if s.store == nil {
+		return nil, ErrNotFound
+	}
+	rc, _, err := s.store.Open(ctx, fed.OutputKey)
+	if err != nil {
+		return nil, err
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, rc); err != nil {
+		rc.Close()
+		return nil, err
+	}
+	rc.Close()
+	outputSHA := hex.EncodeToString(h.Sum(nil))
+
+	var algo Algorithm
+	if fed.AlgorithmID != "" {
+		algo, _ = s.repo.GetAlgorithm(ctx, fed.AlgorithmID)
+	}
+	return BuildFederatedCertificate(fed, algo, outputSHA), nil
 }
 
 // tryAdvanceFederated is called after each sub-job reaches a terminal state. It
