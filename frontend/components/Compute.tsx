@@ -413,7 +413,8 @@ export function FederatedComputePanel() {
     if (!user) return;
     try {
       const r = await api.listMyFederatedJobs(FED_PAGE_SIZE, 0);
-      setFeds(r.items);
+      // PSI jobs share the federated endpoints but have their own panel.
+      setFeds(r.items.filter((f) => f.mode !== "psi"));
       setHasMore(r.items.length >= FED_PAGE_SIZE);
     } catch {
       /* ignore */
@@ -693,6 +694,245 @@ export function FederatedComputePanel() {
         {t(
           "诚实标注：当前为中心化 FedAvg——平台聚合时可见各方模型参数（非原始数据）。安全聚合（掩码求和）与真 TEE 在规划中；联合模型仍可能经参数泄漏，可叠加差分隐私（DP）。",
           "Honest note: this is central FedAvg — the platform sees each party's model params (not raw data) during aggregation. Secure aggregation and real TEE are planned; the joint model can still leak via params, so differential privacy (DP) can be layered on.",
+        )}
+      </p>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Buyer: private set intersection (PSI, Direction D) across N datasets the buyer
+// holds entitlements on. Each dataset contributes its set inside its own sandbox;
+// only the intersection is returned. A PSI job uses the federated endpoints with
+// a psi-extract algorithm (mode "psi").
+// ---------------------------------------------------------------------------
+type PSIResultData = { intersection: string[]; cardinality: number; participants: number };
+
+export function PSIComputePanel() {
+  const { user } = useAuth();
+  const { t } = useT();
+  const [ents, setEnts] = useState<ComputeEntitlement[]>([]);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [algos, setAlgos] = useState<ComputeAlgorithm[]>([]);
+  const [algo, setAlgo] = useState("");
+  const [jobs, setJobs] = useState<FederatedJob[]>([]);
+  const [results, setResults] = useState<Map<string, PSIResultData>>(new Map());
+  const [dsNames, setDsNames] = useState<Map<string, string>>(new Map());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const dsName = useCallback((id: string) => dsNames.get(id) || id.slice(0, 8), [dsNames]);
+
+  const refreshJobs = useCallback(async () => {
+    if (!user) return;
+    try {
+      const r = await api.listMyFederatedJobs(50, 0);
+      setJobs(r.items.filter((f) => f.mode === "psi"));
+    } catch {
+      /* ignore */
+    }
+  }, [user]);
+
+  const resolveNames = useCallback(async (ids: string[]) => {
+    const unique = [...new Set(ids)];
+    const settled = await Promise.allSettled(unique.map((id) => api.getDataset(id)));
+    setDsNames((prev) => {
+      const next = new Map(prev);
+      settled.forEach((r, i) => {
+        if (r.status === "fulfilled" && r.value.title) next.set(unique[i], r.value.title);
+      });
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    api
+      .listMyComputeEntitlements()
+      .then((r) => {
+        const active = r.items.filter((e) => e.status === "active" && e.jobs_used < e.jobs_quota);
+        setEnts(active);
+        void resolveNames(active.map((e) => e.dataset_id));
+      })
+      .catch(() => {});
+    void refreshJobs();
+  }, [user, refreshJobs, resolveNames]);
+
+  // PSI algorithms (runtime psi-extract) come from any picked dataset.
+  useEffect(() => {
+    const first = [...picked][0];
+    if (!first) {
+      setAlgos([]);
+      return;
+    }
+    api
+      .listComputeAlgorithms(first)
+      .then((r) => {
+        const psi = r.items.filter((a) => a.runtime === "psi-extract");
+        setAlgos(psi);
+        setAlgo((prev) => prev || psi[0]?.id || "");
+      })
+      .catch(() => setAlgos([]));
+  }, [picked]);
+
+  const hasPending = jobs.some((j) => !TERMINAL.has(j.status));
+  useEffect(() => {
+    if (!hasPending) return;
+    const iv = setInterval(() => void refreshJobs(), 1800);
+    return () => clearInterval(iv);
+  }, [hasPending, refreshJobs]);
+
+  if (!user) return null;
+
+  function toggle(dsId: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(dsId)) next.delete(dsId);
+      else next.add(dsId);
+      return next;
+    });
+  }
+
+  async function submit() {
+    setErr("");
+    setBusy(true);
+    try {
+      await api.submitFederatedJob({ algorithm_id: algo, dataset_ids: [...picked] });
+      setPicked(new Set());
+      await refreshJobs();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function viewResult(id: string) {
+    setErr("");
+    try {
+      const r = await api.getFederatedOutputJSON<PSIResultData>(id);
+      setResults((prev) => new Map(prev).set(id, r));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
+  const canSubmit = picked.size >= 2 && !!algo && !busy;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2">
+        <h2 className="text-lg font-semibold">{t("隐私求交 · PSI", "Private set intersection · PSI")}</h2>
+        <Badge>L3</Badge>
+      </div>
+      <p className="mt-1 text-sm text-neutral-500">
+        {t(
+          "选择你已购计算权益的 ≥2 个数据集，计算它们的交集（如共同名单）：每个数据集只在自己的沙箱内贡献集合，你只获得交集，不获得任何一方的非交集成员。",
+          "Pick ≥2 datasets you hold entitlements on to compute their intersection (e.g. a shared list): each contributes its set inside its own sandbox; you get only the overlap, never any party's non-matching members.",
+        )}
+      </p>
+
+      {err && (
+        <div className="mt-3">
+          <Alert>{err}</Alert>
+        </div>
+      )}
+
+      {ents.length < 2 ? (
+        <div className="mt-3">
+          <Alert kind="info">
+            {t(
+              "需要至少 2 个「已购计算权益」的数据集才能发起求交作业。",
+              "You need active compute entitlements on at least 2 datasets to run a PSI job.",
+            )}
+          </Alert>
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3 rounded-lg border border-neutral-200 p-3">
+          <div className="text-xs font-medium text-neutral-600">{t("参与数据集", "Participating datasets")}</div>
+          <ul className="space-y-1">
+            {ents.map((e) => (
+              <li key={e.dataset_id}>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={picked.has(e.dataset_id)} onChange={() => toggle(e.dataset_id)} />
+                  <span className="text-sm text-neutral-700">{dsName(e.dataset_id)}</span>
+                  <span className="text-xs text-neutral-400">
+                    {t(`剩余 ${e.jobs_quota - e.jobs_used} 次`, `${e.jobs_quota - e.jobs_used} runs left`)}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <Field label={t("求交算法", "PSI algorithm")}>
+            <Select value={algo} onChange={(e) => setAlgo(e.target.value)}>
+              {algos.length === 0 && <option value="">{t("（选数据集后加载）", "(pick a dataset)")}</option>}
+              {algos.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} · {a.runtime}
+                  {a.trusted ? t(" · 可信", " · trusted") : ""}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Button className="w-full" onClick={submit} disabled={!canSubmit}>
+            {busy
+              ? t("提交中…", "Submitting…")
+              : picked.size < 2
+                ? t("至少选择 2 个数据集", "Select at least 2 datasets")
+                : t(`发起求交（${picked.size} 方）`, `Run PSI (${picked.size} parties)`)}
+          </Button>
+        </div>
+      )}
+
+      {jobs.length > 0 && (
+        <div className="mt-4 border-t border-neutral-100 pt-3">
+          <div className="mb-2 text-sm font-medium text-neutral-700">{t("我的求交作业", "My PSI jobs")}</div>
+          <ul className="space-y-2">
+            {jobs.map((j) => (
+              <li key={j.id} className="text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="font-mono text-xs text-neutral-400">{j.id.slice(0, 8)}</span>{" "}
+                    <Badge>{j.status}</Badge>{" "}
+                    <span className="text-xs text-neutral-400">
+                      {t(`${j.dataset_ids.length} 方`, `${j.dataset_ids.length} parties`)}
+                    </span>
+                    {j.status === "failed" && j.failure_code && (
+                      <span className="ml-1 text-xs text-red-500">{j.failure_code}</span>
+                    )}
+                  </div>
+                  {j.status === "released" ? (
+                    <Button variant="secondary" onClick={() => void viewResult(j.id)}>
+                      {t("查看交集", "View intersection")}
+                    </Button>
+                  ) : TERMINAL.has(j.status) ? (
+                    <span className="text-xs text-neutral-400">{"—"}</span>
+                  ) : (
+                    <span className="text-xs text-neutral-400">{t("运行中…", "Running…")}</span>
+                  )}
+                </div>
+                {results.has(j.id) && (
+                  <div className="ml-4 mt-1 rounded-md border border-neutral-100 bg-neutral-50 p-2 text-xs">
+                    <div className="font-medium text-neutral-600">
+                      {t(`交集大小：${results.get(j.id)!.cardinality}`, `Intersection size: ${results.get(j.id)!.cardinality}`)}
+                    </div>
+                    {results.get(j.id)!.intersection.length > 0 && (
+                      <div className="mt-1 break-words font-mono text-neutral-500">
+                        {results.get(j.id)!.intersection.join(", ")}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="mt-3 text-xs text-neutral-400">
+        {t(
+          "诚实标注：当前为 Mock 编排——平台在求交时可见各方集合（非密码学私密）。真隐私求交（Secretflow/SPU，平台只做编排、不持明文）在规划中。",
+          "Honest note: this is a mock orchestrator — the platform sees each party's set during intersection (not cryptographically private). Real PSI (Secretflow/SPU, platform orchestrates without holding plaintext) is planned.",
         )}
       </p>
     </Card>
