@@ -243,9 +243,12 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
                   {offer.trust_level === "L2" && j.status === "released" && <AttestationChip jobId={j.id} />}
                 </div>
                 {j.status === "released" ? (
-                  <Button variant="secondary" onClick={() => void download(j.id)}>
-                    {t("下载输出", "Download output")}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <JobCertificate jobId={j.id} />
+                    <Button variant="secondary" onClick={() => void download(j.id)}>
+                      {t("下载输出", "Download output")}
+                    </Button>
+                  </div>
                 ) : TERMINAL.has(j.status) ? (
                   <span className="text-xs text-neutral-400">—</span>
                 ) : j.status === "output_reviewing" ? (
@@ -980,5 +983,48 @@ function AttestationChip({ jobId }: { jobId: string }) {
     >
       {ok ? t("🔒 机密计算·已验证", "🔒 Confidential · attested") : t("⚠ 证明未通过", "⚠ attestation failed")}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Buyer: provenance & integrity certificate (存证) for a released compute result.
+// On click it fetches the platform-issued certificate and shows the VO-<id>; the
+// cert binds the output SHA-256 to the audited algorithm (pinned image digest).
+// ---------------------------------------------------------------------------
+function JobCertificate({ jobId }: { jobId: string }) {
+  const { t } = useT();
+  const [certId, setCertId] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const cert = await api.getComputeJobCertificate(jobId);
+      setCertId((cert["certificate_id"] as string) || "—");
+    } catch {
+      setCertId("—");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (certId) {
+    return (
+      <span
+        title={t("计算结果存证：输出 SHA-256 绑定已审核算法镜像 digest", "Result provenance: output SHA-256 bound to the audited algorithm image digest")}
+        className="rounded-full bg-emerald-50 px-2 py-0.5 font-mono text-[11px] text-emerald-700"
+      >
+        {certId}
+      </span>
+    );
+  }
+  return (
+    <button
+      onClick={() => void load()}
+      disabled={loading}
+      className="rounded-full border border-neutral-200 px-2 py-0.5 text-[11px] text-neutral-500 hover:bg-neutral-50"
+    >
+      {loading ? t("出具中…", "Issuing…") : t("存证凭证", "Certificate")}
+    </button>
   );
 }

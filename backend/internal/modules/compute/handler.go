@@ -195,6 +195,15 @@ func (h *handler) jobAttestation(c *gin.Context) {
 	httpx.OK(c, a)
 }
 
+func (h *handler) jobCertificate(c *gin.Context) {
+	cert, err := h.svc.GetJobCertificate(c.Request.Context(), httpx.UserID(c), c.Param("id"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, cert)
+}
+
 func (h *handler) listMyEntitlements(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))

@@ -2,9 +2,12 @@ package compute
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"sync"
 
@@ -607,6 +610,47 @@ func (s *Service) GetAttestation(ctx context.Context, userID, jobID string) (Att
 		return Attestation{}, err
 	}
 	return a, nil
+}
+
+// GetJobCertificate returns a provenance & integrity certificate for a buyer's
+// released compute result: it computes the output's SHA-256 and binds it to the
+// audited algorithm (pinned image digest) and source dataset (存证, extends PR #26
+// from datasets to compute-to-data results). Buyer-scoped; federated sub-jobs are
+// internal-only.
+func (s *Service) GetJobCertificate(ctx context.Context, userID, jobID string) (map[string]any, error) {
+	j, err := s.repo.GetJob(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	if j.BuyerID != userID {
+		return nil, ErrForbidden
+	}
+	if j.FederatedJobID != "" {
+		return nil, ErrForbidden // federated sub-job partials are internal-only
+	}
+	if j.Status != JobReleased || j.OutputKey == "" {
+		return BuildJobCertificate(j, Algorithm{}, ""), nil // pending
+	}
+	if s.store == nil {
+		return nil, ErrNotFound
+	}
+	rc, _, err := s.store.Open(ctx, j.OutputKey)
+	if err != nil {
+		return nil, err
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, rc); err != nil {
+		rc.Close()
+		return nil, err
+	}
+	rc.Close()
+	outputSHA := hex.EncodeToString(h.Sum(nil))
+
+	var algo Algorithm
+	if j.AlgorithmID != "" {
+		algo, _ = s.repo.GetAlgorithm(ctx, j.AlgorithmID) // best-effort; cert still issues without it
+	}
+	return BuildJobCertificate(j, algo, outputSHA), nil
 }
 
 // CancelJob lets the buyer cancel a job that has not started running, refunding
