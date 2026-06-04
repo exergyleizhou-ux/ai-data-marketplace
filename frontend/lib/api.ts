@@ -418,6 +418,8 @@ export const api = {
   getComputeJob: (id: string) => request<ComputeJob>(`/compute/jobs/${id}`),
   getComputeAttestation: (id: string) =>
     request<ComputeAttestation>(`/compute/jobs/${id}/attestation`),
+  getComputeJobCertificate: (id: string) =>
+    request<Record<string, unknown>>(`/compute/jobs/${id}/certificate`),
   listMyComputeJobs: () => request<{ items: ComputeJob[] }>("/users/me/compute/jobs"),
   cancelComputeJob: (id: string) => request<ComputeJob>(`/compute/jobs/${id}/cancel`, { method: "POST" }),
   // The output endpoint streams raw bytes (auth-gated); fetch with the bearer
