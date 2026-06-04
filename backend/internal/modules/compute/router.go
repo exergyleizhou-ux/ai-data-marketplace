@@ -33,6 +33,7 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	buyer.POST("/compute/federated-jobs", h.submitFederated)
 	buyer.GET("/compute/federated-jobs/:id", h.getFederated)
 	buyer.GET("/compute/federated-jobs/:id/output", h.federatedOutput)
+	buyer.GET("/compute/federated-jobs/:id/certificate", h.federatedCertificate) // 联合结果存证
 	buyer.GET("/users/me/compute/federated-jobs", h.listMyFederated)
 	buyer.GET("/users/me/compute/jobs", h.listMyJobs)
 	buyer.GET("/users/me/compute/entitlements", h.listMyEntitlements)

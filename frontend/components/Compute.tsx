@@ -655,17 +655,17 @@ export function FederatedComputePanel() {
                       <span className="ml-1 text-xs text-red-500">{f.failure_code}</span>
                     )}
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
                     {f.status === "released" ? (
-                      <Button
-                        variant="secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void api.downloadFederatedOutput(f.id).catch((err) => setErr((err as Error).message));
-                        }}
-                      >
-                        {t("下载联合模型", "Download joint model")}
-                      </Button>
+                      <>
+                        <JobCertificate jobId={f.id} federated />
+                        <Button
+                          variant="secondary"
+                          onClick={() => void api.downloadFederatedOutput(f.id).catch((err) => setErr((err as Error).message))}
+                        >
+                          {t("下载联合模型", "Download joint model")}
+                        </Button>
+                      </>
                     ) : TERMINAL.has(f.status) ? (
                       <span className="text-xs text-neutral-400">{"—"}</span>
                     ) : (
@@ -915,9 +915,12 @@ export function PSIComputePanel() {
                     )}
                   </div>
                   {j.status === "released" ? (
-                    <Button variant="secondary" onClick={() => void viewResult(j.id)}>
-                      {t("查看交集", "View intersection")}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <JobCertificate jobId={j.id} federated />
+                      <Button variant="secondary" onClick={() => void viewResult(j.id)}>
+                        {t("查看交集", "View intersection")}
+                      </Button>
+                    </div>
                   ) : TERMINAL.has(j.status) ? (
                     <span className="text-xs text-neutral-400">{"—"}</span>
                   ) : (
@@ -991,7 +994,7 @@ function AttestationChip({ jobId }: { jobId: string }) {
 // On click it fetches the platform-issued certificate and shows the VO-<id>; the
 // cert binds the output SHA-256 to the audited algorithm (pinned image digest).
 // ---------------------------------------------------------------------------
-function JobCertificate({ jobId }: { jobId: string }) {
+function JobCertificate({ jobId, federated }: { jobId: string; federated?: boolean }) {
   const { t } = useT();
   const [certId, setCertId] = useState("");
   const [loading, setLoading] = useState(false);
@@ -999,7 +1002,7 @@ function JobCertificate({ jobId }: { jobId: string }) {
   async function load() {
     setLoading(true);
     try {
-      const cert = await api.getComputeJobCertificate(jobId);
+      const cert = federated ? await api.getFederatedCertificate(jobId) : await api.getComputeJobCertificate(jobId);
       setCertId((cert["certificate_id"] as string) || "—");
     } catch {
       setCertId("—");

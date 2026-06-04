@@ -71,3 +71,12 @@ func (h *handler) federatedOutput(c *gin.Context) {
 	c.Header("X-Output-Kind", "fedmodel")
 	c.DataFromReader(http.StatusOK, size, "application/json", rc, nil)
 }
+
+func (h *handler) federatedCertificate(c *gin.Context) {
+	cert, err := h.svc.GetFederatedCertificate(c.Request.Context(), httpx.UserID(c), c.Param("id"))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, cert)
+}
