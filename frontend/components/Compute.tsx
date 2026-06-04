@@ -387,6 +387,8 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
 // on. Each dataset trains locally in its own sandbox; only the FedAvg joint
 // model is returned. Raw data never leaves a sandbox.
 // ---------------------------------------------------------------------------
+const FED_PAGE_SIZE = 10;
+
 export function FederatedComputePanel() {
   const { user } = useAuth();
   const { t } = useT();
@@ -396,29 +398,60 @@ export function FederatedComputePanel() {
   const [algo, setAlgo] = useState("");
   const [minParticipants, setMinParticipants] = useState("");
   const [feds, setFeds] = useState<FederatedJob[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [dsNames, setDsNames] = useState<Map<string, string>>(new Map());
+  const [expandedFed, setExpandedFed] = useState<string | null>(null);
+  const [subJobs, setSubJobs] = useState<ComputeJob[]>([]);
+  const [loadingSubs, setLoadingSubs] = useState(false);
+
+  const dsName = useCallback((id: string) => dsNames.get(id) || id.slice(0, 8), [dsNames]);
 
   const refreshFeds = useCallback(async () => {
     if (!user) return;
     try {
-      setFeds((await api.listMyFederatedJobs()).items);
+      const r = await api.listMyFederatedJobs(FED_PAGE_SIZE, 0);
+      setFeds(r.items);
+      setHasMore(r.items.length >= FED_PAGE_SIZE);
     } catch {
       /* ignore */
     }
   }, [user]);
 
-  // Candidate datasets = the buyer's active entitlements with credits left.
+  // Resolve dataset UUIDs → human-readable titles.
+  const resolveNames = useCallback(async (ids: string[]) => {
+    const unique = [...new Set(ids)];
+    const results = await Promise.allSettled(unique.map((id) => api.getDataset(id)));
+    setDsNames((prev) => {
+      const next = new Map(prev);
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled" && r.value.title) next.set(unique[i], r.value.title);
+      });
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (!user) return;
     api
       .listMyComputeEntitlements()
-      .then((r) => setEnts(r.items.filter((e) => e.status === "active" && e.jobs_used < e.jobs_quota)))
+      .then((r) => {
+        const active = r.items.filter((e) => e.status === "active" && e.jobs_used < e.jobs_quota);
+        setEnts(active);
+        void resolveNames(active.map((e) => e.dataset_id));
+      })
       .catch(() => {});
     void refreshFeds();
-  }, [user, refreshFeds]);
+  }, [user, refreshFeds, resolveNames]);
 
-  // Algorithms come from any picked dataset; only federated runtimes apply.
+  // Resolve names for federated job dataset_ids when feds change.
+  useEffect(() => {
+    const ids = feds.flatMap((f) => f.dataset_ids);
+    if (ids.length > 0) void resolveNames(ids);
+  }, [feds, resolveNames]);
+
   useEffect(() => {
     const first = [...picked][0];
     if (!first) {
@@ -475,6 +508,38 @@ export function FederatedComputePanel() {
     }
   }
 
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const r = await api.listMyFederatedJobs(FED_PAGE_SIZE, feds.length);
+      setFeds((prev) => [...prev, ...r.items]);
+      setHasMore(r.items.length >= FED_PAGE_SIZE);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  async function toggleExpand(fedId: string) {
+    if (expandedFed === fedId) {
+      setExpandedFed(null);
+      setSubJobs([]);
+      return;
+    }
+    setExpandedFed(fedId);
+    setSubJobs([]);
+    setLoadingSubs(true);
+    try {
+      const r = await api.getFederatedJob(fedId);
+      setSubJobs(r.sub_jobs);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingSubs(false);
+    }
+  }
+
   const canSubmit = picked.size >= 2 && !!algo && !busy;
 
   return (
@@ -513,7 +578,7 @@ export function FederatedComputePanel() {
               <li key={e.dataset_id}>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={picked.has(e.dataset_id)} onChange={() => toggle(e.dataset_id)} />
-                  <span className="font-mono text-xs text-neutral-500">{e.dataset_id.slice(0, 8)}</span>
+                  <span className="text-sm text-neutral-700">{dsName(e.dataset_id)}</span>
                   <span className="text-xs text-neutral-400">
                     {t(`剩余 ${e.jobs_quota - e.jobs_used} 次`, `${e.jobs_quota - e.jobs_used} runs left`)}
                   </span>
@@ -560,30 +625,67 @@ export function FederatedComputePanel() {
           <div className="mb-2 text-sm font-medium text-neutral-700">{t("我的联邦作业", "My federated jobs")}</div>
           <ul className="space-y-2">
             {feds.map((f) => (
-              <li key={f.id} className="flex items-center justify-between gap-2 text-sm">
-                <div className="min-w-0">
-                  <span className="font-mono text-xs text-neutral-400">{f.id.slice(0, 8)}</span>{" "}
-                  <Badge>{f.status}</Badge>{" "}
-                  <span className="text-xs text-neutral-400">
-                    {t(`${f.dataset_ids.length} 方 · 最少 ${f.min_participants}`, `${f.dataset_ids.length} parties · min ${f.min_participants}`)}
-                    {f.dp_epsilon ? t(` · DP ε=${f.dp_epsilon}`, ` · DP ε=${f.dp_epsilon}`) : ""}
-                  </span>
-                  {f.status === "failed" && f.failure_code && (
-                    <span className="ml-1 text-xs text-red-500">{f.failure_code}</span>
-                  )}
+              <li key={f.id}>
+                <div
+                  className="flex cursor-pointer items-center justify-between gap-2 rounded-md p-1.5 text-sm hover:bg-neutral-50"
+                  onClick={() => void toggleExpand(f.id)}
+                >
+                  <div className="min-w-0">
+                    <span className="font-mono text-xs text-neutral-400">{f.id.slice(0, 8)}</span>{" "}
+                    <Badge>{f.status}</Badge>{" "}
+                    <span className="text-xs text-neutral-400">
+                      {t(`${f.dataset_ids.length} 方 · 最少 ${f.min_participants}`, `${f.dataset_ids.length} parties · min ${f.min_participants}`)}
+                      {f.dp_epsilon ? t(` · DP ε=${f.dp_epsilon}`, ` · DP ε=${f.dp_epsilon}`) : ""}
+                    </span>
+                    {f.status === "failed" && f.failure_code && (
+                      <span className="ml-1 text-xs text-red-500">{f.failure_code}</span>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {f.status === "released" ? (
+                      <Button
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void api.downloadFederatedOutput(f.id).catch((err) => setErr((err as Error).message));
+                        }}
+                      >
+                        {t("下载联合模型", "Download joint model")}
+                      </Button>
+                    ) : TERMINAL.has(f.status) ? (
+                      <span className="text-xs text-neutral-400">{"—"}</span>
+                    ) : (
+                      <span className="text-xs text-neutral-400">{t("运行中…", "Running…")}</span>
+                    )}
+                    <span className="text-xs text-neutral-300">{expandedFed === f.id ? "▲" : "▼"}</span>
+                  </div>
                 </div>
-                {f.status === "released" ? (
-                  <Button variant="secondary" onClick={() => void api.downloadFederatedOutput(f.id).catch((e) => setErr((e as Error).message))}>
-                    {t("下载联合模型", "Download joint model")}
-                  </Button>
-                ) : TERMINAL.has(f.status) ? (
-                  <span className="text-xs text-neutral-400">—</span>
-                ) : (
-                  <span className="text-xs text-neutral-400">{t("运行中…", "Running…")}</span>
+                {expandedFed === f.id && (
+                  <div className="ml-4 mt-1 space-y-1 border-l-2 border-neutral-100 pl-3">
+                    {loadingSubs ? (
+                      <p className="text-xs text-neutral-400">{t("加载子作业…", "Loading sub-jobs…")}</p>
+                    ) : subJobs.length === 0 ? (
+                      <p className="text-xs text-neutral-400">{t("暂无子作业", "No sub-jobs")}</p>
+                    ) : (
+                      subJobs.map((sj) => (
+                        <div key={sj.id} className="flex items-center gap-2 text-xs">
+                          <span className="text-neutral-700">{dsName(sj.dataset_id)}</span>
+                          <Badge>{sj.status}</Badge>
+                          {sj.created_at && <span className="text-neutral-400">{sj.created_at.slice(0, 16)}</span>}
+                          {sj.error && <span className="text-red-500">{sj.error}</span>}
+                        </div>
+                      ))
+                    )}
+                  </div>
                 )}
               </li>
             ))}
           </ul>
+          {hasMore && (
+            <Button variant="secondary" className="mt-2 w-full" onClick={() => void loadMore()} disabled={loadingMore}>
+              {loadingMore ? t("加载中…", "Loading…") : t("加载更多", "Load more")}
+            </Button>
+          )}
         </div>
       )}
 
