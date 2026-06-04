@@ -44,14 +44,14 @@ STORAGE_DRIVER=s3
 
 ---
 
-## 2. TEE 节点侧:硬件 quote 生成（需实现）
+## 2. TEE 节点侧:硬件 quote 生成（已有脚手架,需在节点验证）
 
-在 TEE 节点上把 `Attester.Attest` 的实现从 `MockAttester`(HMAC 替身)换成真硬件:
+平台已附带 `compute.NewTDXAttester()`(`runner_tee_tdx.go`),`TEE_ATTESTER=tdx` 选中。
 
 ### 2.1 Intel TDX（推荐起步）
-- enclave 内读 `/dev/tdx_guest`(`TDX_CMD_GET_REPORT` ioctl)→ TD report;
-- 经 Quote Generation Service(QGS)签成 quote;度量值 = MRTD/RTMR(算法镜像 + 启动度量)。
-- Go 侧:cgo 包 DCAP 的 quote 生成库,或调本地 QGS。
+- **已实现**:读 `/dev/tdx_guest`(`TDX_CMD_GET_REPORT0` ioctl,`0xc4405401` = `_IOWR('T',1,struct tdx_report_req)`)→ TD report;REPORTDATA 绑定 `sha256(measurement|job|output)`;包成 `tdx-quote-1`。
+- **诚实边界**:**仅 off-hardware 的 fail-closed 路径经单测**(无 `/dev/tdx_guest` ⇒ `ErrTEEUnavailable`,作业 fail-closed,杜绝「配了 tee 但无硬件还偷偷跑」)。**ioctl 成功路径只在 TDX 节点上运行,必须在节点验证**:核对内核头里的 ioctl 号 + `struct tdx_report_req` 布局;TD report 通常还需经 Quote Generation Service(QGS)签成完整 DCAP quote。
+- 度量值 = MRTD/RTMR(算法镜像 + 启动度量)。`Verify` 在进程内**不**做 DCAP(诚实返回 `Verified=false`),真伪由 KBS/DCAP 在密钥释放时校验。
 
 ### 2.2 AMD SEV-SNP（Azure / GCP CVM 备选）
 - 读 `/dev/sev-guest`(`SNP_GET_REPORT`)→ attestation report(含 launch measurement)。
@@ -77,7 +77,9 @@ STORAGE_DRIVER=s3
 |---|---|
 | `remoteKBS` HTTP 客户端(请求成形/释放/拒绝/fail-closed) | ✅ httptest 覆盖,本地可验 |
 | `KeyBroker` 接口 + teeRunner 前置门控 | ✅ 单测(PR #61) |
-| 硬件 quote 生成(TDX/SEV) | ⛔ 需 TEE 节点 |
+| `tdxAttester` **off-hardware fail-closed**(无设备⇒ErrTEEUnavailable) | ✅ 单测,本地可验 |
+| `tdxAttester` 硬件 quote 生成(TDX ioctl 成功路径) | ⛔ 需 TDX 节点验证 ioctl 号/struct/QGS |
+| AMD SEV-SNP quote 生成 | ⛔ 需实现 + SEV 节点 |
 | DCAP/云证明校验 + 真 KBS 释放 | ⛔ 需 TEE 节点 + KBS 部署 |
 | 「平台 root 也读不到明文」实证(内存加密) | ⛔ 需在 TEE 节点 dump 内存验证密文 |
 
