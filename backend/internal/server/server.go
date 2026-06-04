@@ -286,9 +286,15 @@ func (s *Server) routes() {
 		case "tee":
 			res := compute.DefaultDockerResources
 			res.Runtime = os.Getenv("COMPUTE_DOCKER_RUNTIME")
-			// TODO real TEE attester (Intel TDX / AMD SEV-SNP / SGX DCAP); MockAttester
-			// is a non-hardware stand-in (HMAC-bound, tamper-evident) for now.
-			att := compute.NewMockAttester()
+			// Attester selection (TEE_ATTESTER): "tdx" reads a real hardware quote
+			// from /dev/tdx_guest on a TDX node (fails closed off-hardware); default
+			// is the non-hardware MockAttester (HMAC-bound, tamper-evident) for dev.
+			var att compute.Attester = compute.NewMockAttester()
+			attKind := "mock"
+			if os.Getenv("TEE_ATTESTER") == "tdx" {
+				att = compute.NewTDXAttester()
+				attKind = "tdx"
+			}
 			// Attestation-based key release (KBS): gates data access on a verified
 			// attestation before the algorithm runs (design P3 §4 / Direction B). With
 			// KBS_URL set, release goes through a real KBS over HTTP (the KBS verifies
@@ -303,7 +309,7 @@ func (s *Server) routes() {
 			}
 			runner = compute.NewTEERunnerWithKBS(compute.NewDockerRunner(res), att, kbs)
 			computeOpts = append(computeOpts, compute.WithAttester(att))
-			slog.Info("compute runner", "kind", "tee", "runtime", res.Runtime, "kbs", kbsKind)
+			slog.Info("compute runner", "kind", "tee", "runtime", res.Runtime, "attester", attKind, "kbs", kbsKind)
 		}
 		if store != nil {
 			computeOpts = append(computeOpts, compute.WithWorker(runner, store, dsSvc, 2, 64))
