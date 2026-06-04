@@ -47,11 +47,29 @@ var (
 		Namespace: "marketplace", Subsystem: "compute",
 		Name: "lease_reclaims_total", Help: "C2D jobs reclaimed after a runner lease expired (crash recovery).",
 	})
+
+	federatedJobs = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "marketplace", Subsystem: "federated",
+		Name: "jobs_total", Help: "Federated jobs by terminal status (released/failed/rejected).",
+	}, []string{"status"})
+
+	federatedAggDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "marketplace", Subsystem: "federated",
+		Name:    "aggregation_duration_seconds",
+		Help:    "Wall-clock time of federated aggregation (FedAvg + store).",
+		Buckets: []float64{0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60},
+	})
+
+	federatedParticipants = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "marketplace", Subsystem: "federated",
+		Name: "participants_total", Help: "Federated participant outcomes (submitted/survived/dropped).",
+	}, []string{"role"})
 )
 
 func init() {
 	prometheus.MustRegister(httpRequests, httpDuration, qualityJobs,
-		computeJobs, computeJobDuration, computeReclaims)
+		computeJobs, computeJobDuration, computeReclaims,
+		federatedJobs, federatedAggDuration, federatedParticipants)
 }
 
 // RecordQualityJob counts a completed quality check by its outcome status.
@@ -72,6 +90,19 @@ func ObserveComputeJobDuration(kind string, seconds float64) {
 func RecordComputeReclaims(n int) {
 	if n > 0 {
 		computeReclaims.Add(float64(n))
+	}
+}
+
+// RecordFederatedJob counts a federated job reaching a terminal state.
+func RecordFederatedJob(status string) { federatedJobs.WithLabelValues(status).Inc() }
+
+// ObserveFederatedAggregation records the wall-clock time of a FedAvg aggregation.
+func ObserveFederatedAggregation(seconds float64) { federatedAggDuration.Observe(seconds) }
+
+// RecordFederatedParticipants counts participant outcomes (submitted/survived/dropped).
+func RecordFederatedParticipants(role string, n int) {
+	if n > 0 {
+		federatedParticipants.WithLabelValues(role).Add(float64(n))
 	}
 }
 

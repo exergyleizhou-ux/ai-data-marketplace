@@ -447,8 +447,8 @@ export const api = {
   }) => request<FederatedJob>("/compute/federated-jobs", { body: b }),
   getFederatedJob: (id: string) =>
     request<{ federated_job: FederatedJob; sub_jobs: ComputeJob[] }>(`/compute/federated-jobs/${id}`),
-  listMyFederatedJobs: () =>
-    request<{ items: FederatedJob[] }>("/users/me/compute/federated-jobs"),
+  listMyFederatedJobs: (limit?: number, offset?: number) =>
+    request<{ items: FederatedJob[] }>("/users/me/compute/federated-jobs", { query: { limit, offset } }),
   downloadFederatedOutput: async (id: string) => {
     const res = await fetch(buildURL(`/compute/federated-jobs/${id}/output`), {
       headers: tokenStore.access ? { Authorization: `Bearer ${tokenStore.access}` } : {},

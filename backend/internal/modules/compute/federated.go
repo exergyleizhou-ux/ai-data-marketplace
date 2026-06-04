@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/metrics"
 )
 
 // fedMaxOutputBytes is a defensive cap on the aggregated joint model size. The
@@ -85,6 +87,7 @@ func (s *Service) SubmitFederatedJob(ctx context.Context, buyerID string, in Fed
 	if err != nil {
 		return FederatedJob{}, err
 	}
+	metrics.RecordFederatedParticipants("submitted", len(in.DatasetIDs))
 	s.audit.Record(ctx, audit.Entry{ActorID: buyerID, Action: "compute.federated.submit",
 		ResourceType: "compute_federated_job", ResourceID: fed.ID,
 		Detail: map[string]any{"datasets": len(in.DatasetIDs), "algorithm_id": in.AlgorithmID}})
@@ -190,12 +193,16 @@ func (s *Service) tryAdvanceFederated(ctx context.Context, fedID string) {
 		if _, err := s.repo.TransitionFederated(ctx, fedID, FedFanout, FedAggregating); err != nil {
 			return // another goroutine won the race
 		}
-		s.refundFederated(ctx, dropouts) // dropouts aren't billed (their refund was deferred)
+		metrics.RecordFederatedParticipants("survived", len(released))
+		metrics.RecordFederatedParticipants("dropped", len(dropouts))
+		s.refundFederated(ctx, dropouts)
 		s.aggregateAndRelease(ctx, fed, released)
 		return
 	}
 	// Too few survivors → fail and refund everyone (released + dropouts) once.
 	if _, ferr := s.repo.FailFederated(ctx, fedID, "insufficient_participants"); ferr == nil {
+		metrics.RecordFederatedJob("failed")
+		metrics.RecordFederatedParticipants("dropped", len(subs))
 		s.refundFederated(ctx, subs)
 	}
 }
@@ -205,6 +212,7 @@ func (s *Service) tryAdvanceFederated(ctx context.Context, fedID string) {
 // released participants (dropouts are excluded and refunded by the caller). On
 // any error it fails the federated job and refunds these released participants.
 func (s *Service) aggregateAndRelease(ctx context.Context, fed FederatedJob, subs []Job) {
+	aggStart := time.Now()
 	partials := make([]Partial, 0, len(subs))
 	for _, j := range subs {
 		rc, _, err := s.store.Open(ctx, j.OutputKey)
@@ -256,6 +264,8 @@ func (s *Service) aggregateAndRelease(ctx context.Context, fed FederatedJob, sub
 		slog.Error("compute: release federated failed", "federated_job_id", fed.ID, "err", err)
 		return
 	}
+	metrics.ObserveFederatedAggregation(time.Since(aggStart).Seconds())
+	metrics.RecordFederatedJob("released")
 	// Record DP spend per participating dataset (ledger keys on the sub-job id,
 	// which is a real compute_jobs row — design §8 budget tracking).
 	if fed.DPEpsilon != nil {
@@ -272,6 +282,7 @@ func (s *Service) aggregateAndRelease(ctx context.Context, fed FederatedJob, sub
 // failFederatedWithRefund fails the job (idempotently) and refunds all sub-jobs once.
 func (s *Service) failFederatedWithRefund(ctx context.Context, fedID, code string, subs []Job) {
 	if _, err := s.repo.FailFederated(ctx, fedID, code); err == nil {
+		metrics.RecordFederatedJob("failed")
 		s.refundFederated(ctx, subs)
 	}
 }
