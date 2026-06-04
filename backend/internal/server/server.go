@@ -290,14 +290,20 @@ func (s *Server) routes() {
 			// is a non-hardware stand-in (HMAC-bound, tamper-evident) for now.
 			att := compute.NewMockAttester()
 			// Attestation-based key release (KBS): gates data access on a verified
-			// attestation before the algorithm runs (design P3 §4 / Direction B). The
-			// mock broker verifies the MockAttester report; an empty policy accepts any
-			// verified measurement (dev). TODO real KBS (KBS_URL) + populate the
-			// measurement allowlist from approved algorithm digests before production.
-			kbs := compute.NewMockKBS(att)
+			// attestation before the algorithm runs (design P3 §4 / Direction B). With
+			// KBS_URL set, release goes through a real KBS over HTTP (the KBS verifies
+			// the attestation against the hardware root + measurement policy and is the
+			// trust boundary that keeps data "invisible even to the platform"). Without
+			// it, the dev mockKBS verifies the MockAttester report (no real privacy).
+			kbsKind := "mock"
+			var kbs compute.KeyBroker = compute.NewMockKBS(att)
+			if u := os.Getenv("KBS_URL"); u != "" {
+				kbs = compute.NewRemoteKBS(u)
+				kbsKind = "remote"
+			}
 			runner = compute.NewTEERunnerWithKBS(compute.NewDockerRunner(res), att, kbs)
 			computeOpts = append(computeOpts, compute.WithAttester(att))
-			slog.Info("compute runner", "kind", "tee", "runtime", res.Runtime, "kbs", "mock")
+			slog.Info("compute runner", "kind", "tee", "runtime", res.Runtime, "kbs", kbsKind)
 		}
 		if store != nil {
 			computeOpts = append(computeOpts, compute.WithWorker(runner, store, dsSvc, 2, 64))
