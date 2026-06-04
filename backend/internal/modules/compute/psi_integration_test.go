@@ -57,7 +57,7 @@ func TestComputePSIIntegration(t *testing.T) {
 	}
 	for _, ds := range []string{ds1, ds2} {
 		if _, err := repo.UpsertOffer(ctx, Offer{
-			DatasetID: ds, Enabled: true, AllowFederated: true, TrustLevel: TrustL1,
+			DatasetID: ds, Enabled: true, AllowFederated: true, AllowPSI: true, TrustLevel: TrustL1,
 			MaxOutputBytes: 1 << 20, MaxOutputFiles: 4,
 		}); err != nil {
 			t.Fatalf("offer %s: %v", ds, err)

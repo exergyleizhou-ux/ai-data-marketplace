@@ -243,14 +243,14 @@ func (r *pgRepo) ReviewAlgorithm(ctx context.Context, id, status string, trusted
 
 const offerCols = `dataset_id, enabled, allow_custom, allowed_algorithm_ids::text[],
 	price_cents, max_runtime_secs, max_output_bytes, max_output_files,
-	dp_epsilon, dp_epsilon_total, return_logs, review_output, trust_level, allow_federated, updated_at::text`
+	dp_epsilon, dp_epsilon_total, return_logs, review_output, trust_level, allow_federated, allow_psi, updated_at::text`
 
 func scanOffer(row pgx.Row) (Offer, error) {
 	var o Offer
 	var eps, epsTotal sql.NullFloat64
 	err := row.Scan(&o.DatasetID, &o.Enabled, &o.AllowCustom, &o.AllowedAlgoIDs,
 		&o.PriceCents, &o.MaxRuntimeSecs, &o.MaxOutputBytes, &o.MaxOutputFiles,
-		&eps, &epsTotal, &o.ReturnLogs, &o.ReviewOutput, &o.TrustLevel, &o.AllowFederated, &o.UpdatedAt)
+		&eps, &epsTotal, &o.ReturnLogs, &o.ReviewOutput, &o.TrustLevel, &o.AllowFederated, &o.AllowPSI, &o.UpdatedAt)
 	o.DPEpsilon = ptrF(eps)
 	o.DPEpsilonTotal = ptrF(epsTotal)
 	if o.AllowedAlgoIDs == nil {
@@ -269,8 +269,8 @@ func (r *pgRepo) UpsertOffer(ctx context.Context, o Offer) (Offer, error) {
 	const q = `
 		INSERT INTO dataset_compute_offers (dataset_id, enabled, allow_custom, allowed_algorithm_ids,
 			price_cents, max_runtime_secs, max_output_bytes, max_output_files,
-			dp_epsilon, dp_epsilon_total, return_logs, review_output, trust_level, allow_federated, updated_at)
-		VALUES ($1,$2,$3,$4::uuid[],$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
+			dp_epsilon, dp_epsilon_total, return_logs, review_output, trust_level, allow_federated, allow_psi, updated_at)
+		VALUES ($1,$2,$3,$4::uuid[],$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now())
 		ON CONFLICT (dataset_id) DO UPDATE SET
 			enabled=EXCLUDED.enabled, allow_custom=EXCLUDED.allow_custom,
 			allowed_algorithm_ids=EXCLUDED.allowed_algorithm_ids, price_cents=EXCLUDED.price_cents,
@@ -278,12 +278,12 @@ func (r *pgRepo) UpsertOffer(ctx context.Context, o Offer) (Offer, error) {
 			max_output_files=EXCLUDED.max_output_files, dp_epsilon=EXCLUDED.dp_epsilon,
 			dp_epsilon_total=EXCLUDED.dp_epsilon_total, return_logs=EXCLUDED.return_logs,
 			review_output=EXCLUDED.review_output, trust_level=EXCLUDED.trust_level,
-			allow_federated=EXCLUDED.allow_federated, updated_at=now()
+			allow_federated=EXCLUDED.allow_federated, allow_psi=EXCLUDED.allow_psi, updated_at=now()
 		RETURNING ` + offerCols
 	out, err := scanOffer(r.pool.QueryRow(ctx, q,
 		o.DatasetID, o.Enabled, o.AllowCustom, o.AllowedAlgoIDs,
 		o.PriceCents, o.MaxRuntimeSecs, o.MaxOutputBytes, o.MaxOutputFiles,
-		nullF(o.DPEpsilon), nullF(o.DPEpsilonTotal), o.ReturnLogs, o.ReviewOutput, o.TrustLevel, o.AllowFederated))
+		nullF(o.DPEpsilon), nullF(o.DPEpsilonTotal), o.ReturnLogs, o.ReviewOutput, o.TrustLevel, o.AllowFederated, o.AllowPSI))
 	if err != nil {
 		return Offer{}, fmt.Errorf("upsert offer: %w", err)
 	}

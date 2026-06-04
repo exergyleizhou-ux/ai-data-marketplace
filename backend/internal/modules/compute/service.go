@@ -124,6 +124,7 @@ type OfferInput struct {
 	ReviewOutput   bool
 	TrustLevel     string
 	AllowFederated bool // P4-a: opt this dataset into federated use
+	AllowPSI       bool // Direction D: opt this dataset into PSI (distinct consent from federated)
 }
 
 // ConfigureOffer lets the dataset's seller enable/configure sandbox sale.
@@ -161,7 +162,7 @@ func (s *Service) ConfigureOffer(ctx context.Context, sellerID, datasetID string
 		MaxRuntimeSecs: in.MaxRuntimeSecs, MaxOutputBytes: in.MaxOutputBytes, MaxOutputFiles: in.MaxOutputFiles,
 		DPEpsilon: in.DPEpsilon, DPEpsilonTotal: in.DPEpsilonTotal,
 		ReturnLogs: in.ReturnLogs, ReviewOutput: in.ReviewOutput, TrustLevel: in.TrustLevel,
-		AllowFederated: in.AllowFederated,
+		AllowFederated: in.AllowFederated, AllowPSI: in.AllowPSI,
 	})
 	if err != nil {
 		return Offer{}, err
