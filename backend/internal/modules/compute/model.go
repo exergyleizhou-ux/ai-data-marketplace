@@ -57,6 +57,7 @@ type Offer struct {
 	AllowCustom    bool     `json:"allow_custom"`
 	AllowedAlgoIDs []string `json:"allowed_algorithm_ids"`
 	AllowFederated bool     `json:"allow_federated"` // P4-a: seller opts dataset into federated use
+	AllowPSI       bool     `json:"allow_psi"`       // Direction D: distinct consent for PSI (set-overlap exposure)
 	PriceCents     int64    `json:"price_cents"`
 	MaxRuntimeSecs int      `json:"max_runtime_secs"`
 	MaxOutputBytes int64    `json:"max_output_bytes"`

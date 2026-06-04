@@ -31,6 +31,7 @@ type offerRequest struct {
 	ReviewOutput   bool     `json:"review_output"`
 	TrustLevel     string   `json:"trust_level"`
 	AllowFederated bool     `json:"allow_federated"`
+	AllowPSI       bool     `json:"allow_psi"`
 }
 
 func (h *handler) putOffer(c *gin.Context) {
@@ -44,7 +45,7 @@ func (h *handler) putOffer(c *gin.Context) {
 		PriceCents: req.PriceCents, MaxRuntimeSecs: req.MaxRuntimeSecs, MaxOutputBytes: req.MaxOutputBytes,
 		MaxOutputFiles: req.MaxOutputFiles, DPEpsilon: req.DPEpsilon, DPEpsilonTotal: req.DPEpsilonTotal,
 		ReturnLogs: req.ReturnLogs, ReviewOutput: req.ReviewOutput, TrustLevel: req.TrustLevel,
-		AllowFederated: req.AllowFederated,
+		AllowFederated: req.AllowFederated, AllowPSI: req.AllowPSI,
 	})
 	if err != nil {
 		fail(c, err)

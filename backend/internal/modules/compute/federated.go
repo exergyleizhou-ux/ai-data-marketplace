@@ -42,24 +42,6 @@ func (s *Service) SubmitFederatedJob(ctx context.Context, buyerID string, in Fed
 	if minP < 2 || minP > len(in.DatasetIDs) {
 		return FederatedJob{}, fmt.Errorf("%w: min_participants must be between 2 and the number of datasets", ErrValidation)
 	}
-	// Pre-flight every dataset BEFORE creating anything, so we never fan out a
-	// partially-valid job. Resolve the active entitlement per dataset up front.
-	entByDataset := make(map[string]string, len(in.DatasetIDs))
-	for _, ds := range in.DatasetIDs {
-		offer, err := s.repo.GetOffer(ctx, ds)
-		if err != nil {
-			return FederatedJob{}, err
-		}
-		if !offer.Enabled || !offer.AllowFederated {
-			return FederatedJob{}, fmt.Errorf("%w: dataset %s does not allow federated use", ErrOfferDisabled, ds)
-		}
-		ent, err := s.activeEntitlementFor(ctx, buyerID, ds)
-		if err != nil {
-			return FederatedJob{}, err
-		}
-		entByDataset[ds] = ent.ID
-	}
-
 	// The job's aggregation mode follows the algorithm's runtime: a psi-extract
 	// algorithm makes this a private set intersection (Direction D), otherwise it
 	// is FedAvg federated learning. An unknown/unfetchable algorithm defaults to
@@ -67,6 +49,32 @@ func (s *Service) SubmitFederatedJob(ctx context.Context, buyerID string, in Fed
 	mode := ModeFederated
 	if algo, aerr := s.repo.GetAlgorithm(ctx, in.AlgorithmID); aerr == nil && algo.Runtime == RuntimePSIExtract {
 		mode = ModePSI
+	}
+
+	// Pre-flight every dataset BEFORE creating anything, so we never fan out a
+	// partially-valid job. Each mode needs its own seller consent: federated and
+	// PSI are distinct privacy exposures (co-train a model vs. reveal set overlap),
+	// so allow_federated does NOT imply allow_psi.
+	entByDataset := make(map[string]string, len(in.DatasetIDs))
+	for _, ds := range in.DatasetIDs {
+		offer, err := s.repo.GetOffer(ctx, ds)
+		if err != nil {
+			return FederatedJob{}, err
+		}
+		consented := offer.AllowFederated
+		useLabel := "federated"
+		if mode == ModePSI {
+			consented = offer.AllowPSI
+			useLabel = "PSI"
+		}
+		if !offer.Enabled || !consented {
+			return FederatedJob{}, fmt.Errorf("%w: dataset %s does not allow %s use", ErrOfferDisabled, ds, useLabel)
+		}
+		ent, err := s.activeEntitlementFor(ctx, buyerID, ds)
+		if err != nil {
+			return FederatedJob{}, err
+		}
+		entByDataset[ds] = ent.ID
 	}
 
 	fed, err := s.repo.CreateFederatedJob(ctx, FederatedJob{

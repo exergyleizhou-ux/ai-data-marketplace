@@ -280,6 +280,7 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
   const [maxOutputMiB, setMaxOutputMiB] = useState("10");
   const [reviewOutput, setReviewOutput] = useState(false);
   const [allowFederated, setAllowFederated] = useState(false);
+  const [allowPSI, setAllowPSI] = useState(false);
   const [trustLevel, setTrustLevel] = useState("L1");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -297,6 +298,7 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
         if (o.max_output_bytes) setMaxOutputMiB(String(Math.round(o.max_output_bytes / (1 << 20))));
         setReviewOutput(o.review_output);
         setAllowFederated(!!o.allow_federated);
+        setAllowPSI(!!o.allow_psi);
         if (o.trust_level) setTrustLevel(o.trust_level);
       })
       .catch(() => {
@@ -317,6 +319,7 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
         max_output_bytes: Math.max(1, Math.round(parseFloat(maxOutputMiB || "10"))) * (1 << 20),
         review_output: reviewOutput,
         allow_federated: allowFederated,
+        allow_psi: allowPSI,
       });
       setSaved(true);
     } catch (e) {
@@ -371,6 +374,13 @@ export function ComputeOfferEditor({ datasetId }: { datasetId: string }) {
         {t(
           "允许联邦学习（L3 · 数据不出域）：本数据集可与其他方联合训练，只贡献模型参数，原始数据不出本沙箱",
           "Allow federated learning (L3 · data-stays-home): this dataset can co-train with others, contributing only model params — raw data never leaves its sandbox",
+        )}
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={allowPSI} onChange={(e) => setAllowPSI(e.target.checked)} />
+        {t(
+          "允许隐私求交（L3 · PSI）：本数据集可与其他方求交集（如共同名单）。注意：这与联邦学习是不同的授权——求交会暴露记录是否在交集中。",
+          "Allow private set intersection (L3 · PSI): this dataset can be intersected with others (e.g. a shared list). Note: this is a separate consent from federated learning — PSI reveals whether records are in the overlap.",
         )}
       </label>
       {err && <Alert>{err}</Alert>}
