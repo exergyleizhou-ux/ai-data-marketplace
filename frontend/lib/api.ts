@@ -464,6 +464,15 @@ export const api = {
     a.remove();
     URL.revokeObjectURL(url);
   },
+  // Fetch a federated job's joint output as parsed JSON (used to show a PSI
+  // intersection inline rather than forcing a download).
+  getFederatedOutputJSON: async <T = unknown>(id: string): Promise<T> => {
+    const res = await fetch(buildURL(`/compute/federated-jobs/${id}/output`), {
+      headers: tokenStore.access ? { Authorization: `Bearer ${tokenStore.access}` } : {},
+    });
+    if (!res.ok) throw new ApiError(-1, res.status, "获取结果失败");
+    return (await res.json()) as T;
+  },
 };
 
 export function yuan(cents?: number): string {
