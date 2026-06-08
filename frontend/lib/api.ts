@@ -222,6 +222,37 @@ export type OutboxEntry = {
   updated_at: string;
 };
 
+export type ReconciliationPoint = {
+  date: string;
+  gmv_cents: number;
+  settled_gmv_cents: number;
+  platform_fees_cents: number;
+  orders: number;
+  settled_orders: number;
+  refunded_orders: number;
+  disputed_orders: number;
+  failed_settlements: number;
+};
+
+export type EarningsPoint = {
+  date: string;
+  gross_cents: number;
+  settled_cents: number;
+  orders: number;
+  settled_orders: number;
+  refunded_cents: number;
+};
+
+export type EarningsByDataset = {
+  dataset_id: string;
+  title: string;
+  total_orders: number;
+  settled_orders: number;
+  gross_cents: number;
+  settled_cents: number;
+  last_order_at: string;
+};
+
 export const tokenStore = {
   get access() {
     return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
@@ -440,6 +471,14 @@ export const api = {
       disputed_orders: number; refunded_orders: number; refunded_amount: number;
       failed_settlements: number;
     }>("/admin/reconciliation"),
+  adminReconciliationTimeseries: (days?: number) =>
+    request<{ days: number; from: string; to: string; points: ReconciliationPoint[] }>(
+      "/admin/reconciliation/timeseries", { query: { days } }),
+  sellerEarningsTimeseries: (days?: number) =>
+    request<{ days: number; from: string; to: string; points: EarningsPoint[] }>(
+      "/sellers/me/earnings/timeseries", { query: { days } }),
+  sellerEarningsByDataset: () =>
+    request<{ items: EarningsByDataset[] }>("/sellers/me/earnings/by-dataset"),
 
   // compute-to-data (C2D / 可用不可见)
   getComputeOffer: (id: string) =>

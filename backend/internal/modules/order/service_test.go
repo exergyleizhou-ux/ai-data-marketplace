@@ -147,6 +147,15 @@ func (r *fakeRepo) AdminReconciliation(_ context.Context) (Reconciliation, error
 	rec.PendingOrders = rec.TotalOrders - rec.SettledOrders - rec.RefundedOrders - rec.DisputedOrders
 	return rec, nil
 }
+func (r *fakeRepo) AdminReconciliationTimeseries(_ context.Context, _ int) ([]ReconciliationPoint, error) {
+	return nil, nil
+}
+func (r *fakeRepo) SellerEarningsTimeseries(_ context.Context, _ string, _ int) ([]EarningsPoint, error) {
+	return nil, nil
+}
+func (r *fakeRepo) SellerEarningsByDataset(_ context.Context, _ string) ([]EarningsByDataset, error) {
+	return nil, nil
+}
 
 func itoa(n int) string {
 	if n == 0 {

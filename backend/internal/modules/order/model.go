@@ -91,6 +91,40 @@ type Earnings struct {
 	PendingOrders     int   `json:"pending_orders"`
 }
 
+// ReconciliationPoint is one day's aggregate in the ops timeseries.
+type ReconciliationPoint struct {
+	Date              string `json:"date"`
+	GMVCents          int64  `json:"gmv_cents"`
+	SettledGMVCents   int64  `json:"settled_gmv_cents"`
+	PlatformFeesCents int64  `json:"platform_fees_cents"`
+	Orders            int64  `json:"orders"`
+	SettledOrders     int64  `json:"settled_orders"`
+	RefundedOrders    int64  `json:"refunded_orders"`
+	DisputedOrders    int64  `json:"disputed_orders"`
+	FailedSettlements int64  `json:"failed_settlements"`
+}
+
+// EarningsPoint is one day's seller earnings point.
+type EarningsPoint struct {
+	Date          string `json:"date"`
+	GrossCents    int64  `json:"gross_cents"`
+	SettledCents  int64  `json:"settled_cents"`
+	Orders        int64  `json:"orders"`
+	SettledOrders int64  `json:"settled_orders"`
+	RefundedCents int64  `json:"refunded_cents"`
+}
+
+// EarningsByDataset is a seller's per-dataset earnings summary.
+type EarningsByDataset struct {
+	DatasetID     string `json:"dataset_id"`
+	Title         string `json:"title"`
+	TotalOrders   int64  `json:"total_orders"`
+	SettledOrders int64  `json:"settled_orders"`
+	GrossCents    int64  `json:"gross_cents"`
+	SettledCents  int64  `json:"settled_cents"`
+	LastOrderAt   string `json:"last_order_at"`
+}
+
 // platformFee splits an amount into (platformFee, sellerAmount) by basis points.
 func platformFee(amount int64) (fee, seller int64) {
 	fee = amount * platformFeeBps / 10000

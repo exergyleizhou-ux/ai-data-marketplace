@@ -170,6 +170,77 @@ func (h *handler) adminReconciliation(c *gin.Context) {
 	httpx.OK(c, r)
 }
 
+func (h *handler) adminReconciliationTimeseries(c *gin.Context) {
+	days, ok := parseDays(c.Query("days"))
+	if !ok {
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("days must be 1-90"))
+		return
+	}
+	pts, err := h.svc.AdminReconciliationTimeseries(c.Request.Context(), days)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	from := ""
+	to := ""
+	if len(pts) > 0 {
+		from = pts[0].Date
+		to = pts[len(pts)-1].Date
+	}
+	httpx.OK(c, gin.H{"days": days, "from": from, "to": to, "points": pts})
+}
+
+func (h *handler) sellerEarningsTimeseries(c *gin.Context) {
+	days, ok := parseDays(c.Query("days"))
+	if !ok {
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("days must be 1-90"))
+		return
+	}
+	pts, err := h.svc.SellerEarningsTimeseries(c.Request.Context(), httpx.UserID(c), days)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	from := ""
+	to := ""
+	if len(pts) > 0 {
+		from = pts[0].Date
+		to = pts[len(pts)-1].Date
+	}
+	httpx.OK(c, gin.H{"days": days, "from": from, "to": to, "points": pts})
+}
+
+func (h *handler) sellerEarningsByDataset(c *gin.Context) {
+	items, err := h.svc.SellerEarningsByDataset(c.Request.Context(), httpx.UserID(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	if items == nil {
+		items = []EarningsByDataset{}
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+// parseDays returns (days, true) when raw is a valid integer 1-90.
+// Empty string defaults to 30. 0 or negative returns (0, false) → 400.
+func parseDays(raw string) (int, bool) {
+	if raw == "" {
+		return 30, true
+	}
+	d, err := strconv.Atoi(raw)
+	if err != nil {
+		return 30, true // non-numeric → default
+	}
+	if d <= 0 {
+		return 0, false // 0 or negative → 400
+	}
+	if d > 90 {
+		return 90, true
+	}
+	return d, true
+}
+
 func fail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrValidation):
