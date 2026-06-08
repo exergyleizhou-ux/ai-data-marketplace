@@ -77,7 +77,6 @@ func insertOrder(t *testing.T, pool *pgxpool.Pool, o Order) {
 	}
 }
 
-
 // §7.6 Test 1: Zero-day fill + accurate GMV on target day.
 func TestAdminReconciliationTimeseries_FillsZeroDays(t *testing.T) {
 	ctx := context.Background()
