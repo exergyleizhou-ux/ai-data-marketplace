@@ -23,6 +23,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/delivery"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/order"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/payment"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/search"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/metrics"
@@ -228,6 +229,9 @@ func (s *Server) routes() {
 		s.closers = append(s.closers, dsSvc.Close)
 		dataset.Register(api, dsSvc, authMW, auth.RequireRole("ops", "admin"), lim)
 
+		// Search module: thin public search endpoint backed by the dataset index.
+		search.Register(api, datasetSearchAdapter{ds: dsSvc})
+
 		orderSvc := order.NewService(order.NewRepository(s.db), authSvc, datasetPurchaseAdapter{ds: dsSvc}, rec)
 		order.Register(api, orderSvc, authMW, auth.RequireRole("ops", "admin"))
 
@@ -254,7 +258,7 @@ func (s *Server) routes() {
 		// H3: durable settlement — outbox + PG advisory lock + retry worker.
 		paySvc.StartSettlementOutbox(payment.NewOutboxRepository(s.db), payment.NewPGLocker(s.db))
 		s.closers = append(s.closers, paySvc.Close)
-		payment.Register(api, paySvc, authMW, s.cfg.Env != "production")
+		payment.Register(api, paySvc, authMW, auth.RequireRole("ops", "admin"), s.cfg.Env != "production")
 		orderSvc.SetSettlementTrigger(paySvc) // confirm-delivery -> auto settle
 		orderSvc.SetRefundTrigger(paySvc)     // dispute refund -> provider refund + reversal (H2)
 
@@ -396,4 +400,41 @@ type datasetDeliveryAdapter struct{ ds *dataset.Service }
 
 func (a datasetDeliveryAdapter) CurrentObjectKey(ctx context.Context, datasetID string) (string, error) {
 	return a.ds.CurrentObjectKey(ctx, datasetID)
+}
+
+// datasetSearchAdapter bridges dataset.Service to search.DatasetSearcher
+// so the search module can read published datasets without importing dataset.
+type datasetSearchAdapter struct{ ds *dataset.Service }
+
+func (a datasetSearchAdapter) SearchPublished(ctx context.Context, q search.SearchQuery) ([]search.SearchResult, error) {
+	items, err := a.ds.SearchPublished(ctx, dataset.ListFilter{
+		Keyword:  q.Keyword,
+		DataType: q.DataType,
+		Domain:   q.Domain,
+		Sort:     q.Sort,
+		Limit:    q.Limit,
+		Offset:   q.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]search.SearchResult, len(items))
+	for i, d := range items {
+		pc := int64(0)
+		if d.FinalPriceCents != nil {
+			pc = *d.FinalPriceCents
+		} else if d.SuggestedPriceCents != nil {
+			pc = *d.SuggestedPriceCents
+		}
+		out[i] = search.SearchResult{
+			ID:               d.ID,
+			Title:            d.Title,
+			DataType:         d.DataType,
+			Domain:           d.Domain,
+			PriceCents:       pc,
+			Status:           d.Status,
+			AuthenticityBand: d.AuthenticityBand,
+		}
+	}
+	return out, nil
 }

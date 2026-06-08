@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -70,8 +71,37 @@ func fail(c *gin.Context, err error) {
 		httpx.Fail(c, httpx.ErrConflict.WithMessage("order is not confirmed"))
 	case errors.Is(err, ErrInvalidSignature):
 		httpx.Fail(c, httpx.ErrUnauthorized.WithMessage("invalid callback signature"))
+	case errors.Is(err, ErrOutboxNotFailed):
+		httpx.Fail(c, httpx.ErrConflict.WithMessage("outbox entry is not in failed status — can only retry failed entries"))
+	case errors.Is(err, ErrOutboxNotFound):
+		httpx.Fail(c, httpx.ErrNotFound)
 	default:
 		slog.Error("payment handler error", "path", c.FullPath(), "err", err)
 		httpx.Fail(c, httpx.ErrInternal)
 	}
+}
+
+// --- ops: settlement outbox monitoring ---
+
+func (h *handler) adminListOutbox(c *gin.Context) {
+	status := c.Query("status")
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	items, err := h.svc.ListOutbox(c.Request.Context(), status, limit, offset)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	if items == nil {
+		items = []OutboxEntry{}
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+func (h *handler) adminRetryOutbox(c *gin.Context) {
+	if err := h.svc.RetryOutbox(c.Request.Context(), httpx.UserID(c), c.Param("orderId")); err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"order_id": c.Param("orderId"), "status": "pending"})
 }

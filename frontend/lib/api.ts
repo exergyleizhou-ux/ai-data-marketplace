@@ -212,6 +212,16 @@ export type ComputeAttestation = {
   verified?: boolean;
 };
 
+export type OutboxEntry = {
+  order_id: string;
+  status: string;
+  attempts: number;
+  last_error?: string | null;
+  next_attempt_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export const tokenStore = {
   get access() {
     return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
@@ -398,6 +408,38 @@ export const api = {
     request<KYC>("/admin/kyc/review", { body: { kyc_id, approve } }),
   adminResolveDispute: (id: string, refund: boolean, note: string) =>
     request<Order>(`/admin/orders/${id}/resolve`, { body: { refund, note } }),
+
+  // admin compute-to-data
+  adminListComputeAlgorithms: (status?: string) =>
+    request<{ items: ComputeAlgorithm[] }>("/admin/compute/algorithms", { query: { status } }),
+  adminRegisterAlgorithm: (b: {
+    name: string; runtime: string; image: string; image_digest: string;
+    version: number; source_ref: string; entrypoint: string; output_kind: string;
+    params_schema?: Record<string, unknown>;
+  }) => request<ComputeAlgorithm>("/admin/compute/algorithms", { method: "POST", body: b }),
+  adminReviewAlgorithm: (id: string, status: string, trusted: boolean) =>
+    request<ComputeAlgorithm>(`/admin/compute/algorithms/${id}/review`, { body: { status, trusted } }),
+  adminListComputeJobs: (status?: string, limit?: number) =>
+    request<{ items: ComputeJob[] }>("/admin/compute/jobs", { query: { status, limit } }),
+  adminReleaseComputeJob: (id: string) =>
+    request<ComputeJob>(`/admin/compute/jobs/${id}/release`, { method: "POST" }),
+  adminRejectComputeJob: (id: string, reason: string) =>
+    request<ComputeJob>(`/admin/compute/jobs/${id}/reject`, { body: { reason } }),
+
+  // admin settlement outbox
+  adminListSettlementOutbox: (status?: string, limit?: number, offset?: number) =>
+    request<{ items: OutboxEntry[] }>("/admin/settlement-outbox", { query: { status, limit, offset } }),
+  adminRetrySettlementOutbox: (orderId: string) =>
+    request<{ order_id: string; status: string }>(`/admin/settlement-outbox/${orderId}/retry`, { method: "POST" }),
+
+  // admin reconciliation
+  adminReconciliation: () =>
+    request<{
+      total_gmv: number; settled_gmv: number; platform_fees: number;
+      total_orders: number; settled_orders: number; pending_orders: number;
+      disputed_orders: number; refunded_orders: number; refunded_amount: number;
+      failed_settlements: number;
+    }>("/admin/reconciliation"),
 
   // compute-to-data (C2D / 可用不可见)
   getComputeOffer: (id: string) =>

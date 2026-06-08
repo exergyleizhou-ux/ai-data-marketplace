@@ -346,6 +346,13 @@ func (s *Service) List(ctx context.Context, f ListFilter) ([]Dataset, error) {
 	return s.repo.ListPublished(ctx, f)
 }
 
+// SearchPublished is the search-module adapter: same as List but named for the
+// search.DatasetSearcher interface so the server can bridge without the search
+// package importing dataset internals.
+func (s *Service) SearchPublished(ctx context.Context, f ListFilter) ([]Dataset, error) {
+	return s.repo.ListPublished(ctx, f)
+}
+
 // AdminListByStatus powers ops queues (e.g. status=reviewing). Ops-gated at the
 // router; the status must be a known lifecycle state.
 func (s *Service) AdminListByStatus(ctx context.Context, status string, limit, offset int) ([]Dataset, error) {

@@ -34,6 +34,10 @@ func (f *fakeOutbox) MarkRetry(_ context.Context, orderID, errMsg string, _, _ t
 	f.lastError[orderID] = errMsg
 	return nil
 }
+func (f *fakeOutbox) ListOutbox(_ context.Context, _ string, _, _ int) ([]OutboxEntry, error) {
+	return nil, nil
+}
+func (f *fakeOutbox) RetryOutbox(_ context.Context, orderID string) error { return nil }
 
 // fakeLocker always grants the lock and runs fn inline (single-process test).
 type fakeLocker struct{ acquired int }

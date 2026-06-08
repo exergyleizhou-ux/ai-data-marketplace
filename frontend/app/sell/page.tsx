@@ -277,8 +277,19 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
       {d.status === "reviewing" && (
         <p className="mt-2 text-xs text-neutral-500">{t("已过质检，等待运营审核上架。", "Passed quality checks; awaiting ops review to publish.")}</p>
       )}
-      {d.status === "draft" && d.source_signed_at && (
+      {d.status === "draft" && d.source_signed_at && d.sample_count > 0 && (
+        <p className="mt-2 text-xs text-amber-600">
+          {t(
+            "质检发现问题，请查看数据集详情页的质量报告并按建议修正后重新上传。",
+            "Quality checks found issues — see the dataset detail page for the report, then fix and re-upload.",
+          )}
+        </p>
+      )}
+      {d.status === "draft" && d.source_signed_at && d.sample_count === 0 && (
         <p className="mt-2 text-xs text-neutral-500">{t("已签约，请上传数据文件以进入质检。", "Provenance signed; upload a data file to start quality checks.")}</p>
+      )}
+      {d.status === "rejected" && (
+        <p className="mt-2 text-xs text-rose-600">{t("数据集审核未通过，请修改后重新上传。", "Dataset review rejected; please revise and re-upload.")}</p>
       )}
       {editingSheet && (
         <div className="mt-4 border-t border-neutral-100 pt-4">

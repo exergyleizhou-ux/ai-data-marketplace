@@ -126,6 +126,27 @@ func (r *fakeRepo) AdminList(_ context.Context, _, _ int) ([]Order, error) {
 	}
 	return out, nil
 }
+func (r *fakeRepo) AdminReconciliation(_ context.Context) (Reconciliation, error) {
+	var rec Reconciliation
+	rec.TotalOrders = int64(len(r.orders))
+	for _, o := range r.orders {
+		rec.TotalGMV += o.AmountCents
+		if o.Status == StatusSettled {
+			rec.SettledGMV += o.AmountCents
+			rec.PlatformFees += o.PlatformFeeCents
+			rec.SettledOrders++
+		}
+		if o.Status == StatusDisputed {
+			rec.DisputedOrders++
+		}
+		if o.Status == StatusRefunded {
+			rec.RefundedOrders++
+			rec.RefundedAmount += o.AmountCents
+		}
+	}
+	rec.PendingOrders = rec.TotalOrders - rec.SettledOrders - rec.RefundedOrders - rec.DisputedOrders
+	return rec, nil
+}
 
 func itoa(n int) string {
 	if n == 0 {

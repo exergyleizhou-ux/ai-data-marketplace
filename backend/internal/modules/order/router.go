@@ -28,5 +28,6 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	admin := rg.Group("/admin")
 	admin.Use(authMW, opsGate)
 	admin.GET("/transactions", h.adminTransactions)
+	admin.GET("/reconciliation", h.adminReconciliation)
 	admin.POST("/orders/:id/resolve", h.resolveDispute)
 }
