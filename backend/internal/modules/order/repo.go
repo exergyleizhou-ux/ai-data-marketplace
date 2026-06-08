@@ -33,6 +33,12 @@ type Repository interface {
 	AdminList(ctx context.Context, limit, offset int) ([]Order, error)
 	// AdminReconciliation returns aggregate financial stats for the ops dashboard.
 	AdminReconciliation(ctx context.Context) (Reconciliation, error)
+	// AdminReconciliationTimeseries returns daily aggregates for the last N days (zero-filled).
+	AdminReconciliationTimeseries(ctx context.Context, days int) ([]ReconciliationPoint, error)
+	// SellerEarningsTimeseries returns the seller's daily earnings for the last N days.
+	SellerEarningsTimeseries(ctx context.Context, sellerID string, days int) ([]EarningsPoint, error)
+	// SellerEarningsByDataset returns per-dataset earnings for a seller.
+	SellerEarningsByDataset(ctx context.Context, sellerID string) ([]EarningsByDataset, error)
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }
@@ -261,4 +267,180 @@ func (r *pgRepo) AdminReconciliation(ctx context.Context) (Reconciliation, error
 	_ = r.pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM settlement_outbox WHERE status='failed'`).Scan(&rec.FailedSettlements)
 	return rec, nil
+}
+
+func (r *pgRepo) AdminReconciliationTimeseries(ctx context.Context, days int) ([]ReconciliationPoint, error) {
+	if days < 1 || days > 90 {
+		days = 30
+	}
+	const q = `
+		WITH days AS (
+			SELECT (CURRENT_DATE - i)::date AS d
+			FROM generate_series(0, $1 - 1) AS i
+		),
+		agg AS (
+			SELECT
+				DATE(created_at AT TIME ZONE 'UTC') AS d,
+				COALESCE(SUM(amount_cents), 0)                                              AS gmv_cents,
+				COALESCE(SUM(amount_cents) FILTER (WHERE status='settled'), 0)              AS settled_gmv_cents,
+				COALESCE(SUM(platform_fee_cents) FILTER (WHERE status='settled'), 0)        AS platform_fees_cents,
+				COUNT(*)                                                                    AS orders,
+				COUNT(*) FILTER (WHERE status='settled')                                    AS settled_orders,
+				COUNT(*) FILTER (WHERE status='refunded')                                   AS refunded_orders,
+				COUNT(*) FILTER (WHERE status='disputed')                                   AS disputed_orders
+			FROM orders
+			WHERE created_at >= CURRENT_DATE - ($1 - 1) * INTERVAL '1 day'
+			GROUP BY d
+		),
+		outbox_agg AS (
+			SELECT
+				DATE(updated_at AT TIME ZONE 'UTC') AS d,
+				COUNT(*) AS failed_settlements
+			FROM settlement_outbox
+			WHERE status = 'failed'
+				AND updated_at >= CURRENT_DATE - ($1 - 1) * INTERVAL '1 day'
+			GROUP BY d
+		)
+		SELECT
+			days.d::text,
+			COALESCE(agg.gmv_cents, 0),
+			COALESCE(agg.settled_gmv_cents, 0),
+			COALESCE(agg.platform_fees_cents, 0),
+			COALESCE(agg.orders, 0),
+			COALESCE(agg.settled_orders, 0),
+			COALESCE(agg.refunded_orders, 0),
+			COALESCE(agg.disputed_orders, 0),
+			COALESCE(outbox_agg.failed_settlements, 0)
+		FROM days
+		LEFT JOIN agg        USING (d)
+		LEFT JOIN outbox_agg USING (d)
+		ORDER BY days.d`
+	rows, err := r.pool.Query(ctx, q, days)
+	if err != nil {
+		// settlement_outbox may not exist — retry without the outbox join.
+		const qNoOutbox = `
+		WITH days AS (
+			SELECT (CURRENT_DATE - i)::date AS d
+			FROM generate_series(0, $1 - 1) AS i
+		),
+		agg AS (
+			SELECT
+				DATE(created_at AT TIME ZONE 'UTC') AS d,
+				COALESCE(SUM(amount_cents), 0)                                              AS gmv_cents,
+				COALESCE(SUM(amount_cents) FILTER (WHERE status='settled'), 0)              AS settled_gmv_cents,
+				COALESCE(SUM(platform_fee_cents) FILTER (WHERE status='settled'), 0)        AS platform_fees_cents,
+				COUNT(*)                                                                    AS orders,
+				COUNT(*) FILTER (WHERE status='settled')                                    AS settled_orders,
+				COUNT(*) FILTER (WHERE status='refunded')                                   AS refunded_orders,
+				COUNT(*) FILTER (WHERE status='disputed')                                   AS disputed_orders
+			FROM orders
+			WHERE created_at >= CURRENT_DATE - ($1 - 1) * INTERVAL '1 day'
+			GROUP BY d
+		)
+		SELECT days.d::text,
+			COALESCE(agg.gmv_cents, 0),
+			COALESCE(agg.settled_gmv_cents, 0),
+			COALESCE(agg.platform_fees_cents, 0),
+			COALESCE(agg.orders, 0),
+			COALESCE(agg.settled_orders, 0),
+			COALESCE(agg.refunded_orders, 0),
+			COALESCE(agg.disputed_orders, 0),
+			0
+		FROM days LEFT JOIN agg USING (d) ORDER BY days.d`
+		rows, err = r.pool.Query(ctx, qNoOutbox, days)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("admin timeseries: %w", err)
+	}
+	defer rows.Close()
+	var out []ReconciliationPoint
+	for rows.Next() {
+		var p ReconciliationPoint
+		if err := rows.Scan(&p.Date, &p.GMVCents, &p.SettledGMVCents, &p.PlatformFeesCents,
+			&p.Orders, &p.SettledOrders, &p.RefundedOrders, &p.DisputedOrders, &p.FailedSettlements); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (r *pgRepo) SellerEarningsTimeseries(ctx context.Context, sellerID string, days int) ([]EarningsPoint, error) {
+	if days < 1 || days > 90 {
+		days = 30
+	}
+	const q = `
+		WITH days AS (
+			SELECT (CURRENT_DATE - i)::date AS d
+			FROM generate_series(0, $1 - 1) AS i
+		),
+		agg AS (
+			SELECT
+				DATE(created_at AT TIME ZONE 'UTC') AS d,
+				COALESCE(SUM(amount_cents), 0)                                              AS gross_cents,
+				COALESCE(SUM(seller_amount_cents) FILTER (WHERE status='settled'), 0)       AS settled_cents,
+				COUNT(*)                                                                    AS orders,
+				COUNT(*) FILTER (WHERE status='settled')                                    AS settled_orders,
+				COALESCE(SUM(amount_cents) FILTER (WHERE status='refunded'), 0)             AS refunded_cents
+			FROM orders
+			WHERE seller_id = $2
+				AND created_at >= CURRENT_DATE - ($1 - 1) * INTERVAL '1 day'
+			GROUP BY d
+		)
+		SELECT
+			days.d::text,
+			COALESCE(agg.gross_cents, 0),
+			COALESCE(agg.settled_cents, 0),
+			COALESCE(agg.orders, 0),
+			COALESCE(agg.settled_orders, 0),
+			COALESCE(agg.refunded_cents, 0)
+		FROM days
+		LEFT JOIN agg USING (d)
+		ORDER BY days.d`
+	rows, err := r.pool.Query(ctx, q, days, sellerID)
+	if err != nil {
+		return nil, fmt.Errorf("seller earnings timeseries: %w", err)
+	}
+	defer rows.Close()
+	var out []EarningsPoint
+	for rows.Next() {
+		var p EarningsPoint
+		if err := rows.Scan(&p.Date, &p.GrossCents, &p.SettledCents, &p.Orders, &p.SettledOrders, &p.RefundedCents); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+func (r *pgRepo) SellerEarningsByDataset(ctx context.Context, sellerID string) ([]EarningsByDataset, error) {
+	const q = `
+		SELECT
+			o.dataset_id::text,
+			COALESCE(d.title, ''),
+			COUNT(*) AS total_orders,
+			COUNT(*) FILTER (WHERE o.status='settled') AS settled_orders,
+			COALESCE(SUM(o.amount_cents), 0) AS gross_cents,
+			COALESCE(SUM(o.seller_amount_cents) FILTER (WHERE o.status='settled'), 0) AS settled_cents,
+			COALESCE(MAX(o.created_at)::text, '') AS last_order_at
+		FROM orders o
+		LEFT JOIN datasets d ON d.id = o.dataset_id
+		WHERE o.seller_id = $1
+		GROUP BY o.dataset_id, d.title
+		ORDER BY settled_cents DESC, total_orders DESC
+		LIMIT 200`
+	rows, err := r.pool.Query(ctx, q, sellerID)
+	if err != nil {
+		return nil, fmt.Errorf("seller earnings by dataset: %w", err)
+	}
+	defer rows.Close()
+	var out []EarningsByDataset
+	for rows.Next() {
+		var e EarningsByDataset
+		if err := rows.Scan(&e.DatasetID, &e.Title, &e.TotalOrders, &e.SettledOrders, &e.GrossCents, &e.SettledCents, &e.LastOrderAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }

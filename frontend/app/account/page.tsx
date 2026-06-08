@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, type KYC } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { api, yuan, type KYC, type EarningsPoint, type EarningsByDataset } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
 import { FederatedComputePanel, PSIComputePanel } from "@/components/Compute";
-import { Alert, Badge, Button, Card, Field, Input, Select } from "@/components/ui";
+import { MiniChart } from "@/components/MiniChart";
+import { Alert, Badge, Button, Card, Field, Input, Select, Spinner } from "@/components/ui";
 
 export default function AccountPage() {
   return (
@@ -142,8 +143,115 @@ function AccountInner() {
         </form>
       </Card>
 
+      {user.role === "seller" || user.role === "both" ? <SellerAnalytics /> : null}
+
       <FederatedComputePanel />
       <PSIComputePanel />
     </div>
+  );
+}
+
+function SellerAnalytics() {
+  const { t } = useT();
+  const [tsDays, setTsDays] = useState(7);
+  const [pts, setPts] = useState<EarningsPoint[] | null>(null);
+  const [byDs, setByDs] = useState<EarningsByDataset[] | null>(null);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    setErr("");
+    try {
+      const [tRes, dRes] = await Promise.all([
+        api.sellerEarningsTimeseries(tsDays),
+        api.sellerEarningsByDataset(),
+      ]);
+      setPts(tRes.points);
+      setByDs(dRes.items);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }, [tsDays]);
+  useEffect(() => { void load(); }, [load]);
+
+  if (pts === null && byDs === null) return <Spinner />;
+
+  return (
+    <Card>
+      <h2 className="mb-3 font-semibold">{t("卖家收益分析", "Seller earnings analytics")} <span className="font-normal text-neutral-400">/ Analytics</span></h2>
+      {err && <Alert>{err}</Alert>}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs text-neutral-500">{t("时间范围", "Range")}:</span>
+        {([7, 30, 90] as const).map((d) => (
+          <button
+            key={d}
+            onClick={() => setTsDays(d)}
+            className={`rounded px-2 py-0.5 text-xs ${tsDays === d ? "bg-neutral-900 text-white" : "border text-neutral-500"}`}
+          >
+            {d}{t("天", "d")}
+          </button>
+        ))}
+      </div>
+      {pts && pts.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2 mb-4">
+          <div>
+            <div className="text-xs text-neutral-500 mb-1">{t("总收益", "Gross revenue")}</div>
+            <MiniChart
+              points={pts.map((p) => ({ date: p.date, value: p.gross_cents / 100 }))}
+              color="#3b82f6"
+              height={60}
+              label="Gross revenue trend"
+            />
+            <div className="mt-1 text-xs text-neutral-400 text-right">
+              {yuan(pts.reduce((s, p) => s + p.gross_cents, 0))}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-neutral-500 mb-1">{t("已结算收益", "Settled revenue")}</div>
+            <MiniChart
+              points={pts.map((p) => ({ date: p.date, value: p.settled_cents / 100 }))}
+              color="#22c55e"
+              height={60}
+              label="Settled revenue trend"
+            />
+            <div className="mt-1 text-xs text-neutral-400 text-right">
+              {yuan(pts.reduce((s, p) => s + p.settled_cents, 0))}
+            </div>
+          </div>
+        </div>
+      )}
+      {byDs && byDs.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b border-neutral-200 text-left text-neutral-500">
+              <tr>
+                <th className="px-2 py-1 font-medium">{t("数据集", "Dataset")}</th>
+                <th className="px-2 py-1 font-medium text-right">{t("总订单", "Orders")}</th>
+                <th className="px-2 py-1 font-medium text-right">{t("已结算", "Settled")}</th>
+                <th className="px-2 py-1 font-medium text-right">{t("总额", "Gross")}</th>
+                <th className="px-2 py-1 font-medium text-right">{t("已结算额", "Settled amt")}</th>
+                <th className="px-2 py-1 font-medium text-right">{t("最近订单", "Last order")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byDs.map((d) => (
+                <tr key={d.dataset_id} className="border-b border-neutral-100 last:border-0">
+                  <td className="px-2 py-1.5 max-w-[160px] truncate" title={d.title || d.dataset_id}>
+                    {d.title || d.dataset_id.slice(0, 8)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{d.total_orders}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{d.settled_orders}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{yuan(d.gross_cents)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{yuan(d.settled_cents)}</td>
+                  <td className="px-2 py-1.5 text-right text-xs text-neutral-400">{d.last_order_at?.slice(0, 10) || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {byDs && byDs.length === 0 && (
+        <p className="text-sm text-neutral-400">{t("暂无已售数据集", "No sold datasets yet")}</p>
+      )}
+    </Card>
   );
 }

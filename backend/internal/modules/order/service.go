@@ -299,6 +299,21 @@ func (s *Service) AdminReconciliation(ctx context.Context) (Reconciliation, erro
 	return s.repo.AdminReconciliation(ctx)
 }
 
+// AdminReconciliationTimeseries returns daily aggregates for ops.
+func (s *Service) AdminReconciliationTimeseries(ctx context.Context, days int) ([]ReconciliationPoint, error) {
+	return s.repo.AdminReconciliationTimeseries(ctx, days)
+}
+
+// SellerEarningsTimeseries returns the seller's daily earnings.
+func (s *Service) SellerEarningsTimeseries(ctx context.Context, sellerID string, days int) ([]EarningsPoint, error) {
+	return s.repo.SellerEarningsTimeseries(ctx, sellerID, days)
+}
+
+// SellerEarningsByDataset returns per-dataset earnings for a seller.
+func (s *Service) SellerEarningsByDataset(ctx context.Context, sellerID string) ([]EarningsByDataset, error) {
+	return s.repo.SellerEarningsByDataset(ctx, sellerID)
+}
+
 // CreateReview lets the buyer rate a settled order (one review per order).
 func (s *Service) CreateReview(ctx context.Context, buyerID, orderID string, score int, comment string, issueFlag bool) (Review, error) {
 	if score < 1 || score > 5 {

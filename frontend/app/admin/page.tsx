@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, yuan, type Dataset, type KYC, type Order, type ComputeAlgorithm, type ComputeJob, type OutboxEntry } from "@/lib/api";
+import { api, yuan, type Dataset, type KYC, type Order, type ComputeAlgorithm, type ComputeJob, type OutboxEntry, type ReconciliationPoint } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
 import { Alert, Badge, Button, Card, Empty, Input, Spinner } from "@/components/ui";
+import { MiniChart } from "@/components/MiniChart";
 
 type Tab = "review" | "kyc" | "tx" | "compute" | "outbox";
 
@@ -202,21 +203,25 @@ function Transactions() {
     disputed_orders: number; refunded_orders: number; refunded_amount: number;
     failed_settlements: number;
   } | null>(null);
+  const [tsDays, setTsDays] = useState(7);
+  const [tsPoints, setTsPoints] = useState<ReconciliationPoint[] | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
   const load = useCallback(async () => {
     setErr("");
     try {
-      const [txs, r] = await Promise.all([
+      const [txs, r, ts] = await Promise.all([
         api.adminTransactions(),
         api.adminReconciliation(),
+        api.adminReconciliationTimeseries(tsDays),
       ]);
       setItems(txs.items);
       setRec(r);
+      setTsPoints(ts.points);
     } catch (e) {
       setErr((e as Error).message);
     }
-  }, []);
+  }, [tsDays]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -279,6 +284,62 @@ function Transactions() {
           <div className="text-xl font-semibold">{rec ? rec.refunded_orders : "—"} {rec ? `(${yuan(rec.refunded_amount)})` : ""}</div>
         </Card>
       </div>
+
+      {/* Timeseries trend charts */}
+      {tsPoints && tsPoints.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-neutral-600">{t("最近趋势", "Recent trend")}</span>
+            {([7, 30, 90] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => setTsDays(d)}
+                className={`rounded px-2 py-0.5 text-xs ${tsDays === d ? "bg-neutral-900 text-white" : "border text-neutral-500"}`}
+              >
+                {d}d
+              </button>
+            ))}
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Card>
+              <div className="text-xs text-neutral-500 mb-1">{t("GMV", "GMV")}</div>
+              <MiniChart
+                points={tsPoints.map((p) => ({ date: p.date, value: p.gmv_cents / 100 }))}
+                color="#3b82f6"
+                height={60}
+                label="GMV trend"
+              />
+              <div className="mt-1 text-xs text-neutral-400 text-right">
+                {t("总", "Total")}: {yuan(tsPoints.reduce((s, p) => s + p.gmv_cents, 0))}
+              </div>
+            </Card>
+            <Card>
+              <div className="text-xs text-neutral-500 mb-1">{t("已结算 GMV", "Settled GMV")}</div>
+              <MiniChart
+                points={tsPoints.map((p) => ({ date: p.date, value: p.settled_gmv_cents / 100 }))}
+                color="#22c55e"
+                height={60}
+                label="Settled GMV trend"
+              />
+              <div className="mt-1 text-xs text-neutral-400 text-right">
+                {t("总", "Total")}: {yuan(tsPoints.reduce((s, p) => s + p.settled_gmv_cents, 0))}
+              </div>
+            </Card>
+            <Card>
+              <div className="text-xs text-neutral-500 mb-1">{t("结算失败", "Failed settlements")}</div>
+              <MiniChart
+                points={tsPoints.map((p) => ({ date: p.date, value: p.failed_settlements }))}
+                color="#ef4444"
+                height={60}
+                label="Failed settlements trend"
+              />
+              <div className="mt-1 text-xs text-neutral-400 text-right">
+                {t("总", "Total")}: {tsPoints.reduce((s, p) => s + p.failed_settlements, 0)}
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
 
       {disputes.length > 0 && (
         <Card>

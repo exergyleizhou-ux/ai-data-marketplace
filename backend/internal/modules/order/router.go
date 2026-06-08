@@ -29,5 +29,10 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	admin.Use(authMW, opsGate)
 	admin.GET("/transactions", h.adminTransactions)
 	admin.GET("/reconciliation", h.adminReconciliation)
+	admin.GET("/reconciliation/timeseries", h.adminReconciliationTimeseries)
 	admin.POST("/orders/:id/resolve", h.resolveDispute)
+
+	// Seller analytics.
+	authed.GET("/sellers/me/earnings/timeseries", h.sellerEarningsTimeseries)
+	authed.GET("/sellers/me/earnings/by-dataset", h.sellerEarningsByDataset)
 }
