@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -25,6 +26,10 @@ type OutboxRepository interface {
 	// or, once attempts >= maxAttempts, gives up (status 'failed') for ops to
 	// inspect.
 	MarkRetry(ctx context.Context, orderID, errMsg string, base, capDur time.Duration, maxAttempts int) error
+	// ListOutbox returns outbox entries with optional status filter for ops monitoring.
+	ListOutbox(ctx context.Context, status string, limit, offset int) ([]OutboxEntry, error)
+	// RetryOutbox resets a failed outbox entry back to pending for manual retry.
+	RetryOutbox(ctx context.Context, orderID string) error
 }
 
 // Locker provides mutual exclusion across app instances so the same settlement
@@ -97,6 +102,52 @@ func (r *pgOutboxRepo) MarkRetry(ctx context.Context, orderID, errMsg string, ba
 		WHERE order_id = $1`
 	if _, err := r.pool.Exec(ctx, q, orderID, errMsg, maxAttempts, base.Seconds(), capDur.Seconds()); err != nil {
 		return fmt.Errorf("mark settlement retry: %w", err)
+	}
+	return nil
+}
+
+func (r *pgOutboxRepo) ListOutbox(ctx context.Context, status string, limit, offset int) ([]OutboxEntry, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	var rows pgx.Rows
+	var err error
+	if status == "" {
+		rows, err = r.pool.Query(ctx,
+			`SELECT order_id, status, attempts, last_error,
+				next_attempt_at::text, created_at::text, updated_at::text
+			 FROM settlement_outbox ORDER BY updated_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+	} else {
+		rows, err = r.pool.Query(ctx,
+			`SELECT order_id, status, attempts, last_error,
+				next_attempt_at::text, created_at::text, updated_at::text
+			 FROM settlement_outbox WHERE status=$1 ORDER BY updated_at DESC LIMIT $2 OFFSET $3`, status, limit, offset)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list outbox: %w", err)
+	}
+	defer rows.Close()
+	var out []OutboxEntry
+	for rows.Next() {
+		var e OutboxEntry
+		if err := rows.Scan(&e.OrderID, &e.Status, &e.Attempts, &e.LastError, &e.NextAttemptAt, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (r *pgOutboxRepo) RetryOutbox(ctx context.Context, orderID string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE settlement_outbox SET status='pending', attempts=0, last_error=NULL,
+			next_attempt_at=now(), updated_at=now()
+		 WHERE order_id=$1 AND status='failed'`, orderID)
+	if err != nil {
+		return fmt.Errorf("retry outbox: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrOutboxNotFailed
 	}
 	return nil
 }

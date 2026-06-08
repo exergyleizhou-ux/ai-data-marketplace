@@ -68,6 +68,20 @@ type Review struct {
 	CreatedAt string `json:"created_at,omitempty"`
 }
 
+// Reconciliation summarizes the platform's financial state for ops.
+type Reconciliation struct {
+	TotalGMV          int64 `json:"total_gmv"`
+	SettledGMV        int64 `json:"settled_gmv"`
+	PlatformFees      int64 `json:"platform_fees"`
+	TotalOrders       int64 `json:"total_orders"`
+	SettledOrders     int64 `json:"settled_orders"`
+	PendingOrders     int64 `json:"pending_orders"`
+	DisputedOrders    int64 `json:"disputed_orders"`
+	RefundedOrders    int64 `json:"refunded_orders"`
+	RefundedAmount    int64 `json:"refunded_amount"`
+	FailedSettlements int64 `json:"failed_settlements"`
+}
+
 // Earnings summarizes a seller's money across orders (integer cents).
 type Earnings struct {
 	SettledCents      int64 `json:"settled_cents"`      // realized (settled orders)

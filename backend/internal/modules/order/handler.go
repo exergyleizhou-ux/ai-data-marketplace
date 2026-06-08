@@ -161,6 +161,15 @@ func (h *handler) resolveDispute(c *gin.Context) {
 	httpx.OK(c, o)
 }
 
+func (h *handler) adminReconciliation(c *gin.Context) {
+	r, err := h.svc.AdminReconciliation(c.Request.Context())
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, r)
+}
+
 func fail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrValidation):

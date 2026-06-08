@@ -294,6 +294,11 @@ func (s *Service) AdminTransactions(ctx context.Context, limit, offset int) ([]O
 	return s.repo.AdminList(ctx, clampLimit(limit), max0(offset))
 }
 
+// AdminReconciliation returns aggregate financial stats for the ops dashboard.
+func (s *Service) AdminReconciliation(ctx context.Context) (Reconciliation, error) {
+	return s.repo.AdminReconciliation(ctx)
+}
+
 // CreateReview lets the buyer rate a settled order (one review per order).
 func (s *Service) CreateReview(ctx context.Context, buyerID, orderID string, score int, comment string, issueFlag bool) (Review, error) {
 	if score < 1 || score > 5 {

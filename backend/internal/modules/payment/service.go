@@ -305,3 +305,26 @@ func (s *Service) settleOutboxOne(ctx context.Context, orderID string) {
 		slog.Warn("settlement outbox: retry scheduled", "order_id", orderID, "err", settleErr)
 	}
 }
+
+// ListOutbox returns settlement outbox entries for ops monitoring. When status
+// is empty all entries are returned; otherwise filters by status.
+func (s *Service) ListOutbox(ctx context.Context, status string, limit, offset int) ([]OutboxEntry, error) {
+	if s.outbox == nil {
+		return nil, fmt.Errorf("outbox not enabled")
+	}
+	return s.outbox.ListOutbox(ctx, status, limit, offset)
+}
+
+// RetryOutbox resets a failed outbox entry so the background worker retries it
+// on the next tick. Only callable on entries in 'failed' status.
+func (s *Service) RetryOutbox(ctx context.Context, actorID, orderID string) error {
+	if s.outbox == nil {
+		return fmt.Errorf("outbox not enabled")
+	}
+	if err := s.outbox.RetryOutbox(ctx, orderID); err != nil {
+		return err
+	}
+	s.audit.Record(ctx, audit.Entry{ActorID: actorID, Action: "settlement.outbox.retry",
+		ResourceType: "order", ResourceID: orderID})
+	return nil
+}

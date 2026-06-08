@@ -31,6 +31,8 @@ type Repository interface {
 	CreateReview(ctx context.Context, r Review) (Review, error)
 	ListReviewsByDataset(ctx context.Context, datasetID string, limit, offset int) ([]Review, error)
 	AdminList(ctx context.Context, limit, offset int) ([]Order, error)
+	// AdminReconciliation returns aggregate financial stats for the ops dashboard.
+	AdminReconciliation(ctx context.Context) (Reconciliation, error)
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }
@@ -234,4 +236,29 @@ func (r *pgRepo) AdminList(ctx context.Context, limit, offset int) ([]Order, err
 		out = append(out, o)
 	}
 	return out, rows.Err()
+}
+
+func (r *pgRepo) AdminReconciliation(ctx context.Context) (Reconciliation, error) {
+	const q = `
+		SELECT
+			COALESCE(SUM(amount_cents), 0),
+			COALESCE(SUM(amount_cents) FILTER (WHERE status='settled'), 0),
+			COALESCE(SUM(platform_fee_cents) FILTER (WHERE status='settled'), 0),
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status='settled'),
+			COUNT(*) FILTER (WHERE status IN ('paid','delivered','confirmed')),
+			COUNT(*) FILTER (WHERE status='disputed'),
+			COUNT(*) FILTER (WHERE status='refunded'),
+			COALESCE(SUM(amount_cents) FILTER (WHERE status='refunded'), 0)
+		FROM orders`
+	var rec Reconciliation
+	if err := r.pool.QueryRow(ctx, q).Scan(
+		&rec.TotalGMV, &rec.SettledGMV, &rec.PlatformFees, &rec.TotalOrders,
+		&rec.SettledOrders, &rec.PendingOrders, &rec.DisputedOrders,
+		&rec.RefundedOrders, &rec.RefundedAmount); err != nil {
+		return Reconciliation{}, fmt.Errorf("admin reconciliation: %w", err)
+	}
+	_ = r.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM settlement_outbox WHERE status='failed'`).Scan(&rec.FailedSettlements)
+	return rec, nil
 }
