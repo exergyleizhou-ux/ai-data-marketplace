@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/anomaly"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auditlog"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/compute"
@@ -277,6 +278,12 @@ func (s *Server) routes() {
 		withdrawRepo := withdrawal.NewRepository(s.db)
 		withdrawSvc := withdrawal.NewService(withdrawRepo, withdrawEarningsAdapter{order: orderSvc}, notifySvc)
 		withdrawal.Register(api, withdrawSvc, authMW, auth.RequireRole("ops", "admin"))
+
+		// Anomaly scanner: periodic audit pattern detection (PR-Q).
+		anomalyRepo := anomaly.NewRepository(s.db)
+		anomalySvc := anomaly.NewService(anomalyRepo, s.db)
+		anomalySvc.StartScanner(context.Background())
+		anomaly.Register(api, anomalySvc, auth.RequireRole("ops", "admin"))
 		// compute certs: registered in compute module via the same interface
 		// (wired below after computeSvc is constructed)
 
