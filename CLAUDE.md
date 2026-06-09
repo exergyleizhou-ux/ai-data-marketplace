@@ -88,6 +88,15 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
 - **Exponential backoff must be parameterised on `attempts`**: a hardcoded constant (e.g. always
   30 s) defeats the retry purpose and can amplify sidecar-5 xx storms. PR-J `computeRetryBackoff`
   implements 30 s → 60 s → 120 s as a pure function, keeping the worker stateless and testable.
+- **Zip bundle: validate ALL orders before writing the first zip byte**: `BundleOrders` performs
+  a complete pre-flight (ownership, status, product type, key resolution) before `zip.NewWriter`
+  writes anything. This guarantees a rejected request leaves the HTTP response body empty rather
+  than a corrupt zip. PR-K.
+- **Streaming-response handlers must complete all validation BEFORE setting HTTP status**:
+  `c.Status(200)` + `c.Header("Content-Type", "application/zip")` called before `BundlePreflight`
+  caused preflight failures (foreign order→403, non-settled→409, compute→400) to return `200 OK +
+  Content-Type: application/zip + empty body`. Fix: split into Preflight (returns json error via
+  `fail(c, err)`) + Stream (sets zip headers after preflight passes). PR-K fix.
 
 ## C2D / privacy compute (信任阶梯 L0→L3)
 

@@ -2,7 +2,11 @@ package order
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -220,6 +224,31 @@ func (h *handler) sellerEarningsByDataset(c *gin.Context) {
 		items = []EarningsByDataset{}
 	}
 	httpx.OK(c, gin.H{"items": items})
+}
+
+func (h *handler) bundleDownload(c *gin.Context) {
+	var req struct {
+		OrderIDs []string `json:"order_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.OrderIDs) == 0 {
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("order_ids is required (1-20)"))
+		return
+	}
+
+	// 1. Preflight — all validation runs before touching the response.
+	entries, err := h.svc.BundlePreflight(c.Request.Context(), httpx.UserID(c), req.OrderIDs)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+
+	// 2. Preflight passed — set zip headers and stream.
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"oasis-bundle-%d.zip\"", time.Now().Unix()))
+	c.Status(http.StatusOK)
+	if err := h.svc.BundleStream(c.Request.Context(), c.Writer, entries); err != nil {
+		slog.Error("bundle stream failed mid-write", "user", httpx.UserID(c), "err", err)
+	}
 }
 
 // parseDays returns (days, true) when raw is a valid integer 1-90.
