@@ -27,6 +27,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/payment"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/search"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/verify"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/watchlist"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/metrics"
@@ -258,6 +259,12 @@ func (s *Server) routes() {
 		auditSvc := auditlog.NewService(auditlog.NewRepository(s.db))
 		auditlog.Register(api, auditSvc, auth.RequireRole("ops", "admin"))
 		dsSvc.SetCertRegistrar(verifyRepo) // dataset certs → registered for public lookup
+
+		// Watchlist: dataset watching + new-version notification.
+		watchRepo := watchlist.NewRepository(s.db)
+		watchSvc := watchlist.NewService(watchRepo, notifySvc, watchlistDatasetAdapter{ds: dsSvc})
+		watchlist.Register(api, watchSvc, authMW)
+		dsSvc.SetWatchersNotifier(watchSvc)
 		// compute certs: registered in compute module via the same interface
 		// (wired below after computeSvc is constructed)
 
@@ -508,4 +515,15 @@ func sanitiseFilename(s string) string {
 		return "dataset"
 	}
 	return string(out)
+}
+
+// watchlistDatasetAdapter bridges dataset.Service to watchlist.DatasetReader.
+type watchlistDatasetAdapter struct{ ds *dataset.Service }
+
+func (a watchlistDatasetAdapter) StatusOf(ctx context.Context, datasetID string) (string, error) {
+	d, err := a.ds.Get(ctx, datasetID)
+	if err != nil {
+		return "", err
+	}
+	return d.Status, nil
 }
