@@ -20,6 +20,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/anomaly"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auditlog"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/compliance"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/compute"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/dataset"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/delivery"
@@ -284,6 +285,13 @@ func (s *Server) routes() {
 		anomalySvc := anomaly.NewService(anomalyRepo, s.db)
 		anomalySvc.StartScanner(context.Background())
 		anomaly.Register(api, anomalySvc, auth.RequireRole("ops", "admin"))
+
+		// PIPL Compliance: data export + account deletion (PR-S).
+		compExportSvc := compliance.NewExportService(compliance.NewExportRepository(s.db),
+			complianceSourceAdapter{pool: s.db}, notifySvc)
+		compExportSvc.StartScanner(context.Background())
+		compDeletionSvc := compliance.NewDeletionService(compliance.NewDeletionRepository(s.db), notifySvc)
+		compliance.Register(api, compExportSvc, compDeletionSvc, authMW, auth.RequireRole("ops", "admin"))
 		// compute certs: registered in compute module via the same interface
 		// (wired below after computeSvc is constructed)
 
@@ -567,4 +575,147 @@ func (a withdrawEarningsAdapter) SettledCentsOf(ctx context.Context, sellerID st
 		return 0, err
 	}
 	return e.SettledCents, nil
+}
+
+// complianceSourceAdapter bridges various modules to compliance.Source.
+type complianceSourceAdapter struct{ pool *pgxpool.Pool }
+
+func (a complianceSourceAdapter) UserRow(ctx context.Context, userID string) (map[string]any, error) {
+	var account, role, kycStatus, createdAt string
+	if err := a.pool.QueryRow(ctx,
+		`SELECT account, role, kyc_status, created_at::text FROM users WHERE id=$1`, userID).
+		Scan(&account, &role, &kycStatus, &createdAt); err != nil {
+		return nil, err
+	}
+	return map[string]any{"id": userID, "account": account, "role": role, "kyc_status": kycStatus, "created_at": createdAt}, nil
+}
+func (a complianceSourceAdapter) Orders(ctx context.Context, userID string) ([]map[string]any, error) {
+	rows, err := a.pool.Query(ctx, `SELECT id::text, status, amount_cents, product_type, created_at::text FROM orders WHERE buyer_id=$1 OR seller_id=$1 ORDER BY created_at DESC LIMIT 200`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var id, status, productType, createdAt string
+		var cents int64
+		rows.Scan(&id, &status, &cents, &productType, &createdAt)
+		out = append(out, map[string]any{"id": id, "status": status, "amount_cents": cents, "product_type": productType, "created_at": createdAt})
+	}
+	return out, nil
+}
+func (a complianceSourceAdapter) Datasets(ctx context.Context, userID string) ([]map[string]any, error) {
+	rows, err := a.pool.Query(ctx, `SELECT id::text, title, status, data_type, created_at::text FROM datasets WHERE seller_id=$1 ORDER BY created_at DESC LIMIT 200`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var id, title, status, dataType, createdAt string
+		rows.Scan(&id, &title, &status, &dataType, &createdAt)
+		out = append(out, map[string]any{"id": id, "title": title, "status": status, "data_type": dataType, "created_at": createdAt})
+	}
+	return out, nil
+}
+func (a complianceSourceAdapter) Notifications(ctx context.Context, userID string) ([]map[string]any, error) {
+	rows, err := a.pool.Query(ctx, `SELECT id::text, kind, title, COALESCE(body,''), is_read, created_at::text FROM notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var id, kind, title, body, createdAt string
+		var isRead bool
+		rows.Scan(&id, &kind, &title, &body, &isRead, &createdAt)
+		out = append(out, map[string]any{"id": id, "kind": kind, "title": title, "body": body, "is_read": isRead, "created_at": createdAt})
+	}
+	return out, nil
+}
+func (a complianceSourceAdapter) Watches(ctx context.Context, userID string) ([]map[string]any, error) {
+	rows, err := a.pool.Query(ctx, `SELECT dataset_id::text, last_notified_version_id::text, created_at::text FROM dataset_watches WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var dsID, ver, createdAt string
+		rows.Scan(&dsID, &ver, &createdAt)
+		out = append(out, map[string]any{"dataset_id": dsID, "last_notified_version_id": ver, "created_at": createdAt})
+	}
+	return out, nil
+}
+func (a complianceSourceAdapter) Questions(ctx context.Context, userID string) ([]map[string]any, error) {
+	rows, err := a.pool.Query(ctx, `SELECT id::text, dataset_id::text, body, status, created_at::text FROM dataset_questions WHERE asker_id=$1 ORDER BY created_at DESC LIMIT 200`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var id, dsID, body, status, createdAt string
+		rows.Scan(&id, &dsID, &body, &status, &createdAt)
+		out = append(out, map[string]any{"id": id, "dataset_id": dsID, "body": body, "status": status, "created_at": createdAt})
+	}
+	return out, nil
+}
+func (a complianceSourceAdapter) Answers(ctx context.Context, userID string) ([]map[string]any, error) {
+	rows, err := a.pool.Query(ctx, `SELECT id::text, question_id::text, body, created_at::text FROM dataset_answers WHERE answerer_id=$1 ORDER BY created_at DESC LIMIT 200`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var id, qID, body, createdAt string
+		rows.Scan(&id, &qID, &body, &createdAt)
+		out = append(out, map[string]any{"id": id, "question_id": qID, "body": body, "created_at": createdAt})
+	}
+	return out, nil
+}
+func (a complianceSourceAdapter) Reviews(ctx context.Context, userID string) ([]map[string]any, error) {
+	rows, err := a.pool.Query(ctx, `SELECT id::text, dataset_id::text, score, COALESCE(comment,''), created_at::text FROM reviews WHERE buyer_id=$1 ORDER BY created_at DESC LIMIT 200`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var id, dsID, comment, createdAt string
+		var score int
+		rows.Scan(&id, &dsID, &score, &comment, &createdAt)
+		out = append(out, map[string]any{"id": id, "dataset_id": dsID, "score": score, "comment": comment, "created_at": createdAt})
+	}
+	return out, nil
+}
+func (a complianceSourceAdapter) Withdrawals(ctx context.Context, userID string) ([]map[string]any, error) {
+	rows, err := a.pool.Query(ctx, `SELECT id::text, amount_cents, channel, status, requested_at::text FROM withdrawal_requests WHERE seller_id=$1 ORDER BY requested_at DESC LIMIT 200`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var id, channel, status, createdAt string
+		var cents int64
+		rows.Scan(&id, &cents, &channel, &status, &createdAt)
+		out = append(out, map[string]any{"id": id, "amount_cents": cents, "channel": channel, "status": status, "requested_at": createdAt})
+	}
+	return out, nil
+}
+func (a complianceSourceAdapter) ComputeJobs(ctx context.Context, userID string) ([]map[string]any, error) {
+	rows, err := a.pool.Query(ctx, `SELECT id::text, dataset_id::text, status, output_kind, created_at::text FROM compute_jobs WHERE buyer_id=$1 ORDER BY created_at DESC LIMIT 200`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var id, dsID, status, kind, createdAt string
+		rows.Scan(&id, &dsID, &status, &kind, &createdAt)
+		out = append(out, map[string]any{"id": id, "dataset_id": dsID, "status": status, "output_kind": kind, "created_at": createdAt})
+	}
+	return out, nil
 }
