@@ -80,6 +80,14 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
 - **Notification emit must use `nil` guard + swallow errors**: `if s.notifier != nil { _ = s.notifier.NotifyUser(...) }`.
   Business flows must never block on notification failure. Pattern at `order/service.go` MarkPaid /
   MarkSettled / Dispute.
+- **Background goroutine scanners must NOT read from work-queue channels as a stop signal**:
+  a `chan qualityJob` carries real tasks — reading from it in a retry scanner steals work from the
+  worker pool. Use a separate `context.Context` + `cancel()` for graceful shutdown of periodic
+  scanners. PR-J `qualityRetryLoop` initially read from `s.qCh` (the work queue), causing silent
+  job loss.
+- **Exponential backoff must be parameterised on `attempts`**: a hardcoded constant (e.g. always
+  30 s) defeats the retry purpose and can amplify sidecar-5 xx storms. PR-J `computeRetryBackoff`
+  implements 30 s → 60 s → 120 s as a pure function, keeping the worker stateless and testable.
 
 ## C2D / privacy compute (信任阶梯 L0→L3)
 
