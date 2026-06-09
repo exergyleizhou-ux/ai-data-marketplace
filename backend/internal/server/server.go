@@ -29,6 +29,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/search"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/verify"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/watchlist"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/withdrawal"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/metrics"
@@ -271,6 +272,11 @@ func (s *Server) routes() {
 		qaRepo := qa.NewRepository(s.db)
 		qaSvc := qa.NewService(qaRepo, qaDatasetAdapter{ds: dsSvc}, notifySvc)
 		qa.Register(api, qaSvc, authMW)
+
+		// Withdrawal: seller requests + ops approves (book-keeping only, P module).
+		withdrawRepo := withdrawal.NewRepository(s.db)
+		withdrawSvc := withdrawal.NewService(withdrawRepo, withdrawEarningsAdapter{order: orderSvc}, notifySvc)
+		withdrawal.Register(api, withdrawSvc, authMW, auth.RequireRole("ops", "admin"))
 		// compute certs: registered in compute module via the same interface
 		// (wired below after computeSvc is constructed)
 
@@ -543,4 +549,15 @@ func (a qaDatasetAdapter) SellerOf(ctx context.Context, datasetID string) (strin
 		return "", "", err
 	}
 	return d.SellerID, d.Status, nil
+}
+
+// withdrawEarningsAdapter bridges order.Service to withdrawal.EarningsReader.
+type withdrawEarningsAdapter struct{ order *order.Service }
+
+func (a withdrawEarningsAdapter) SettledCentsOf(ctx context.Context, sellerID string) (int64, error) {
+	e, err := a.order.Earnings(ctx, sellerID)
+	if err != nil {
+		return 0, err
+	}
+	return e.SettledCents, nil
 }
