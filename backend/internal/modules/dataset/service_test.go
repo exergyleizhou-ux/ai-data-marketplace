@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
 )
@@ -143,6 +144,14 @@ func (r *fakeRepo) ListPublished(_ context.Context, f ListFilter) ([]Dataset, er
 	}
 	return out, nil
 }
+func (r *fakeRepo) EnqueueQualityRetry(_ context.Context, _, _, _ string, _ int) error { return nil }
+func (r *fakeRepo) ListDueQualityRetries(_ context.Context, _ int) ([]QualityRetryRow, error) {
+	return nil, nil
+}
+func (r *fakeRepo) MarkQualityRetryAttempt(_ context.Context, _ string, _ time.Time, _ string) error {
+	return nil
+}
+func (r *fakeRepo) DeleteQualityRetry(_ context.Context, _ string) error { return nil }
 
 func itoa(n int) string {
 	if n == 0 {

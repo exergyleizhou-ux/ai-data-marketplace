@@ -109,6 +109,8 @@ func (s *Service) CompleteUpload(ctx context.Context, userID, uploadID string) (
 		Detail: map[string]any{"object_key": obj.Key, "size_bytes": obj.Size, "sha256": obj.SHA256},
 	})
 
+	// Persist the quality job first so process restarts don't lose work (PR-J).
+	_ = s.repo.EnqueueQualityRetry(ctx, d.ID, versionID, obj.SHA256, 3)
 	s.enqueueQuality(qualityJob{DatasetID: d.ID, VersionID: versionID, ContentSHA256: obj.SHA256})
 	return s.repo.GetByID(ctx, d.ID)
 }
