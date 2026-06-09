@@ -15,67 +15,70 @@ type BundleSource interface {
 	SuggestFilename(ctx context.Context, datasetID string) (string, error)
 }
 
-// BundleOrders validates N settled download orders belonging to one buyer,
-// then streams a zip archive of their object files to w.  Pre-flight checks
-// run BEFORE the first zip byte is written so a validation error leaves w
-// untouched.
-func (s *Service) BundleOrders(ctx context.Context, w io.Writer, buyerID string, orderIDs []string) error {
-	if len(orderIDs) == 0 || len(orderIDs) > 20 {
-		return fmt.Errorf("%w: order_ids length must be 1–20", ErrValidation)
-	}
-	if s.bundleSrc == nil {
-		return fmt.Errorf("%w: bundle not available (no storage)", ErrValidation)
-	}
+// BundleEntry is a ready-to-stream item after successful preflight.
+type BundleEntry struct {
+	Order Order
+	Key   string
+	Name  string
+}
 
-	// Pre-flight: load every order, verify ownership + status + product type.
-	type entry struct {
-		order Order
-		key   string
-		name  string
+// BundlePreflight validates N settled download orders belonging to one buyer
+// and resolves their object keys + zip filenames.  It does NOT touch w — the
+// caller decides whether to set HTTP headers based on success.
+func (s *Service) BundlePreflight(ctx context.Context, buyerID string, orderIDs []string) ([]BundleEntry, error) {
+	if len(orderIDs) == 0 || len(orderIDs) > 20 {
+		return nil, fmt.Errorf("%w: order_ids length must be 1–20", ErrValidation)
 	}
-	entries := make([]entry, len(orderIDs))
+	if s.bundleSrc == nil || s.store == nil {
+		return nil, fmt.Errorf("%w: bundle not available (no storage)", ErrValidation)
+	}
+	entries := make([]BundleEntry, len(orderIDs))
 	for i, oid := range orderIDs {
 		o, err := s.repo.GetByID(ctx, oid)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if o.BuyerID != buyerID {
-			return fmt.Errorf("%w: order %s does not belong to buyer", ErrForbidden, trunc8(oid))
+			return nil, fmt.Errorf("%w: order %s does not belong to buyer", ErrForbidden, trunc8(oid))
 		}
 		if o.Status != StatusSettled {
-			return ErrBadTransition
+			return nil, ErrBadTransition
 		}
 		if o.ProductType == ProductCompute {
-			return fmt.Errorf("%w: compute orders cannot be bundled", ErrValidation)
+			return nil, fmt.Errorf("%w: compute orders cannot be bundled", ErrValidation)
 		}
 		key, err := s.bundleSrc.CurrentObjectKey(ctx, o.DatasetID)
 		if err != nil {
-			return fmt.Errorf("bundle: resolve key for %s: %w", oid, err)
+			return nil, fmt.Errorf("bundle: resolve key for %s: %w", oid, err)
 		}
 		name, err := s.bundleSrc.SuggestFilename(ctx, o.DatasetID)
 		if err != nil {
-			return fmt.Errorf("bundle: suggest name for %s: %w", oid, err)
+			return nil, fmt.Errorf("bundle: suggest name for %s: %w", oid, err)
 		}
-		entries[i] = entry{order: o, key: key, name: name}
+		entries[i] = BundleEntry{Order: o, Key: key, Name: name}
 	}
+	return entries, nil
+}
 
-	// Stream the zip.  If an Open fails mid-stream we return the error but
-	// still call zw.Close() so the received zip is at least structurally valid
-	// up to that point.
+// BundleStream writes a zip archive of entries to w.  Caller must have already
+// called BundlePreflight successfully.  If an Open fails mid-stream the error
+// is returned but zw.Close() is still called so the zip is structurally valid
+// up to the failure point.
+func (s *Service) BundleStream(ctx context.Context, w io.Writer, entries []BundleEntry) error {
 	zw := zip.NewWriter(w)
 	var zwErr error
 	sawOne := make(map[string]bool)
 	for i, e := range entries {
-		unique := e.name
+		unique := e.Name
 		if sawOne[unique] {
-			unique = fmt.Sprintf("%s_%d", e.name, i)
+			unique = fmt.Sprintf("%s_%d", e.Name, i)
 		}
 		sawOne[unique] = true
 		if zwErr != nil {
-			continue // don't write more entries after first failure
+			continue
 		}
-		if err := streamZipEntry(ctx, s.store, zw, e.key, unique); err != nil {
-			slog.Warn("bundle stream failed", "order", e.order.ID, "key", e.key, "err", err)
+		if err := streamZipEntry(ctx, s.store, zw, e.Key, unique); err != nil {
+			slog.Warn("bundle stream failed", "order", e.Order.ID, "key", e.Key, "err", err)
 			zwErr = err
 		}
 	}

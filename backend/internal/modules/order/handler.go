@@ -234,13 +234,20 @@ func (h *handler) bundleDownload(c *gin.Context) {
 		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("order_ids is required (1-20)"))
 		return
 	}
+
+	// 1. Preflight — all validation runs before touching the response.
+	entries, err := h.svc.BundlePreflight(c.Request.Context(), httpx.UserID(c), req.OrderIDs)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+
+	// 2. Preflight passed — set zip headers and stream.
 	c.Header("Content-Type", "application/zip")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"oasis-bundle-%d.zip\"", time.Now().Unix()))
 	c.Status(http.StatusOK)
-	if err := h.svc.BundleOrders(c.Request.Context(), c.Writer, httpx.UserID(c), req.OrderIDs); err != nil {
-		// The first bytes may already have been written to the response writer
-		// (zip header), so we can't change the HTTP status.  Log and return.
-		slog.Error("bundle download failed", "user", httpx.UserID(c), "err", err)
+	if err := h.svc.BundleStream(c.Request.Context(), c.Writer, entries); err != nil {
+		slog.Error("bundle stream failed mid-write", "user", httpx.UserID(c), "err", err)
 	}
 }
 

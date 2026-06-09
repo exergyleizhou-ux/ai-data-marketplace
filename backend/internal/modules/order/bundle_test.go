@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// --- fake implementations for testing BundleOrders ---
+// --- fake implementations for testing BundlePreflight / BundleStream ---
 
 type fakeBundleStorage struct {
 	files map[string][]byte
@@ -74,9 +74,13 @@ func TestBundleOrders_PacksAllSettledIntoValidZip(t *testing.T) {
 		files: map[string][]byte{"k1": []byte("hello"), "k2": []byte("world")},
 	}
 
+	entries, err := svc.BundlePreflight(ctx, "buyer", []string{"o1", "o2"})
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
 	var buf bytes.Buffer
-	if err := svc.BundleOrders(ctx, &buf, "buyer", []string{"o1", "o2"}); err != nil {
-		t.Fatalf("BundleOrders: %v", err)
+	if err := svc.BundleStream(ctx, &buf, entries); err != nil {
+		t.Fatalf("BundleStream: %v", err)
 	}
 	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
 	if err != nil {
@@ -95,20 +99,24 @@ func TestBundleOrders_PacksAllSettledIntoValidZip(t *testing.T) {
 
 func TestBundleOrders_RejectsEmptyOrderIDs(t *testing.T) {
 	svc := newBundleSvc(nil)
-	var buf bytes.Buffer
-	if err := svc.BundleOrders(context.Background(), &buf, "buyer", nil); err == nil {
+	svc.bundleSrc = &fakeBundleSource{}
+	svc.store = &fakeBundleStorage{}
+	_, err := svc.BundlePreflight(context.Background(), "buyer", nil)
+	if err == nil {
 		t.Fatal("empty order_ids must fail")
 	}
 }
 
 func TestBundleOrders_RejectsMoreThan20(t *testing.T) {
 	svc := newBundleSvc(nil)
+	svc.bundleSrc = &fakeBundleSource{}
+	svc.store = &fakeBundleStorage{}
 	ids := make([]string, 21)
 	for i := range ids {
 		ids[i] = "o"
 	}
-	var buf bytes.Buffer
-	if err := svc.BundleOrders(context.Background(), &buf, "buyer", ids); err == nil {
+	_, err := svc.BundlePreflight(context.Background(), "buyer", ids)
+	if err == nil {
 		t.Fatal("more than 20 order_ids must fail")
 	}
 }
@@ -124,14 +132,9 @@ func TestBundleOrders_RejectsForeignOrder(t *testing.T) {
 	}
 	svc.store = &fakeBundleStorage{files: map[string][]byte{"k1": []byte("x")}}
 
-	var buf bytes.Buffer
-	err := svc.BundleOrders(ctx, &buf, "buyer", []string{"o1"})
+	_, err := svc.BundlePreflight(ctx, "buyer", []string{"o1"})
 	if err == nil {
 		t.Fatal("foreign order must fail")
-	}
-	// buf must be untouched.
-	if buf.Len() != 0 {
-		t.Fatalf("buf.Len() = %d, want 0 (no zip bytes on preflight failure)", buf.Len())
 	}
 }
 
@@ -143,8 +146,7 @@ func TestBundleOrders_RejectsNonSettledOrder(t *testing.T) {
 	svc.bundleSrc = &fakeBundleSource{keys: map[string]string{"d1": "k1"}, filenames: map[string]string{"d1": "f.csv"}}
 	svc.store = &fakeBundleStorage{files: map[string][]byte{"k1": []byte("x")}}
 
-	var buf bytes.Buffer
-	err := svc.BundleOrders(ctx, &buf, "buyer", []string{"o1"})
+	_, err := svc.BundlePreflight(ctx, "buyer", []string{"o1"})
 	if err == nil {
 		t.Fatal("non-settled order must fail")
 	}
@@ -158,8 +160,7 @@ func TestBundleOrders_RejectsComputeOrder(t *testing.T) {
 	svc.bundleSrc = &fakeBundleSource{keys: map[string]string{"d1": "k1"}, filenames: map[string]string{"d1": "f.csv"}}
 	svc.store = &fakeBundleStorage{files: map[string][]byte{"k1": []byte("x")}}
 
-	var buf bytes.Buffer
-	err := svc.BundleOrders(ctx, &buf, "buyer", []string{"o1"})
+	_, err := svc.BundlePreflight(ctx, "buyer", []string{"o1"})
 	if err == nil {
 		t.Fatal("compute order must fail")
 	}
@@ -167,7 +168,6 @@ func TestBundleOrders_RejectsComputeOrder(t *testing.T) {
 
 func TestBundleOrders_PreflightFailureDoesNotWriteZipBytes(t *testing.T) {
 	ctx := context.Background()
-	// Two orders, second belongs to another buyer.
 	svc := newBundleSvc([]Order{
 		makeOrder("o1", "buyer", "d1", StatusSettled, ProductDownload),
 		makeOrder("o2", "other-buyer", "d2", StatusSettled, ProductDownload),
@@ -178,13 +178,9 @@ func TestBundleOrders_PreflightFailureDoesNotWriteZipBytes(t *testing.T) {
 	}
 	svc.store = &fakeBundleStorage{files: map[string][]byte{"k1": []byte("x"), "k2": []byte("y")}}
 
-	var buf bytes.Buffer
-	err := svc.BundleOrders(ctx, &buf, "buyer", []string{"o1", "o2"})
+	_, err := svc.BundlePreflight(ctx, "buyer", []string{"o1", "o2"})
 	if err == nil {
 		t.Fatal("second order foreign must fail")
-	}
-	if buf.Len() != 0 {
-		t.Fatalf("buf.Len() = %d, want 0", buf.Len())
 	}
 }
 
@@ -199,15 +195,18 @@ func TestBundleOrders_StorageOpenFailureMidStreamReturnsError(t *testing.T) {
 		filenames: map[string]string{"d1": "ok.csv", "d2": "missing.csv"},
 	}
 	svc.store = &fakeBundleStorage{
-		files: map[string][]byte{"k1": []byte("ok-data")}, // k2 missing → Open error
+		files: map[string][]byte{"k1": []byte("ok-data")},
 	}
 
+	entries, err := svc.BundlePreflight(ctx, "buyer", []string{"o1", "o2"})
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
 	var buf bytes.Buffer
-	err := svc.BundleOrders(ctx, &buf, "buyer", []string{"o1", "o2"})
+	err = svc.BundleStream(ctx, &buf, entries)
 	if err == nil {
 		t.Fatal("mid-stream Open failure must return error")
 	}
-	// The zip should still be closed (structurally valid with one entry).
 	zr, zerr := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
 	if zerr != nil {
 		t.Fatalf("zip is still structurally valid after stream failure: %v", zerr)
