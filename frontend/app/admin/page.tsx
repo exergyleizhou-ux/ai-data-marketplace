@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, yuan, type Dataset, type KYC, type Order, type ComputeAlgorithm, type ComputeJob, type OutboxEntry, type ReconciliationPoint, type AuditLogEntry, type Withdrawal } from "@/lib/api";
+import { api, yuan, type Dataset, type KYC, type Order, type ComputeAlgorithm, type ComputeJob, type OutboxEntry, type ReconciliationPoint, type AuditLogEntry, type Withdrawal, type Anomaly } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
 import { Alert, Badge, Button, Card, Empty, Input, Spinner } from "@/components/ui";
 import { MiniChart } from "@/components/MiniChart";
 
-type Tab = "review" | "kyc" | "tx" | "compute" | "outbox" | "audit" | "withdraw";
+type Tab = "review" | "kyc" | "tx" | "compute" | "outbox" | "audit" | "withdraw" | "anomaly";
 
 export default function AdminPage() {
   return (
@@ -29,12 +29,13 @@ function AdminInner() {
     outbox: t("结算队列", "Settlement outbox"),
     audit: t("审计日志", "Audit logs"),
     withdraw: t("提现审批", "Withdrawals"),
+    anomaly: t("异常告警", "Anomalies"),
   };
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">{t("运营后台", "Ops Console")}</h1>
       <div className="flex flex-wrap gap-2">
-        {(["review", "kyc", "tx", "compute", "outbox", "audit", "withdraw"] as const).map((tb) => (
+        {(["review", "kyc", "tx", "compute", "outbox", "audit", "withdraw", "anomaly"] as const).map((tb) => (
           <button
             key={tb}
             onClick={() => setTab(tb)}
@@ -53,6 +54,7 @@ function AdminInner() {
       {tab === "outbox" && <SettlementOutbox />}
       {tab === "audit" && <AuditLogs />}
       {tab === "withdraw" && <WithdrawalAdmin />}
+      {tab === "anomaly" && <AnomalyList />}
     </div>
   );
 }
@@ -882,6 +884,76 @@ function WithdrawalAdmin() {
               <Button disabled={busy === r.id} onClick={() => act(r.id, "complete")}>{t("完成打款", "Complete")}</Button>
             )}
           </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function AnomalyList() {
+  const { t } = useT();
+  const [items, setItems] = useState<Anomaly[] | null>(null);
+  const [filter, setFilter] = useState("open");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState("");
+  const [notes, setNotes] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    setErr("");
+    try {
+      setItems((await api.adminListAnomalies(filter === "all" ? undefined : filter, 100)).items);
+    } catch (e) { setErr((e as Error).message); }
+  }, [filter]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function act(id: string, action: "acknowledge" | "resolve") {
+    setBusy(id); setErr("");
+    try {
+      if (action === "acknowledge") await api.adminAcknowledgeAnomaly(id, notes[id] || "");
+      else await api.adminResolveAnomaly(id, notes[id] || "");
+      await load();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(""); }
+  }
+
+  const KIND: Record<string, [string, string]> = {
+    repeated_failure: [t("频繁失败", "Repeated failure"), "repeated_failure"],
+    bulk_modification: [t("批量修改", "Bulk modification"), "bulk_modification"],
+    high_risk_action: [t("高风险操作", "High risk action"), "high_risk_action"],
+  };
+
+  if (items === null) return <Spinner />;
+  return (
+    <div className="space-y-3">
+      {err && <Alert>{err}</Alert>}
+      <div className="flex gap-2">
+        {(["open", "acknowledged", "all"] as const).map((f) => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`rounded-md px-3 py-1 text-sm ${filter === f ? "bg-neutral-900 text-white" : "border"}`}>
+            {f === "open" ? t("待处理", "Open") : f === "acknowledged" ? t("已确认", "Acknowledged") : t("全部", "All")}
+          </button>
+        ))}
+      </div>
+      {items.length === 0 ? <Empty>{t("暂无异常", "No anomalies detected")}</Empty> : items.map((a) => (
+        <Card key={a.id}>
+          <div className="flex items-center justify-between">
+            <div>
+              <Badge>{KIND[a.kind]?.[0] || a.kind}</Badge>
+              <span className="ml-2 text-xs text-neutral-500">{a.resource_pattern} · {t(`${a.count} 次`, `${a.count} times`)}</span>
+            </div>
+            <Badge>{a.status}</Badge>
+          </div>
+          <div className="mt-1 text-xs text-neutral-400">
+            {a.actor_id?.slice(0, 8) || "—"} · {a.first_seen_at?.slice(0, 19)} ~ {a.last_seen_at?.slice(0, 19)}
+          </div>
+          {a.status === "open" && (
+            <div className="mt-2 flex gap-2">
+              <Input value={notes[a.id] || ""} onChange={(e) => setNotes((n) => ({ ...n, [a.id]: e.target.value }))}
+                placeholder={t("备注", "Note")} />
+              <Button disabled={busy === a.id} onClick={() => act(a.id, "acknowledge")}>{t("确认", "Ack")}</Button>
+              <Button variant="secondary" disabled={busy === a.id} onClick={() => act(a.id, "resolve")}>{t("解决", "Resolve")}</Button>
+            </div>
+          )}
         </Card>
       ))}
     </div>

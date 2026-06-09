@@ -303,6 +303,13 @@ export type Withdrawal = {
   processed_at?: string; processed_by?: string;
 };
 
+export type Anomaly = {
+  id: string; kind: string; actor_id?: string;
+  resource_pattern: string; sample_audit_ids: number[];
+  count: number; first_seen_at: string; last_seen_at: string;
+  status: string; ops_note?: string;
+};
+
 export const tokenStore = {
   get access() {
     return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
@@ -577,6 +584,14 @@ export const api = {
     request<Withdrawal>(`/admin/withdrawals/${id}/reject`, { body: { reason } }),
   adminCompleteWithdrawal: (id: string, note?: string) =>
     request<Withdrawal>(`/admin/withdrawals/${id}/complete`, { body: { note } }),
+
+  // anomaly detection (ops)
+  adminListAnomalies: (status?: string, limit?: number, offset?: number) =>
+    request<{ items: Anomaly[] }>("/admin/anomalies", { query: { status, limit, offset } }),
+  adminAcknowledgeAnomaly: (id: string, note?: string) =>
+    request<Anomaly>(`/admin/anomalies/${id}/acknowledge`, { body: { note } }),
+  adminResolveAnomaly: (id: string, note?: string) =>
+    request<Anomaly>(`/admin/anomalies/${id}/resolve`, { body: { note } }),
 
   // audit logs (ops)
   adminListAuditLogs: (q: {
