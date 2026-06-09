@@ -10,19 +10,33 @@ type Notifier interface {
 	NotifyUser(ctx context.Context, userID, kind, title, body, resourceType, resourceID string) error
 }
 
+// DatasetReader provides a lightweight status lookup without importing dataset.
+type DatasetReader interface {
+	StatusOf(ctx context.Context, datasetID string) (string, error)
+}
+
 // Service handles watch add/remove/list and dataset-publish notification.
 type Service struct {
 	repo     Repository
 	notifier Notifier
+	ds       DatasetReader
 }
 
-func NewService(repo Repository, notifier Notifier) *Service {
-	return &Service{repo: repo, notifier: notifier}
+func NewService(repo Repository, notifier Notifier, ds DatasetReader) *Service {
+	return &Service{repo: repo, notifier: notifier, ds: ds}
 }
 
-// Add creates a watch. The dataset must exist and be reviewable/published.
+// Add creates a watch. The dataset must be published or reviewing;
+// otherwise ErrNotFound is returned (status is not disclosed to the caller).
 // Idempotent (ON CONFLICT DO NOTHING).
 func (s *Service) Add(ctx context.Context, userID, datasetID string) error {
+	status, err := s.ds.StatusOf(ctx, datasetID)
+	if err != nil {
+		return ErrNotFound
+	}
+	if status != "reviewing" && status != "published" {
+		return ErrNotFound
+	}
 	return s.repo.Add(ctx, userID, datasetID)
 }
 

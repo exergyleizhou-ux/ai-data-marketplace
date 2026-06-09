@@ -52,12 +52,14 @@ func seedUser(t *testing.T, pool *pgxpool.Pool, userID string) {
 	}
 }
 
-// genDS creates a dataset backed by a real seller user, returning the dataset UUID.
-func genDS(t *testing.T, pool *pgxpool.Pool) string {
+// genDS creates a dataset backed by a real seller user, returning the dataset UUID
+// and its current_version_id so tests can verify the INITIALISED last_notified.
+func genDS(t *testing.T, pool *pgxpool.Pool) (datasetID, versionID string) {
 	t.Helper()
 	uniq := time.Now().UnixNano()
 	sellerUUID := fmt.Sprintf("00000000-0000-0000-0000-%012x", uniq%0x1000000000000)
 	dsUUID := fmt.Sprintf("00000000-0000-0000-0000-%012x", (uniq+1)%0x1000000000000)
+	verUUID := fmt.Sprintf("00000000-0000-0000-0000-%012x", (uniq+2)%0x1000000000000)
 	_, err := pool.Exec(context.Background(),
 		`INSERT INTO users (id, account, account_type, password_hash, role)
 		 VALUES ($1,$2,'email','x','seller') ON CONFLICT DO NOTHING`,
@@ -65,6 +67,8 @@ func genDS(t *testing.T, pool *pgxpool.Pool) string {
 	if err != nil {
 		t.Fatalf("seed seller: %v", err)
 	}
+	// Insert datasets without current_version_id first (FK is circular: dataset_versions
+	// references datasets and datasets.current_version_id references dataset_versions).
 	_, err = pool.Exec(context.Background(),
 		`INSERT INTO datasets (id, seller_id, title, data_type, license_type)
 		 VALUES ($1,$2,'Test DS','text','commercial') ON CONFLICT (id) DO NOTHING`,
@@ -72,7 +76,19 @@ func genDS(t *testing.T, pool *pgxpool.Pool) string {
 	if err != nil {
 		t.Fatalf("seed dataset: %v", err)
 	}
-	return dsUUID
+	_, err = pool.Exec(context.Background(),
+		`INSERT INTO dataset_versions (id, dataset_id, version_no, content_sha256, simhash)
+		 VALUES ($1, $2, 1, 'sha-', 'sim-') ON CONFLICT DO NOTHING`,
+		verUUID, dsUUID)
+	if err != nil {
+		t.Fatalf("seed version: %v", err)
+	}
+	_, err = pool.Exec(context.Background(),
+		`UPDATE datasets SET current_version_id = $1 WHERE id = $2`, verUUID, dsUUID)
+	if err != nil {
+		t.Fatalf("set current_version_id: %v", err)
+	}
+	return dsUUID, verUUID
 }
 
 func TestAdd_Idempotent(t *testing.T) {
@@ -81,7 +97,7 @@ func TestAdd_Idempotent(t *testing.T) {
 	ctx := context.Background()
 	pool := repo.(*pgRepo).pool
 	seedUser(t, pool, "user-idax")
-	dsID := genDS(t, pool)
+	dsID, _ := genDS(t, pool)
 
 	if err := repo.Add(ctx, "user-idax", dsID); err != nil {
 		t.Fatal(err)
@@ -99,24 +115,29 @@ func TestAdd_Idempotent(t *testing.T) {
 	}
 }
 
-// TestAdd_CreatesRow verifies Add creates a watch row (non-nil).
-func TestAdd_CreatesRow(t *testing.T) {
+// TestAdd_InitializesLastNotifiedToCurrentVersion verifies the key spec
+// requirement: Add sets last_notified_version_id = datasets.current_version_id
+// so watchers only receive notifications for future versions.
+func TestAdd_InitializesLastNotifiedToCurrentVersion(t *testing.T) {
 	repo, cleanup := testRepo(t)
 	defer cleanup()
 	ctx := context.Background()
 	pool := repo.(*pgRepo).pool
-	seedUser(t, pool, "user-addx")
-	dsID := genDS(t, pool)
+	seedUser(t, pool, "user-init")
+	dsID, expectedVer := genDS(t, pool)
 
-	if err := repo.Add(ctx, "user-addx", dsID); err != nil {
+	if err := repo.Add(ctx, "user-init", dsID); err != nil {
 		t.Fatal(err)
 	}
-	var got string
-	if err := pool.QueryRow(ctx, `SELECT user_id FROM dataset_watches WHERE dataset_id=$1`, dsID).Scan(&got); err != nil {
-		t.Fatalf("watch must exist after Add: %v", err)
+	var gotVer string
+	if err := pool.QueryRow(ctx,
+		`SELECT COALESCE(last_notified_version_id::text,'')
+		 FROM dataset_watches WHERE user_id=$1 AND dataset_id=$2`,
+		"user-init", dsID).Scan(&gotVer); err != nil {
+		t.Fatalf("read watch row: %v", err)
 	}
-	if got != "user-addx" {
-		t.Fatalf("user = %q, want user-addx", got)
+	if gotVer != expectedVer {
+		t.Fatalf("last_notified_version_id = %q, want %q", gotVer, expectedVer)
 	}
 }
 
@@ -126,7 +147,7 @@ func TestRemove_DeletesRow(t *testing.T) {
 	ctx := context.Background()
 	pool := repo.(*pgRepo).pool
 	seedUser(t, pool, "user-rmx")
-	dsID := genDS(t, pool)
+	dsID, _ := genDS(t, pool)
 	repo.Add(ctx, "user-rmx", dsID)
 
 	if err := repo.Remove(ctx, "user-rmx", dsID); err != nil {
@@ -154,8 +175,8 @@ func TestListByUser_ReturnsOwnOnly(t *testing.T) {
 	pool := repo.(*pgRepo).pool
 	seedUser(t, pool, "user-LAx")
 	seedUser(t, pool, "user-LBx")
-	ds1 := genDS(t, pool)
-	ds2 := genDS(t, pool)
+	ds1, _ := genDS(t, pool)
+	ds2, _ := genDS(t, pool)
 
 	repo.Add(ctx, "user-LAx", ds1)
 	repo.Add(ctx, "user-LAx", ds2)
@@ -183,7 +204,7 @@ func TestListByDataset_ReturnsAllWatchers(t *testing.T) {
 	seedUser(t, pool, "user-Wx1")
 	seedUser(t, pool, "user-Wx2")
 	seedUser(t, pool, "user-Wx3")
-	dsID := genDS(t, pool)
+	dsID, _ := genDS(t, pool)
 
 	repo.Add(ctx, "user-Wx1", dsID)
 	repo.Add(ctx, "user-Wx2", dsID)
@@ -204,8 +225,8 @@ func TestMarkNotified_UpdatesOnlyMatchingRow(t *testing.T) {
 	ctx := context.Background()
 	pool := repo.(*pgRepo).pool
 	seedUser(t, pool, "user-MNx")
-	ds1 := genDS(t, pool)
-	ds2 := genDS(t, pool)
+	ds1, _ := genDS(t, pool)
+	ds2, _ := genDS(t, pool)
 	newVer := fmt.Sprintf("00000000-0000-0000-0000-%012x", time.Now().UnixNano()%0x1000000000000)
 
 	repo.Add(ctx, "user-MNx", ds1)
@@ -222,7 +243,9 @@ func TestMarkNotified_UpdatesOnlyMatchingRow(t *testing.T) {
 	if v1 != newVer {
 		t.Fatalf("ds1 last_notified = %q, want %q", v1, newVer)
 	}
-	if v2 != "" {
-		t.Fatalf("ds2 last_notified = %q, want empty (unchanged)", v2)
+	// ds2 was added via Add so its last_notified is initialised to its own
+	// current_version_id, not empty. It should be unchanged (still its own ver).
+	if v2 == "" || v2 == newVer {
+		t.Fatalf("ds2 last_notified = %q, want its own initial version (not empty and not %q)", v2, newVer)
 	}
 }

@@ -262,7 +262,7 @@ func (s *Server) routes() {
 
 		// Watchlist: dataset watching + new-version notification.
 		watchRepo := watchlist.NewRepository(s.db)
-		watchSvc := watchlist.NewService(watchRepo, notifySvc)
+		watchSvc := watchlist.NewService(watchRepo, notifySvc, watchlistDatasetAdapter{ds: dsSvc})
 		watchlist.Register(api, watchSvc, authMW)
 		dsSvc.SetWatchersNotifier(watchSvc)
 		// compute certs: registered in compute module via the same interface
@@ -515,4 +515,15 @@ func sanitiseFilename(s string) string {
 		return "dataset"
 	}
 	return string(out)
+}
+
+// watchlistDatasetAdapter bridges dataset.Service to watchlist.DatasetReader.
+type watchlistDatasetAdapter struct{ ds *dataset.Service }
+
+func (a watchlistDatasetAdapter) StatusOf(ctx context.Context, datasetID string) (string, error) {
+	d, err := a.ds.Get(ctx, datasetID)
+	if err != nil {
+		return "", err
+	}
+	return d.Status, nil
 }
