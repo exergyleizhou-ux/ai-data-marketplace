@@ -253,6 +253,18 @@ export type EarningsByDataset = {
   last_order_at: string;
 };
 
+export type Notification = {
+  id: string;
+  user_id: string;
+  kind: string;
+  title: string;
+  body?: string;
+  resource_type?: string;
+  resource_id?: string;
+  is_read: boolean;
+  created_at?: string;
+};
+
 export const tokenStore = {
   get access() {
     return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
@@ -479,6 +491,24 @@ export const api = {
       "/sellers/me/earnings/timeseries", { query: { days } }),
   sellerEarningsByDataset: () =>
     request<{ items: EarningsByDataset[] }>("/sellers/me/earnings/by-dataset"),
+
+  // notifications
+  listNotifications: (limit?: number, offset?: number) =>
+    request<{ items: Notification[] }>("/users/me/notifications", { query: { limit, offset } }),
+  countUnreadNotifications: () =>
+    request<{ unread: number }>("/users/me/notifications/unread-count"),
+  markNotificationRead: (id: string) =>
+    request<{ ok: boolean }>(`/users/me/notifications/${id}/read`, { method: "POST" }),
+  markAllNotificationsRead: () =>
+    request<{ marked: number }>("/users/me/notifications/read-all", { method: "POST" }),
+
+  // certificate verification (public)
+  verifyCertificate: (certId: string) =>
+    request<{
+      cert_id: string; resource_type: string; resource_id: string;
+      registered_at: string; status: string; verifiable: boolean;
+      statement_zh: string; statement_en: string;
+    }>(`/verify/${certId}`, { auth: false }),
 
   // compute-to-data (C2D / 可用不可见)
   getComputeOffer: (id: string) =>

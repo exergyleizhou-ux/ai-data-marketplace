@@ -21,9 +21,11 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/compute"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/dataset"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/delivery"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/notification"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/order"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/payment"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/search"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/verify"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/metrics"
@@ -234,6 +236,20 @@ func (s *Server) routes() {
 
 		orderSvc := order.NewService(order.NewRepository(s.db), authSvc, datasetPurchaseAdapter{ds: dsSvc}, rec)
 		order.Register(api, orderSvc, authMW, auth.RequireRole("ops", "admin"))
+
+		// Notification module: user-facing event feed (order paid/settled/disputed,
+		// quality done, compute released). Wired as a Notifier into order + dataset.
+		notifySvc := notification.NewService(notification.NewRepository(s.db))
+		notification.Register(api, notifySvc, authMW)
+		orderSvc.SetNotifier(notifySvc)     // order events → buyer/seller notifications
+		dsSvc.SetQualityNotifier(notifySvc) // quality done → seller notification
+
+		// Certificate verification: public lookup endpoint + cert registration.
+		verifyRepo := verify.NewRepository(s.db)
+		verify.Register(api, verifyRepo)
+		dsSvc.SetCertRegistrar(verifyRepo) // dataset certs → registered for public lookup
+		// compute certs: registered in compute module via the same interface
+		// (wired below after computeSvc is constructed)
 
 		// Payment + split-settlement provider selection.
 		//  - stripe: REAL Stripe Connect (test mode = free). Separate charges &

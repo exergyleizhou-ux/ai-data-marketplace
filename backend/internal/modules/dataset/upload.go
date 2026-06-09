@@ -196,7 +196,21 @@ func (s *Service) processQuality(ctx context.Context, job qualityJob) error {
 		Detail: map[string]any{"passed": !failed, "next_status": next},
 	})
 	metrics.RecordQualityJob(next)
-	return s.repo.SetStatus(ctx, d.ID, next)
+	if err := s.repo.SetStatus(ctx, d.ID, next); err != nil {
+		return err
+	}
+	if s.notifier != nil {
+		if failed {
+			_ = s.notifier.NotifyUser(ctx, d.SellerID, "quality_done",
+				"质检未通过", "数据集「"+d.Title+"」质检发现问题，请查看质量报告并修正后重新上传。",
+				"dataset", d.ID)
+		} else {
+			_ = s.notifier.NotifyUser(ctx, d.SellerID, "quality_done",
+				"质检已通过", "数据集「"+d.Title+"」已通过质量筛查，等待运营审核上架。",
+				"dataset", d.ID)
+		}
+	}
+	return nil
 }
 
 // UploadStatus reports upload progress plus the dataset's current status.

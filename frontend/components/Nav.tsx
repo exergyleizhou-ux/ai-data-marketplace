@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { BRAND } from "@/lib/brand";
 import { useT, LangToggle } from "@/lib/i18n";
+import { api } from "@/lib/api";
 import { Badge } from "./ui";
 
 const LINKS = [
@@ -20,6 +22,12 @@ export function Nav() {
   const pathname = usePathname();
   const router = useRouter();
   const isOps = user?.role === "ops" || user?.role === "admin";
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    api.countUnreadNotifications().then((r) => setUnread(r.unread)).catch(() => {});
+  }, [user]);
 
   return (
     <header className="sticky top-0 z-10 border-b border-neutral-200 bg-white/80 backdrop-blur">
@@ -54,6 +62,17 @@ export function Nav() {
           <LangToggle />
           {loading ? null : user ? (
             <>
+              <Link href="/notifications" className="relative text-neutral-500 hover:text-neutral-900" title={t("通知", "Notifications")}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                {unread > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
+              </Link>
               <Link href="/account" className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900">
                 <span className="max-w-[10rem] truncate">{user.account}</span>
                 <Badge>{user.kyc_status}</Badge>
