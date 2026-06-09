@@ -2,7 +2,11 @@ package order
 
 import (
 	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -220,6 +224,24 @@ func (h *handler) sellerEarningsByDataset(c *gin.Context) {
 		items = []EarningsByDataset{}
 	}
 	httpx.OK(c, gin.H{"items": items})
+}
+
+func (h *handler) bundleDownload(c *gin.Context) {
+	var req struct {
+		OrderIDs []string `json:"order_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.OrderIDs) == 0 {
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("order_ids is required (1-20)"))
+		return
+	}
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"oasis-bundle-%d.zip\"", time.Now().Unix()))
+	c.Status(http.StatusOK)
+	if err := h.svc.BundleOrders(c.Request.Context(), c.Writer, httpx.UserID(c), req.OrderIDs); err != nil {
+		// The first bytes may already have been written to the response writer
+		// (zip header), so we can't change the HTTP status.  Log and return.
+		slog.Error("bundle download failed", "user", httpx.UserID(c), "err", err)
+	}
 }
 
 // parseDays returns (days, true) when raw is a valid integer 1-90.

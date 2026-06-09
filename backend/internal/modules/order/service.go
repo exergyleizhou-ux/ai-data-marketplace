@@ -61,15 +61,17 @@ type Notifier interface {
 
 // Service holds order business logic and drives the status state machine.
 type Service struct {
-	repo     Repository
-	identity IdentityChecker
-	datasets DatasetReader
-	audit    audit.Recorder
-	settle   SettlementTrigger
-	refund   RefundTrigger
-	compute  ComputeRevoker
-	granter  ComputeGranter
-	notifier Notifier
+	repo      Repository
+	identity  IdentityChecker
+	datasets  DatasetReader
+	audit     audit.Recorder
+	settle    SettlementTrigger
+	refund    RefundTrigger
+	compute   ComputeRevoker
+	granter   ComputeGranter
+	notifier  Notifier
+	bundleSrc BundleSource
+	store     fileOpener
 }
 
 func NewService(repo Repository, identity IdentityChecker, datasets DatasetReader, rec audit.Recorder) *Service {
@@ -97,6 +99,12 @@ func (s *Service) SetComputeGranter(g ComputeGranter) { s.granter = g }
 // SetNotifier wires the notification emitter so order lifecycle events produce
 // user-facing notifications. Optional (may be nil in tests).
 func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// SetBundleSource wires the bundle-download dependencies (object store + key/name resolver).
+func (s *Service) SetBundleSource(src BundleSource, store fileOpener) {
+	s.bundleSrc = src
+	s.store = store
+}
 
 // CreateCompute places a compute (C2D) order priced by the caller (the compute
 // module passes the offer price). Same KYC / self-purchase / fee-split / state

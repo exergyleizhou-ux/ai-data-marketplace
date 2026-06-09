@@ -245,6 +245,11 @@ func (s *Server) routes() {
 		orderSvc.SetNotifier(notifySvc)     // order events → buyer/seller notifications
 		dsSvc.SetQualityNotifier(notifySvc) // quality done → seller notification
 
+		// Bundle download: orderSvc needs object storage + dataset key resolver.
+		if store != nil {
+			orderSvc.SetBundleSource(datasetBundleAdapter{ds: dsSvc}, store)
+		}
+
 		// Certificate verification: public lookup endpoint + cert registration.
 		verifyRepo := verify.NewRepository(s.db)
 		verify.Register(api, verifyRepo)
@@ -458,4 +463,49 @@ func (a datasetSearchAdapter) SearchPublished(ctx context.Context, q search.Sear
 		}
 	}
 	return out, nil
+}
+
+// datasetBundleAdapter bridges dataset.Service to order.BundleSource.
+type datasetBundleAdapter struct{ ds *dataset.Service }
+
+func (a datasetBundleAdapter) CurrentObjectKey(ctx context.Context, datasetID string) (string, error) {
+	return a.ds.CurrentObjectKey(ctx, datasetID)
+}
+func (a datasetBundleAdapter) SuggestFilename(ctx context.Context, datasetID string) (string, error) {
+	d, err := a.ds.Get(ctx, datasetID)
+	if err != nil {
+		return "", err
+	}
+	title := d.Title
+	if title == "" {
+		title = datasetID
+	}
+	ext := ".bin"
+	switch d.DataType {
+	case "csv", "text/csv":
+		ext = ".csv"
+	case "json", "application/json":
+		ext = ".json"
+	case "parquet":
+		ext = ".parquet"
+	default:
+		ext = ".txt"
+	}
+	return sanitiseFilename(title) + ext, nil
+}
+
+func sanitiseFilename(s string) string {
+	out := make([]byte, 0, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' {
+			out = append(out, c)
+		} else if c == ' ' {
+			out = append(out, '_')
+		}
+	}
+	if len(out) == 0 {
+		return "dataset"
+	}
+	return string(out)
 }

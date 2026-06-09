@@ -35,4 +35,5 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	// Seller analytics.
 	authed.GET("/sellers/me/earnings/timeseries", h.sellerEarningsTimeseries)
 	authed.GET("/sellers/me/earnings/by-dataset", h.sellerEarningsByDataset)
+	authed.POST("/users/me/orders/bundle", h.bundleDownload)
 }
