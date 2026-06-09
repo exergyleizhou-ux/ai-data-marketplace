@@ -265,6 +265,19 @@ export type Notification = {
   created_at?: string;
 };
 
+export type AuditLogEntry = {
+  id: number;
+  actor_id?: string;
+  actor_role?: string;
+  action: string;
+  resource_type?: string;
+  resource_id?: string;
+  ip?: string;
+  user_agent?: string;
+  detail?: Record<string, unknown>;
+  created_at: string;
+};
+
 export const tokenStore = {
   get access() {
     return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
@@ -509,6 +522,21 @@ export const api = {
       registered_at: string; status: string; verifiable: boolean;
       statement_zh: string; statement_en: string;
     }>(`/verify/${certId}`, { auth: false }),
+
+  // audit logs (ops)
+  adminListAuditLogs: (q: {
+    actor?: string;
+    action?: string;
+    resource_type?: string;
+    resource_id?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }) => request<{ items: AuditLogEntry[]; limit: number; offset: number; next_offset?: number }>(
+    "/admin/audit-logs",
+    { query: q as Record<string, string | number | undefined> },
+  ),
 
   // compute-to-data (C2D / 可用不可见)
   getComputeOffer: (id: string) =>
