@@ -310,6 +310,20 @@ export type Anomaly = {
   status: string; ops_note?: string;
 };
 
+export type DataExportJob = {
+  id: string; user_id: string; status: string;
+  download_url?: string; object_bytes?: number;
+  expires_at?: string; error?: string;
+  requested_at: string; ready_at?: string;
+};
+
+export type DeletionRequest = {
+  id: string; user_id: string; reason?: string;
+  status: string; cooling_until: string;
+  ops_note?: string; requested_at: string;
+  processed_at?: string; processed_by?: string;
+};
+
 export const tokenStore = {
   get access() {
     return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
@@ -592,6 +606,36 @@ export const api = {
     request<Anomaly>(`/admin/anomalies/${id}/acknowledge`, { body: { note } }),
   adminResolveAnomaly: (id: string, note?: string) =>
     request<Anomaly>(`/admin/anomalies/${id}/resolve`, { body: { note } }),
+
+  // compliance — data export + account deletion
+  requestDataExport: () => request<DataExportJob>("/users/me/data-export", { body: {} }),
+  getMyDataExport: () => request<DataExportJob>("/users/me/data-export"),
+  downloadMyDataExport: async () => {
+    const res = await fetch(buildURL("/users/me/data-export/download"), {
+      headers: tokenStore.access ? { Authorization: `Bearer ${tokenStore.access}` } : {},
+    });
+    if (!res.ok) throw new ApiError(-1, res.status, "下载失败");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `oasis-data-export-${Date.now()}.zip`;
+    document.body.appendChild(a);
+    a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  },
+  requestAccountDeletion: (reason: string) =>
+    request<DeletionRequest>("/users/me/account/deletion", { body: { reason } }),
+  cancelAccountDeletion: () =>
+    request<{ ok: boolean; id: string; status: string }>("/users/me/account/deletion", { method: "DELETE" }),
+  adminListDeletions: (status?: string, limit?: number, offset?: number) =>
+    request<{ items: DeletionRequest[] }>("/admin/account-deletions", { query: { status, limit, offset } }),
+  adminApproveDeletion: (id: string, note?: string) =>
+    request<DeletionRequest>(`/admin/account-deletions/${id}/approve`, { body: { note } }),
+  adminRejectDeletion: (id: string, reason: string) =>
+    request<DeletionRequest>(`/admin/account-deletions/${id}/reject`, { body: { reason } }),
+  adminExecuteDeletion: (id: string, note?: string) =>
+    request<DeletionRequest>(`/admin/account-deletions/${id}/execute`, { body: { note } }),
 
   // audit logs (ops)
   adminListAuditLogs: (q: {
