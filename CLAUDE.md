@@ -97,6 +97,10 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
   caused preflight failures (foreign order→403, non-settled→409, compute→400) to return `200 OK +
   Content-Type: application/zip + empty body`. Fix: split into Preflight (returns json error via
   `fail(c, err)`) + Stream (sets zip headers after preflight passes). PR-K fix.
+- **Watchlist Add initialises `last_notified_version_id` from `datasets.current_version_id`**: the
+  `INSERT … SELECT $1, $2, current_version_id FROM datasets WHERE id = $2` pattern ensures new
+  watchers only receive notifications for future versions, avoiding a spurious notification on the
+  current version. PR-L.
 
 ## C2D / privacy compute (信任阶梯 L0→L3)
 
