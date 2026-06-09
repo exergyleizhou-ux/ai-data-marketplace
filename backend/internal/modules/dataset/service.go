@@ -54,6 +54,15 @@ type Service struct {
 
 	// Optional cert registrar for public verification.
 	certReg CertRegistrar
+
+	// WatchersNotifier is injected by the server so the dataset module can
+	// notify watchers on publish without importing watchlist.
+	watchersNotifier WatchersNotifier
+}
+
+// WatchersNotifier is called (async) when a dataset is published.
+type WatchersNotifier interface {
+	NotifyDatasetPublished(ctx context.Context, datasetID, newVersionID, datasetTitle string)
 }
 
 // QualityNotifier emits a notification when quality checks finish.
@@ -168,6 +177,9 @@ func (s *Service) SetQualityNotifier(n QualityNotifier) { s.notifier = n }
 // SetCertRegistrar wires the cert registrar so dataset certificates are
 // registered for public lookup.
 func (s *Service) SetCertRegistrar(r CertRegistrar) { s.certReg = r }
+
+// SetWatchersNotifier wires the watchlist notification emitter.
+func (s *Service) SetWatchersNotifier(w WatchersNotifier) { s.watchersNotifier = w }
 
 // Close drains and stops the quality workers (no-op if async wasn't enabled).
 func (s *Service) Close() {

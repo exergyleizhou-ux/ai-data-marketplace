@@ -52,6 +52,14 @@ func (s *Service) Review(ctx context.Context, opsID, id string, approve bool, no
 		ResourceType: "dataset", ResourceID: id, Detail: map[string]any{"note": note},
 	})
 	d.Status = to
+
+	// Notify watchers asynchronously on publish (PR-L).
+	if to == StatusPublished && s.watchersNotifier != nil {
+		go s.watchersNotifier.NotifyDatasetPublished(
+			context.Background(), d.ID, d.CurrentVersionID, d.Title,
+		)
+	}
+
 	return d, nil
 }
 
