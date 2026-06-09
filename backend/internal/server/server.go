@@ -245,7 +245,19 @@ func (s *Server) routes() {
 
 		// Notification module: user-facing event feed (order paid/settled/disputed,
 		// quality done, compute released). Wired as a Notifier into order + dataset.
-		notifySvc := notification.NewService(notification.NewRepository(s.db))
+		notifyRepo := notification.NewRepository(s.db)
+		prefsRepo := notification.NewPreferencesRepository(s.db)
+		emailLogRepo := notification.NewEmailLogRepository(s.db)
+		var emailSender notification.EmailSender
+		if host := os.Getenv("SMTP_HOST"); host != "" {
+			emailSender = notification.NewSMTPSender(host, envDefault("SMTP_PORT", "587"),
+				os.Getenv("SMTP_USER"), os.Getenv("SMTP_PASS"),
+				envDefault("SMTP_FROM_ADDR", "noreply@verdant-oasis.dev"),
+				envDefault("SMTP_FROM_NAME", "绿洲 Verdant Oasis"))
+			slog.Info("notification email channel enabled", "smtp", host)
+		}
+		notifySvc := notification.NewServiceWithChannels(notifyRepo, prefsRepo, emailSender, emailLogRepo,
+			notificationUserLookup{pool: s.db})
 		notification.Register(api, notifySvc, authMW)
 		orderSvc.SetNotifier(notifySvc)     // order events → buyer/seller notifications
 		dsSvc.SetQualityNotifier(notifySvc) // quality done → seller notification
@@ -718,4 +730,22 @@ func (a complianceSourceAdapter) ComputeJobs(ctx context.Context, userID string)
 		out = append(out, map[string]any{"id": id, "dataset_id": dsID, "status": status, "output_kind": kind, "created_at": createdAt})
 	}
 	return out, nil
+}
+
+// notificationUserLookup bridges users table to notification.UserLookup.
+type notificationUserLookup struct{ pool *pgxpool.Pool }
+
+func (a notificationUserLookup) EmailOf(ctx context.Context, userID string) (string, error) {
+	var account string
+	if err := a.pool.QueryRow(ctx, `SELECT account FROM users WHERE id=$1`, userID).Scan(&account); err != nil {
+		return "", err
+	}
+	return account, nil
+}
+
+func envDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }

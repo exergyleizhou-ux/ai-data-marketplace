@@ -21,6 +21,11 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW gin.HandlerFunc) {
 	u.GET("/unread-count", h.countUnread)
 	u.POST("/read-all", h.markAllRead)
 	u.POST("/:id/read", h.markRead)
+
+	p := rg.Group("/users/me/notification-preferences")
+	p.Use(authMW)
+	p.GET("", h.getPreferences)
+	p.PUT("", h.updatePreference)
 }
 
 func (h *handler) list(c *gin.Context) {
@@ -61,6 +66,37 @@ func (h *handler) markAllRead(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"marked": n})
+}
+
+type prefUpdateReq struct {
+	Kind         string `json:"kind"`
+	EmailEnabled bool   `json:"email_enabled"`
+	InAppEnabled bool   `json:"in_app_enabled"`
+}
+
+func (h *handler) getPreferences(c *gin.Context) {
+	prefs, err := h.svc.GetPreferences(c.Request.Context(), httpx.UserID(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	if prefs == nil {
+		prefs = map[string]NotificationPreference{}
+	}
+	httpx.OK(c, gin.H{"items": prefs})
+}
+
+func (h *handler) updatePreference(c *gin.Context) {
+	var req prefUpdateReq
+	if err := c.ShouldBindJSON(&req); err != nil || req.Kind == "" {
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage("kind is required"))
+		return
+	}
+	if err := h.svc.UpdatePreference(c.Request.Context(), httpx.UserID(c), req.Kind, req.EmailEnabled, req.InAppEnabled); err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"kind": req.Kind, "email_enabled": req.EmailEnabled, "in_app_enabled": req.InAppEnabled})
 }
 
 func fail(c *gin.Context, err error) {
