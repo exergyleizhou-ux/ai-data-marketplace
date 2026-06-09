@@ -112,6 +112,11 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
   state in the `pending→approved→completed` state machine. From `completed`, ALL transitions
   must return `ErrBadTransition`. This guard sits in `pgRepo.Transition` before the optimistic-lock
   UPDATE. PR-P.
+- **Anomaly unique index must use only IMMUTABLE expressions**: `DATE(col)` / `col::date`
+  are STABLE, not IMMUTABLE, so they cannot appear in a real unique index. Use a
+  partial unique index `WHERE status='open'` with `COALESCE(actor_id::text,'')` instead. PR-Q.
+- **Anomaly scanner must NOT read from work-queue channels as a stop signal**: same lesson
+  as PR-J. The anomaly scanner uses `ctx.Done()` + `ticker.C` only. PR-Q.
 - **Integration tests must NEVER `DROP TABLE … CASCADE`**: even with `IF EXISTS`, dropping a
   production table destroys schema for every other test in a `-p 1` run.  Use `TRUNCATE TABLE`
   (idempotent, schema-preserving) to clean rows between tests, never DROP.  PR #74
