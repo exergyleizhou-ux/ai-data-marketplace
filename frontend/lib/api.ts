@@ -581,6 +581,35 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 
+  // Bundle download: zip multiple settled download orders into a single file.
+  bundleDownload: async (orderIds: string[]) => {
+    const res = await fetch(buildURL("/users/me/orders/bundle"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(tokenStore.access ? { Authorization: `Bearer ${tokenStore.access}` } : {}),
+      },
+      body: JSON.stringify({ order_ids: orderIds }),
+    });
+    if (!res.ok) {
+      let msg = "打包下载失败";
+      try {
+        const j = await res.json();
+        msg = j.message || msg;
+      } catch { /* non-json body */ }
+      throw new ApiError(-1, res.status, msg);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `oasis-bundle-${Date.now()}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
   // federated (L3) compute
   submitFederatedJob: (b: {
     algorithm_id: string;
