@@ -152,3 +152,12 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
   branch overwrites: `doEmail = p.EmailEnabled && s.email != nil`. Without the
   second `&& s.email != nil`, an opt-in user with `SMTP_HOST` unset crashes.
   Pattern at `notification.Service.NotifyUser`. PR-T.
+
+- **TraceID middleware must register BEFORE recovery/metrics in the gin chain**:
+  placing it after means panic recovery logs won't have trace_id.  Always first
+  middleware after CORS/RequestID.  PR-U.
+
+- **WebhookAlerter must treat 4xx and 5xx differently**: 4xx is a configuration
+  error on the receiver side (retrying won't help) → no error returned. 5xx is
+  transient → return error for logging.  Also use `http.Client{Timeout: 5s}` to
+  prevent the anomaly scanner from hanging on a dead webhook target.  PR-U.
