@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, yuan, type KYC, type EarningsPoint, type EarningsByDataset } from "@/lib/api";
+import { api, yuan, type KYC, type EarningsPoint, type EarningsByDataset, type Watch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
 import { FederatedComputePanel, PSIComputePanel } from "@/components/Compute";
+import Link from "next/link";
 import { MiniChart } from "@/components/MiniChart";
 import { Alert, Badge, Button, Card, Field, Input, Select, Spinner } from "@/components/ui";
 
@@ -145,6 +146,8 @@ function AccountInner() {
 
       {user.role === "seller" || user.role === "both" ? <SellerAnalytics /> : null}
 
+      <WatchlistCard />
+
       <FederatedComputePanel />
       <PSIComputePanel />
     </div>
@@ -252,6 +255,38 @@ function SellerAnalytics() {
       {byDs && byDs.length === 0 && (
         <p className="text-sm text-neutral-400">{t("暂无已售数据集", "No sold datasets yet")}</p>
       )}
+    </Card>
+  );
+}
+
+function WatchlistCard() {
+  const { t } = useT();
+  const [items, setItems] = useState<Watch[] | null>(null);
+
+  useEffect(() => {
+    api.listMyWatches().then((r) => setItems(r.items)).catch(() => setItems(null));
+  }, []);
+
+  if (items === null) return null;
+  if (items.length === 0) return null;
+
+  return (
+    <Card>
+      <h2 className="mb-2 font-semibold">
+        {t("关注的数据集", "Watched datasets")} <span className="font-normal text-neutral-400">/ Watchlist</span>
+      </h2>
+      <div className="space-y-1">
+        {items.map((w) => (
+          <Link
+            key={w.dataset_id}
+            href={`/datasets/${w.dataset_id}`}
+            className="flex items-center justify-between rounded px-2 py-1 text-sm hover:bg-neutral-50"
+          >
+            <span>{w.dataset_title || w.dataset_id.slice(0, 8)}</span>
+            <span className="text-xs text-neutral-400">{w.created_at?.slice(0, 10)}</span>
+          </Link>
+        ))}
+      </div>
     </Card>
   );
 }

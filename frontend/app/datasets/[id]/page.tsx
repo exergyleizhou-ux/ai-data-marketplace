@@ -35,6 +35,8 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
   const [err, setErr] = useState("");
   const [buying, setBuying] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [watching, setWatching] = useState(false);
+  const [watchBusy, setWatchBusy] = useState(false);
 
   useEffect(() => {
     api.getDataset(id).then(setDs).catch(() => setNotFound(true));
@@ -42,7 +44,22 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
     api.datasetQuality(id).then((r) => setQuality(r.checks)).catch(() => setQuality([]));
     api.datasetVersions(id).then((r) => setVersions(r.versions)).catch(() => {});
     api.datasetCertificate(id).then(setCert).catch(() => {});
+    api.listMyWatches().then((r) => setWatching(r.items.some((w) => w.dataset_id === id))).catch(() => {});
   }, [id]);
+
+  async function toggleWatch() {
+    setWatchBusy(true);
+    try {
+      if (watching) {
+        await api.unwatchDataset(id);
+        setWatching(false);
+      } else {
+        await api.watchDataset(id);
+        setWatching(true);
+      }
+    } catch { /* silent */ }
+    finally { setWatchBusy(false); }
+  }
 
   async function loadPreview() {
     setPreviewErr("");
@@ -80,7 +97,17 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
             <Badge>{ds.status}</Badge>
             {ds.domain && <span className="text-xs text-neutral-400">{ds.domain}</span>}
           </div>
-          <h1 className="mt-2 text-2xl font-semibold">{ds.title}</h1>
+          <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold">
+            {ds.title}
+            <button
+              onClick={toggleWatch}
+              disabled={watchBusy}
+              className="text-xl"
+              title={watching ? "取消收藏" : "收藏"}
+            >
+              {watching ? "⭐" : "☆"}
+            </button>
+          </h1>
           <p className="mt-2 whitespace-pre-wrap text-neutral-600">{ds.description || t("（无描述）", "(no description)")}</p>
         </div>
 

@@ -21,6 +21,7 @@ const KIND: Record<string, [string, string]> = {
   order_disputed: ["订单纠纷", "Order disputed"],
   quality_done: ["质检完成", "Quality done"],
   compute_released: ["计算结果已放行", "Compute released"],
+  dataset_updated: ["数据集有更新", "Dataset updated"],
 };
 
 function Inner() {

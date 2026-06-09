@@ -278,6 +278,13 @@ export type AuditLogEntry = {
   created_at: string;
 };
 
+export type Watch = {
+  dataset_id: string;
+  dataset_title?: string;
+  last_notified_version_id?: string;
+  created_at: string;
+};
+
 export const tokenStore = {
   get access() {
     return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
@@ -522,6 +529,11 @@ export const api = {
       registered_at: string; status: string; verifiable: boolean;
       statement_zh: string; statement_en: string;
     }>(`/verify/${certId}`, { auth: false }),
+
+  // watchlist
+  watchDataset:   (id: string) => request<{ ok: boolean }>(`/datasets/${id}/watch`, { method: "POST" }),
+  unwatchDataset: (id: string) => request<{ ok: boolean }>(`/datasets/${id}/watch`, { method: "DELETE" }),
+  listMyWatches:  () => request<{ items: Watch[] }>("/users/me/watched"),
 
   // audit logs (ops)
   adminListAuditLogs: (q: {
