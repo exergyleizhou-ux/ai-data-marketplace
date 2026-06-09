@@ -7,15 +7,20 @@ import (
 )
 
 type Service struct {
-	repo  Repository
-	rules []Rule
-	db    DBQuerier
+	repo    Repository
+	rules   []Rule
+	db      DBQuerier
+	alerter Alerter
 }
 
-func NewService(repo Repository, db DBQuerier) *Service {
+func NewService(repo Repository, db DBQuerier, alerter Alerter) *Service {
+	if alerter == nil {
+		alerter = NopAlerter{}
+	}
 	return &Service{
-		repo: repo,
-		db:   db,
+		repo:    repo,
+		db:      db,
+		alerter: alerter,
 		rules: []Rule{
 			&RepeatedFailureRule{},
 			&BulkModificationRule{},
@@ -24,7 +29,7 @@ func NewService(repo Repository, db DBQuerier) *Service {
 	}
 }
 
-// ScanOnce 跑一轮扫描,返回 upsert 数。便于测试。
+// ScanOnce runs all detection rules and alerts on newly created anomalies.
 func (s *Service) ScanOnce(ctx context.Context) (int, error) {
 	since := time.Now().Add(-1 * time.Hour)
 	total := 0
@@ -35,8 +40,13 @@ func (s *Service) ScanOnce(ctx context.Context) (int, error) {
 			continue
 		}
 		for _, a := range anomalies {
-			if err := s.repo.Upsert(ctx, a); err != nil {
+			isNew, err := s.repo.UpsertReturningIsNew(ctx, a)
+			if err != nil {
 				slog.Warn("anomaly upsert failed", "kind", a.Kind, "err", err)
+				continue
+			}
+			if isNew {
+				alertNew(s.alerter, ctx, a)
 			}
 			total++
 		}
@@ -44,12 +54,11 @@ func (s *Service) ScanOnce(ctx context.Context) (int, error) {
 	return total, nil
 }
 
-// StartScanner 后台 5 分钟一轮。
+// StartScanner starts a background goroutine that scans every 5 minutes.
 func (s *Service) StartScanner(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		// Run once immediately so ops see results on startup.
 		_, _ = s.ScanOnce(ctx)
 		for {
 			select {

@@ -11,6 +11,7 @@ import (
 
 type Repository interface {
 	Upsert(ctx context.Context, a Anomaly) error
+	UpsertReturningIsNew(ctx context.Context, a Anomaly) (isNew bool, err error)
 	List(ctx context.Context, status string, limit, offset int) ([]Anomaly, error)
 	Get(ctx context.Context, id string) (Anomaly, error)
 	SetStatus(ctx context.Context, id, status, opsID, note string) (Anomaly, error)
@@ -44,6 +45,44 @@ func (r *pgRepo) Upsert(ctx context.Context, a Anomaly) error {
 		return fmt.Errorf("upsert anomaly: %w", err)
 	}
 	return nil
+}
+
+func (r *pgRepo) UpsertReturningIsNew(ctx context.Context, a Anomaly) (bool, error) {
+	firstAt, _ := time.Parse(time.RFC3339, a.FirstSeenAt)
+	lastAt, _ := time.Parse(time.RFC3339, a.LastSeenAt)
+	if firstAt.IsZero() {
+		return false, fmt.Errorf("invalid first_seen_at")
+	}
+	if lastAt.IsZero() {
+		lastAt = firstAt
+	}
+
+	// Count existing matching open rows.
+	var existing int
+	err := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM audit_anomalies
+		 WHERE kind=$1 AND COALESCE(actor_id::text,'')=COALESCE(NULLIF($2,'')::text,'')
+		 AND resource_pattern=$3 AND status='open'`,
+		a.Kind, a.ActorID, a.ResourcePattern).Scan(&existing)
+	if err != nil {
+		return false, fmt.Errorf("count existing anomaly: %w", err)
+	}
+
+	_, err = r.pool.Exec(ctx,
+		`INSERT INTO audit_anomalies (kind, actor_id, resource_pattern, sample_audit_ids, count,
+			first_seen_at, last_seen_at, status)
+		 VALUES ($1, NULLIF($2,'')::uuid, $3, $4::bigint[], $5, $6, $7, 'open')
+		 ON CONFLICT (kind, COALESCE(actor_id::text,''), resource_pattern) WHERE status = 'open' DO UPDATE
+		 SET count = EXCLUDED.count,
+		     last_seen_at = GREATEST(audit_anomalies.last_seen_at, EXCLUDED.last_seen_at),
+		     sample_audit_ids = EXCLUDED.sample_audit_ids,
+		     updated_at = now()`,
+		a.Kind, a.ActorID, a.ResourcePattern, a.SampleAuditIDs, a.Count,
+		firstAt, lastAt)
+	if err != nil {
+		return false, fmt.Errorf("upsert anomaly: %w", err)
+	}
+	return existing == 0, nil
 }
 
 func (r *pgRepo) List(ctx context.Context, status string, limit, offset int) ([]Anomaly, error) {
