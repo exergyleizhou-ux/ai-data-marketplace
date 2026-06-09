@@ -141,3 +141,14 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
   Next: P4-b (real fed-logreg image + secure aggregation), P4-c (MPC/PSI). Design: `docs/设计文档-P4-*`.
 - To go live: `COMPUTE_RUNNER=docker` (or `tee`) + register digest-pinned algos per
   `docs/部署-C2D算法镜像与生产Runner.md`. Specs/plans for recent work under `docs/superpowers/`.
+
+- **`MockSender` (or any test fake collecting calls) must use `sync.Mutex`**:
+  when the production code does `go s.sendEmailWithLog(...)`, `go test -race`
+  reads the fake's `.Sent` slice concurrently with appends. A plain slice
+  triggers race detector. Wrap `Append`/`Read` in `mu.Lock/Unlock`. PR-T.
+
+- **Notification email `nil`-guard must check in BOTH default and user-pref
+  branches**: `doEmail := s.email != nil` set on default, but the user-pref
+  branch overwrites: `doEmail = p.EmailEnabled && s.email != nil`. Without the
+  second `&& s.email != nil`, an opt-in user with `SMTP_HOST` unset crashes.
+  Pattern at `notification.Service.NotifyUser`. PR-T.
