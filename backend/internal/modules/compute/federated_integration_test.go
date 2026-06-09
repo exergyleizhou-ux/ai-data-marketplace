@@ -3,7 +3,6 @@ package compute
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"math"
 	"os"
@@ -42,9 +41,8 @@ func TestComputeFederatedIntegration(t *testing.T) {
 		t.Fatalf("storage: %v", err)
 	}
 
-	uniq := time.Now().UnixNano()
-	seller := seedUser(t, pool, fmt.Sprintf("fseller-%d", uniq), "seller")
-	buyer := seedUser(t, pool, fmt.Sprintf("fbuyer-%d", uniq), "buyer")
+	seller := seedUser(t, pool, "fseller", "seller")
+	buyer := seedUser(t, pool, "fbuyer", "buyer")
 	ds1 := seedDataset(t, pool, seller)
 	ds2 := seedDataset(t, pool, seller)
 
@@ -190,9 +188,8 @@ func TestComputeFederatedFailureRefund(t *testing.T) {
 		t.Fatalf("storage: %v", err)
 	}
 
-	uniq := time.Now().UnixNano()
-	seller := seedUser(t, pool, fmt.Sprintf("ffseller-%d", uniq), "seller")
-	buyer := seedUser(t, pool, fmt.Sprintf("ffbuyer-%d", uniq), "buyer")
+	seller := seedUser(t, pool, "ffseller", "seller")
+	buyer := seedUser(t, pool, "ffbuyer", "buyer")
 	ds1 := seedDataset(t, pool, seller)
 	ds2 := seedDataset(t, pool, seller)
 

@@ -3,7 +3,6 @@ package compute
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -42,9 +41,8 @@ func TestComputePSIIntegration(t *testing.T) {
 		t.Fatalf("storage: %v", err)
 	}
 
-	uniq := time.Now().UnixNano()
-	seller := seedUser(t, pool, fmt.Sprintf("pseller-%d", uniq), "seller")
-	buyer := seedUser(t, pool, fmt.Sprintf("pbuyer-%d", uniq), "buyer")
+	seller := seedUser(t, pool, "pseller", "seller")
+	buyer := seedUser(t, pool, "pbuyer", "buyer")
 	ds1 := seedDataset(t, pool, seller)
 	ds2 := seedDataset(t, pool, seller)
 

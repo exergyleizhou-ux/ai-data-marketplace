@@ -59,9 +59,8 @@ func TestComputeDockerE2E(t *testing.T) {
 		t.Fatalf("storage: %v", err)
 	}
 
-	uniq := time.Now().UnixNano()
-	seller := seedUser(t, pool, fmt.Sprintf("d2eseller-%d", uniq), "seller")
-	buyer := seedUser(t, pool, fmt.Sprintf("d2ebuyer-%d", uniq), "buyer")
+	seller := seedUser(t, pool, "d2eseller", "seller")
+	buyer := seedUser(t, pool, "d2ebuyer", "buyer")
 	dsID := seedDataset(t, pool, seller)
 
 	// Put a REAL training CSV at the dataset's object key (the worker stages it

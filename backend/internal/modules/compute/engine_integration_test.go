@@ -2,7 +2,6 @@ package compute
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -43,9 +42,8 @@ func TestComputeEngineIntegration(t *testing.T) {
 		t.Fatalf("storage: %v", err)
 	}
 
-	uniq := time.Now().UnixNano()
-	seller := seedUser(t, pool, fmt.Sprintf("eseller-%d", uniq), "seller")
-	buyer := seedUser(t, pool, fmt.Sprintf("ebuyer-%d", uniq), "buyer")
+	seller := seedUser(t, pool, "eseller", "seller")
+	buyer := seedUser(t, pool, "ebuyer", "buyer")
 	dsID := seedDataset(t, pool, seller)
 
 	algo, err := repo.RegisterAlgorithm(ctx, Algorithm{

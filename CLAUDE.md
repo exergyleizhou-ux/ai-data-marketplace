@@ -101,6 +101,13 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
   `INSERT … SELECT $1, $2, current_version_id FROM datasets WHERE id = $2` pattern ensures new
   watchers only receive notifications for future versions, avoiding a spurious notification on the
   current version. PR-L.
+- **Integration tests must NEVER `DROP TABLE … CASCADE`**: even with `IF EXISTS`, dropping a
+  production table destroys schema for every other test in a `-p 1` run.  Use `TRUNCATE TABLE`
+  (idempotent, schema-preserving) to clean rows between tests, never DROP.  PR #74
+  timeseries_test.go originally did this and PR #81 had to add a defensive skip guard.  PR-M fix.
+- **`seedUser` for integration tests must use crypto/rand suffix + ON CONFLICT DO UPDATE**:
+  `time.Now().UnixNano()` collides under nano-clock resolution or parallel test runs.  The
+  combination guarantees zero `users.account` UNIQUE conflicts even at high call rates.  PR-N fix.
 
 ## C2D / privacy compute (信任阶梯 L0→L3)
 

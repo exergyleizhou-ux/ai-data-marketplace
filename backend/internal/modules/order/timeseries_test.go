@@ -2,66 +2,80 @@ package order
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/db"
 )
 
-// testPool opens the ephemeral PG. The caller must have DATABASE_URL set, or
-// the test is skipped (safe for CI without a DB).
+// testPool opens an ephemeral PG and runs the production migrations.
+// Caller must clean up its OWN test data (TRUNCATE the rows it inserted) — never
+// DROP TABLE.  Other packages share this PG via -p 1.
 func testPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping PG integration test")
 	}
+	if err := db.RunMigrations(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
 	pool, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	// Drop existing tables so schema changes (e.g. dataset_id type) take effect.
-	pool.Exec(context.Background(), `DROP TABLE IF EXISTS settlement_outbox, orders, datasets CASCADE`)
-	if _, err := pool.Exec(context.Background(),
-		`CREATE TABLE IF NOT EXISTS orders (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			buyer_id TEXT NOT NULL,
-			seller_id TEXT NOT NULL,
-			dataset_id UUID NOT NULL,
-			version_id UUID,
-			license_type TEXT NOT NULL,
-			amount_cents BIGINT NOT NULL,
-			platform_fee_cents BIGINT NOT NULL,
-			seller_amount_cents BIGINT NOT NULL,
-			status TEXT NOT NULL,
-			product_type TEXT NOT NULL DEFAULT 'download',
-			auto_confirm_at TIMESTAMPTZ,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-		)`); err != nil {
-		t.Fatalf("create orders table: %v", err)
-	}
-	if _, err := pool.Exec(context.Background(),
-		`CREATE TABLE IF NOT EXISTS settlement_outbox (
-			order_id UUID PRIMARY KEY,
-			status TEXT NOT NULL DEFAULT 'pending',
-			attempts INT NOT NULL DEFAULT 0,
-			last_error TEXT,
-			next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-		)`); err != nil {
-		t.Fatalf("create settlement_outbox table: %v", err)
-	}
-	if _, err := pool.Exec(context.Background(),
-		`CREATE TABLE IF NOT EXISTS datasets (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			title TEXT NOT NULL DEFAULT ''
-		)`); err != nil {
-		t.Fatalf("create datasets table: %v", err)
-	}
+	_, _ = pool.Exec(context.Background(), `
+		TRUNCATE TABLE settlement_outbox CASCADE;
+		TRUNCATE TABLE orders CASCADE;
+	`)
 	return pool
+}
+
+// uniqSuffix returns a hex-encoded random 8-byte string, guaranteed unique
+// across rapid successive calls.
+func uniqSuffix() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// seedUser inserts a real user row with a UUID id and returns the UUID string.
+func seedUser(t *testing.T, pool *pgxpool.Pool, role string) string {
+	t.Helper()
+	suf := uniqSuffix()
+	var id string
+	if err := pool.QueryRow(context.Background(),
+		`INSERT INTO users (account, account_type, password_hash, role, kyc_status)
+		 VALUES ($1,'email','x',$2,'verified') RETURNING id::text`,
+		"ts-"+role+"-"+suf+"@x.com", role).Scan(&id); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	return id
+}
+
+// seedDataset inserts a real datasets row with the given seller_id and a unique
+// title.  Returns the dataset UUID string.
+func seedDataset(t *testing.T, pool *pgxpool.Pool, sellerID string) string {
+	t.Helper()
+	var id string
+	if err := pool.QueryRow(context.Background(),
+		`INSERT INTO datasets (seller_id, title, data_type, license_type, status)
+		 VALUES ($1, $2, 'text', 'commercial', 'published') RETURNING id::text`,
+		sellerID, "ts-ds-"+uniqSuffix()).Scan(&id); err != nil {
+		t.Fatalf("seed dataset: %v", err)
+	}
+	return id
+}
+
+// uniqOrderID returns a random UUID string for a test order.
+func uniqOrderID(t *testing.T) string {
+	t.Helper()
+	return "00000000-0000-0000-0000-" + uniqSuffix()[:12]
 }
 
 func insertOrder(t *testing.T, pool *pgxpool.Pool, o Order) {
@@ -69,7 +83,7 @@ func insertOrder(t *testing.T, pool *pgxpool.Pool, o Order) {
 	_, err := pool.Exec(context.Background(),
 		`INSERT INTO orders (id, buyer_id, seller_id, dataset_id, version_id, license_type,
 			amount_cents, platform_fee_cents, seller_amount_cents, status, product_type, created_at)
-		SELECT $1,$2,$3,$4::uuid,$5::uuid,$6,$7,$8,$9,$10,$11,$12::timestamptz`,
+		 VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, NULLIF($5,'')::uuid, $6, $7, $8, $9, $10, $11, $12::timestamptz)`,
 		o.ID, o.BuyerID, o.SellerID, o.DatasetID, o.VersionID, o.LicenseType,
 		o.AmountCents, o.PlatformFeeCents, o.SellerAmountCents, o.Status, o.ProductType, o.CreatedAt)
 	if err != nil {
@@ -84,21 +98,25 @@ func TestAdminReconciliationTimeseries_FillsZeroDays(t *testing.T) {
 	defer pool.Close()
 	repo := &pgRepo{pool: pool}
 
+	buyer := seedUser(t, pool, "buyer")
+	seller := seedUser(t, pool, "seller")
+	dsA := seedDataset(t, pool, seller)
+
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	yesterday := today.AddDate(0, 0, -1)
 	yesterdayStr := yesterday.Format("2006-01-02")
 
 	// Insert 2 orders yesterday, 1 settled.
 	insertOrder(t, pool, Order{
-		ID: "00000000-0000-0000-0000-000000000001", BuyerID: "b1", SellerID: "s1", DatasetID: "c0000000-0000-0000-0000-000000000001",
-		VersionID: "00000000-0000-0000-0000-000000000000", LicenseType: "commercial",
+		ID: uniqOrderID(t), BuyerID: buyer, SellerID: seller, DatasetID: dsA,
+		VersionID: "", LicenseType: "commercial",
 		AmountCents: 100000, PlatformFeeCents: 10000, SellerAmountCents: 90000,
 		Status: StatusSettled, ProductType: ProductDownload,
 		CreatedAt: yesterdayStr + "T10:00:00Z",
 	})
 	insertOrder(t, pool, Order{
-		ID: "00000000-0000-0000-0000-000000000002", BuyerID: "b2", SellerID: "s1", DatasetID: "c0000000-0000-0000-0000-000000000002",
-		VersionID: "00000000-0000-0000-0000-000000000000", LicenseType: "commercial",
+		ID: uniqOrderID(t), BuyerID: buyer, SellerID: seller, DatasetID: dsA,
+		VersionID: "", LicenseType: "commercial",
 		AmountCents: 50000, PlatformFeeCents: 5000, SellerAmountCents: 45000,
 		Status: StatusRefunded, ProductType: ProductDownload,
 		CreatedAt: yesterdayStr + "T12:00:00Z",
@@ -111,7 +129,6 @@ func TestAdminReconciliationTimeseries_FillsZeroDays(t *testing.T) {
 	if len(pts) != 30 {
 		t.Fatalf("got %d points, want 30", len(pts))
 	}
-	// Find yesterday's point.
 	var ypt *ReconciliationPoint
 	for i := range pts {
 		if pts[i].Date == yesterdayStr {
@@ -137,7 +154,6 @@ func TestAdminReconciliationTimeseries_FillsZeroDays(t *testing.T) {
 	if ypt.RefundedOrders != 1 {
 		t.Errorf("refunded = %d, want 1", ypt.RefundedOrders)
 	}
-	// All other days should be zero.
 	otherNonZero := false
 	for i := range pts {
 		if pts[i].Date != yesterdayStr && pts[i].GMVCents != 0 {
@@ -156,48 +172,51 @@ func TestSellerEarningsByDataset_AggregatesPerDataset(t *testing.T) {
 	defer pool.Close()
 	repo := &pgRepo{pool: pool}
 
+	seller := seedUser(t, pool, "seller")
+	buyer := seedUser(t, pool, "buyer")
+	dsA := seedDataset(t, pool, seller)
+	dsB := seedDataset(t, pool, seller)
+
 	insertOrder(t, pool, Order{
-		ID: "10000000-0000-0000-0000-000000000001", BuyerID: "b1", SellerID: "seller-agg", DatasetID: "a0000000-0000-0000-0000-000000000001",
-		VersionID: "00000000-0000-0000-0000-000000000000", LicenseType: "commercial",
+		ID: uniqOrderID(t), BuyerID: buyer, SellerID: seller, DatasetID: dsA,
+		VersionID: "", LicenseType: "commercial",
 		AmountCents: 100000, PlatformFeeCents: 10000, SellerAmountCents: 90000,
 		Status: StatusSettled, ProductType: ProductDownload,
 		CreatedAt: "2026-06-01T10:00:00Z",
 	})
 	insertOrder(t, pool, Order{
-		ID: "10000000-0000-0000-0000-000000000002", BuyerID: "b2", SellerID: "seller-agg", DatasetID: "a0000000-0000-0000-0000-000000000001",
-		VersionID: "00000000-0000-0000-0000-000000000000", LicenseType: "commercial",
+		ID: uniqOrderID(t), BuyerID: buyer, SellerID: seller, DatasetID: dsA,
+		VersionID: "", LicenseType: "commercial",
 		AmountCents: 50000, PlatformFeeCents: 5000, SellerAmountCents: 45000,
 		Status: StatusSettled, ProductType: ProductDownload,
 		CreatedAt: "2026-06-02T10:00:00Z",
 	})
 	insertOrder(t, pool, Order{
-		ID: "10000000-0000-0000-0000-000000000003", BuyerID: "b3", SellerID: "seller-agg", DatasetID: "b0000000-0000-0000-0000-000000000001",
-		VersionID: "00000000-0000-0000-0000-000000000000", LicenseType: "commercial",
+		ID: uniqOrderID(t), BuyerID: buyer, SellerID: seller, DatasetID: dsB,
+		VersionID: "", LicenseType: "commercial",
 		AmountCents: 20000, PlatformFeeCents: 2000, SellerAmountCents: 18000,
 		Status: StatusSettled, ProductType: ProductDownload,
 		CreatedAt: "2026-06-03T10:00:00Z",
 	})
-	// Insert matching dataset rows.
-	pool.Exec(context.Background(), `INSERT INTO datasets (id, title) VALUES ('a0000000-0000-0000-0000-000000000001','数据集A'),('b0000000-0000-0000-0000-000000000001','数据集B')`)
 
-	items, err := repo.SellerEarningsByDataset(ctx, "seller-agg")
+	items, err := repo.SellerEarningsByDataset(ctx, seller)
 	if err != nil {
 		t.Fatalf("by-dataset: %v", err)
 	}
 	if len(items) != 2 {
 		t.Fatalf("got %d items, want 2", len(items))
 	}
-	// Should be sorted by settled_cents DESC: dset-a first.
-	if items[0].DatasetID != "a0000000-0000-0000-0000-000000000001" {
-		t.Errorf("first item = %s, want a0000000-...", items[0].DatasetID)
-	}
+	// Should be sorted by settled_cents DESC: dsA (135000) first, dsB (18000) second.
 	if items[0].SettledCents != 135000 {
-		t.Errorf("dset-a settled = %d, want 135000", items[0].SettledCents)
+		t.Errorf("dsA settled = %d, want 135000", items[0].SettledCents)
 	}
 	if items[0].TotalOrders != 2 {
-		t.Errorf("dset-a orders = %d, want 2", items[0].TotalOrders)
+		t.Errorf("dsA orders = %d, want 2", items[0].TotalOrders)
 	}
-	if items[1].DatasetID != "b0000000-0000-0000-0000-000000000001" {
-		t.Errorf("second item = %s, want b0000000-...", items[1].DatasetID)
+	if items[1].SettledCents != 18000 {
+		t.Errorf("dsB settled = %d, want 18000", items[1].SettledCents)
+	}
+	if items[1].TotalOrders != 1 {
+		t.Errorf("dsB orders = %d, want 1", items[1].TotalOrders)
 	}
 }

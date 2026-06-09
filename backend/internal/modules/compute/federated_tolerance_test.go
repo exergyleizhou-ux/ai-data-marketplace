@@ -3,7 +3,6 @@ package compute
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -39,9 +38,8 @@ func fedToleranceSetup(t *testing.T, prefix string, caps []int64) (svc *Service,
 	if err != nil {
 		t.Fatalf("storage: %v", err)
 	}
-	uniq := time.Now().UnixNano()
-	seller := seedUser(t, pool, fmt.Sprintf("%sseller-%d", prefix, uniq), "seller")
-	buyer = seedUser(t, pool, fmt.Sprintf("%sbuyer-%d", prefix, uniq), "buyer")
+	seller := seedUser(t, pool, prefix+"seller", "seller")
+	buyer = seedUser(t, pool, prefix+"buyer", "buyer")
 
 	algo, err := repo.RegisterAlgorithm(ctx, Algorithm{
 		Name: "fed-logreg", Runtime: RuntimeFedLogreg, Image: "registry/fedlogreg", ImageDigest: "sha256:fed",

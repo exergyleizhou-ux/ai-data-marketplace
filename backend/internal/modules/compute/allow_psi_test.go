@@ -3,10 +3,8 @@ package compute
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -38,9 +36,8 @@ func TestPSIRequiresAllowPSI(t *testing.T) {
 		t.Fatalf("storage: %v", err)
 	}
 
-	uniq := time.Now().UnixNano()
-	seller := seedUser(t, pool, fmt.Sprintf("apseller-%d", uniq), "seller")
-	buyer := seedUser(t, pool, fmt.Sprintf("apbuyer-%d", uniq), "buyer")
+	seller := seedUser(t, pool, "apseller", "seller")
+	buyer := seedUser(t, pool, "apbuyer", "buyer")
 	ds1 := seedDataset(t, pool, seller)
 	ds2 := seedDataset(t, pool, seller)
 

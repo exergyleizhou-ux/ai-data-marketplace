@@ -68,9 +68,8 @@ func TestComputeFederatedDockerE2E(t *testing.T) {
 		t.Fatalf("storage: %v", err)
 	}
 
-	uniq := time.Now().UnixNano()
-	seller := seedUser(t, pool, fmt.Sprintf("fd2eseller-%d", uniq), "seller")
-	buyer := seedUser(t, pool, fmt.Sprintf("fd2ebuyer-%d", uniq), "buyer")
+	seller := seedUser(t, pool, "fd2eseller", "seller")
+	buyer := seedUser(t, pool, "fd2ebuyer", "buyer")
 
 	// Two datasets that SHARE the feature schema (FedAvg precondition), with
 	// different data, staged at their own object keys.
