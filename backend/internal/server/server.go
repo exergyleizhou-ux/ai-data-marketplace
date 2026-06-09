@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/auditlog"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/compute"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/dataset"
@@ -247,6 +248,10 @@ func (s *Server) routes() {
 		// Certificate verification: public lookup endpoint + cert registration.
 		verifyRepo := verify.NewRepository(s.db)
 		verify.Register(api, verifyRepo)
+
+		// Audit-log viewer: ops-only, read-only over audit_logs.
+		auditSvc := auditlog.NewService(auditlog.NewRepository(s.db))
+		auditlog.Register(api, auditSvc, auth.RequireRole("ops", "admin"))
 		dsSvc.SetCertRegistrar(verifyRepo) // dataset certs → registered for public lookup
 		// compute certs: registered in compute module via the same interface
 		// (wired below after computeSvc is constructed)

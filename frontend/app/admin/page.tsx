@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, yuan, type Dataset, type KYC, type Order, type ComputeAlgorithm, type ComputeJob, type OutboxEntry, type ReconciliationPoint } from "@/lib/api";
+import { api, yuan, type Dataset, type KYC, type Order, type ComputeAlgorithm, type ComputeJob, type OutboxEntry, type ReconciliationPoint, type AuditLogEntry } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
 import { Alert, Badge, Button, Card, Empty, Input, Spinner } from "@/components/ui";
 import { MiniChart } from "@/components/MiniChart";
 
-type Tab = "review" | "kyc" | "tx" | "compute" | "outbox";
+type Tab = "review" | "kyc" | "tx" | "compute" | "outbox" | "audit";
 
 export default function AdminPage() {
   return (
@@ -27,12 +27,13 @@ function AdminInner() {
     tx: t("交易 / 纠纷", "Transactions / disputes"),
     compute: t("计算作业", "Compute jobs"),
     outbox: t("结算队列", "Settlement outbox"),
+    audit: t("审计日志", "Audit logs"),
   };
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">{t("运营后台", "Ops Console")}</h1>
       <div className="flex flex-wrap gap-2">
-        {(["review", "kyc", "tx", "compute", "outbox"] as const).map((tb) => (
+        {(["review", "kyc", "tx", "compute", "outbox", "audit"] as const).map((tb) => (
           <button
             key={tb}
             onClick={() => setTab(tb)}
@@ -49,6 +50,7 @@ function AdminInner() {
       {tab === "tx" && <Transactions />}
       {tab === "compute" && <ComputeJobs />}
       {tab === "outbox" && <SettlementOutbox />}
+      {tab === "audit" && <AuditLogs />}
     </div>
   );
 }
@@ -701,6 +703,115 @@ function SettlementOutbox() {
             </tbody>
           </table>
         </Card>
+      )}
+    </div>
+  );
+}
+
+function AuditLogs() {
+  const { t } = useT();
+  const [items, setItems] = useState<AuditLogEntry[]>([]);
+  const [filters, setFilters] = useState({
+    actor: "", action: "", resource_type: "", resource_id: "",
+    from: "", to: "",
+  });
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const fetchPage = useCallback(async (nextOffset: number, append: boolean) => {
+    setBusy(true);
+    try {
+      const r = await api.adminListAuditLogs({ ...filters, limit: 50, offset: nextOffset });
+      setItems(prev => append ? [...prev, ...r.items] : r.items);
+      setHasMore(r.next_offset !== undefined);
+      setOffset(nextOffset);
+    } finally {
+      setBusy(false);
+    }
+  }, [filters]);
+
+  useEffect(() => {
+    void fetchPage(0, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function applyFilters() { void fetchPage(0, false); }
+
+  function toggleExpand(id: number) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Input value={filters.actor} onChange={(e) => setFilters({ ...filters, actor: e.target.value })} placeholder={t("操作者ID", "Actor ID")} />
+        <Input value={filters.action} onChange={(e) => setFilters({ ...filters, action: e.target.value })} placeholder={t("动作", "Action")} />
+        <Input value={filters.resource_type} onChange={(e) => setFilters({ ...filters, resource_type: e.target.value })} placeholder={t("资源类型", "Resource type")} />
+        <Input value={filters.resource_id} onChange={(e) => setFilters({ ...filters, resource_id: e.target.value })} placeholder={t("资源ID", "Resource ID")} />
+        <Input value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} placeholder={t("起始时间 (RFC3339)", "From (RFC3339)")} />
+        <Input value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} placeholder={t("结束时间 (RFC3339)", "To (RFC3339)")} />
+      </div>
+      <Button onClick={applyFilters} disabled={busy}>
+        {t("应用过滤", "Apply filters")}
+      </Button>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="border-b border-neutral-200 text-left text-neutral-500">
+            <tr>
+              <th className="px-2 py-1 font-medium w-[140px]">{t("时间", "Time")}</th>
+              <th className="px-2 py-1 font-medium">{t("操作者", "Actor")}</th>
+              <th className="px-2 py-1 font-medium">{t("动作", "Action")}</th>
+              <th className="px-2 py-1 font-medium">{t("资源", "Resource")}</th>
+              <th className="px-2 py-1 font-medium">{t("详情", "Detail")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((e) => (
+              <>
+                <tr key={e.id} className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50">
+                  <td className="px-2 py-1 text-xs text-neutral-400">{e.created_at?.slice(0, 19)}</td>
+                  <td className="px-2 py-1 text-xs max-w-[120px] truncate" title={e.actor_id}>
+                    {e.actor_id?.slice(0, 8) || "—"}
+                  </td>
+                  <td className="px-2 py-1 text-xs font-mono">{e.action}</td>
+                  <td className="px-2 py-1 text-xs text-neutral-500">
+                    {e.resource_type || "—"}{e.resource_id ? `/${e.resource_id.slice(0, 8)}` : ""}
+                  </td>
+                  <td className="px-2 py-1 text-xs">
+                    {e.detail && Object.keys(e.detail).length > 0 ? (
+                      <button onClick={() => toggleExpand(e.id)} className="text-blue-600 hover:underline">
+                        {expanded.has(e.id) ? t("收起 JSON", "Hide JSON") : t("查看 JSON", "View JSON")}
+                      </button>
+                    ) : "—"}
+                  </td>
+                </tr>
+                {expanded.has(e.id) && e.detail && (
+                  <tr key={`${e.id}-detail`}>
+                    <td colSpan={5} className="px-2 py-2 bg-neutral-50">
+                      <pre className="text-[11px] leading-relaxed text-neutral-600 whitespace-pre-wrap break-all">
+                        {JSON.stringify(e.detail, null, 2)}
+                      </pre>
+                    </td>
+                  </tr>
+                )}
+              </>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {hasMore && !busy && (
+        <div className="text-center">
+          <Button variant="secondary" onClick={() => fetchPage(offset + 50, true)}>
+            {t("加载更多", "Load more")}
+          </Button>
+        </div>
       )}
     </div>
   );

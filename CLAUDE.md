@@ -69,6 +69,17 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
   cryptic `TS1127 Invalid character` / `TS1005 ',' expected`. Fix: replace curly→straight quotes
   (`python3 -c "...replace('“','\"')..."`), but keep curly quotes that are intentional *inside*
   visible string content — escape the conflict by using curly quotes only in the text, straight as delimiters.
+- **Integration tests must use `db.RunMigrations(dsn)`, never raw `CREATE TABLE`**: a fake schema
+  (e.g. `buyer_id TEXT` vs production `UUID REFERENCES users`) masks FK / type bugs. PR #74
+  `timeseries_test.go` used bare `CREATE TABLE` and passed CI because the SQL path didn't depend on
+  FK, but a later migration or query change would break silently.
+- **New modules must ship with `_test.go`**: PR #75 `notification` and `verify` modules landed with
+  0 tests. IDOR (`WHERE id=$1 AND user_id=$2`) and `ON CONFLICT DO NOTHING` idempotency had no
+  regression coverage. From now on, every `repo.go`/`service.go` file must have a corresponding
+  `_test.go`.
+- **Notification emit must use `nil` guard + swallow errors**: `if s.notifier != nil { _ = s.notifier.NotifyUser(...) }`.
+  Business flows must never block on notification failure. Pattern at `order/service.go` MarkPaid /
+  MarkSettled / Dispute.
 
 ## C2D / privacy compute (信任阶梯 L0→L3)
 
