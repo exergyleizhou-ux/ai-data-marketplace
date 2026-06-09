@@ -16,6 +16,7 @@ import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { Alert, Badge, Button, Card, Empty, Spinner } from "@/components/ui";
 import { QualityReport } from "@/components/QualityReport";
+import { DatasetQA } from "@/components/DatasetQA";
 import { DatasheetView } from "@/components/Datasheet";
 import { SchemaTable, hasSchema } from "@/components/SchemaTable";
 import { ComputeBuyer } from "@/components/Compute";
@@ -189,6 +190,8 @@ export default function DatasetDetailPage({ params }: { params: { id: string } }
             <span className="ml-2 text-xs text-neutral-300">{t("符合 MLCommons Croissant 1.0", "MLCommons Croissant 1.0")}</span>
           </div>
         </Card>
+
+        {ds.seller_id && <DatasetQA datasetId={ds.id} sellerId={ds.seller_id} />}
 
         <Card>
           <h2 className="mb-3 font-semibold">{t(`买家评价（${reviews.length}）`, `Reviews (${reviews.length})`)}</h2>

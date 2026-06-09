@@ -25,6 +25,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/notification"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/order"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/payment"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/qa"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/search"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/verify"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/watchlist"
@@ -265,6 +266,11 @@ func (s *Server) routes() {
 		watchSvc := watchlist.NewService(watchRepo, notifySvc, watchlistDatasetAdapter{ds: dsSvc})
 		watchlist.Register(api, watchSvc, authMW)
 		dsSvc.SetWatchersNotifier(watchSvc)
+
+		// Dataset Q&A: buyer asks + seller answers (PR-O).
+		qaRepo := qa.NewRepository(s.db)
+		qaSvc := qa.NewService(qaRepo, qaDatasetAdapter{ds: dsSvc}, notifySvc)
+		qa.Register(api, qaSvc, authMW)
 		// compute certs: registered in compute module via the same interface
 		// (wired below after computeSvc is constructed)
 
@@ -526,4 +532,15 @@ func (a watchlistDatasetAdapter) StatusOf(ctx context.Context, datasetID string)
 		return "", err
 	}
 	return d.Status, nil
+}
+
+// qaDatasetAdapter bridges dataset.Service to qa.DatasetReader.
+type qaDatasetAdapter struct{ ds *dataset.Service }
+
+func (a qaDatasetAdapter) SellerOf(ctx context.Context, datasetID string) (string, string, error) {
+	d, err := a.ds.Get(ctx, datasetID)
+	if err != nil {
+		return "", "", err
+	}
+	return d.SellerID, d.Status, nil
 }
