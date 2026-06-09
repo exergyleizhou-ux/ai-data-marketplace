@@ -108,6 +108,10 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
 - **QA ListByDataset uses `JOIN users` for asker_name with `SUBSTRING(account, 1, 8)`**: the
   account prefix (not full email) is exposed as the public display name. `LEFT JOIN answers`
   populates `Question.Answer` only when present. PR-O.
+- **Withdrawal Transition must guard against transitions FROM `completed`**: `completed` is a terminal
+  state in the `pending→approved→completed` state machine. From `completed`, ALL transitions
+  must return `ErrBadTransition`. This guard sits in `pgRepo.Transition` before the optimistic-lock
+  UPDATE. PR-P.
 - **Integration tests must NEVER `DROP TABLE … CASCADE`**: even with `IF EXISTS`, dropping a
   production table destroys schema for every other test in a `-p 1` run.  Use `TRUNCATE TABLE`
   (idempotent, schema-preserving) to clean rows between tests, never DROP.  PR #74
