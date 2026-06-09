@@ -117,6 +117,12 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
   partial unique index `WHERE status='open'` with `COALESCE(actor_id::text,'')` instead. PR-Q.
 - **Anomaly scanner must NOT read from work-queue channels as a stop signal**: same lesson
   as PR-J. The anomaly scanner uses `ctx.Done()` + `ticker.C` only. PR-Q.
+- **Deletion transition must guard FROM deleted**: `deleted` is a terminal state
+  in the `cooling→approved→deleted` state machine. FROM `deleted`, ALL transitions
+  must return `ErrBadTransition`. Same pattern as PR-P withdrawal. PR-S.
+- **Account deletion ExecuteDeletion scrubs PII but preserves financial records**:
+  `users.kyc_data` → `{}`, `notifications/watches` → DELETE, Q&A body → `[已删除]`,
+  but `orders/payments/audit_logs` untouched per accounting law. PR-S.
 - **Integration tests must NEVER `DROP TABLE … CASCADE`**: even with `IF EXISTS`, dropping a
   production table destroys schema for every other test in a `-p 1` run.  Use `TRUNCATE TABLE`
   (idempotent, schema-preserving) to clean rows between tests, never DROP.  PR #74

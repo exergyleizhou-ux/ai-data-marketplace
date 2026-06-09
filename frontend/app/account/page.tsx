@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, yuan, type KYC, type EarningsPoint, type EarningsByDataset, type Watch } from "@/lib/api";
+import { api, yuan, type KYC, type EarningsPoint, type EarningsByDataset, type Watch, type DataExportJob } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
@@ -148,6 +148,8 @@ function AccountInner() {
 
       <WatchlistCard />
 
+      <DataRightsCard />
+
       <FederatedComputePanel />
       <PSIComputePanel />
     </div>
@@ -286,6 +288,76 @@ function WatchlistCard() {
             <span className="text-xs text-neutral-400">{w.created_at?.slice(0, 10)}</span>
           </Link>
         ))}
+      </div>
+    </Card>
+  );
+}
+
+function DataRightsCard() {
+  const { t } = useT();
+  const [exportJob, setExportJob] = useState<DataExportJob | null>(null);
+  const [expErr, setExpErr] = useState("");
+  const [dReason, setDReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.getMyDataExport().then(setExportJob).catch(() => {});
+  }, []);
+
+  async function requestExport() {
+    setBusy(true); setExpErr("");
+    try { setExportJob(await api.requestDataExport()); }
+    catch (e) { setExpErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function requestDeletion() {
+    if (!dReason.trim()) return;
+    setBusy(true); setExpErr("");
+    try {
+      await api.requestAccountDeletion(dReason.trim());
+      setDReason("");
+      alert("已提交注销申请，7 天冷静期内可撤销");
+    } catch (e) { setExpErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <Card>
+      <h2 className="mb-3 font-semibold">
+        {t("数据权利 (PIPL)", "Data rights (PIPL)")} <span className="font-normal text-neutral-400">/ PIPL Art. 45/47</span>
+      </h2>
+      {expErr && <Alert>{expErr}</Alert>}
+      <div className="mb-3">
+        <div className="text-sm font-medium">{t("下载我的数据", "Download my data")}</div>
+        <p className="text-xs text-neutral-500 mb-1">{t("下载您所有个人数据 (PIPL 第45条)", "Download all your data (PIPL Article 45)")}</p>
+        {exportJob ? (
+          <div className="text-xs text-neutral-500">
+            {t("状态", "Status")}: {exportJob.status}
+            {exportJob.status === "ready" && (
+              <Button variant="secondary" onClick={() => api.downloadMyDataExport()} className="ml-2">
+                {t("下载", "Download")}
+              </Button>
+            )}
+            {exportJob.error && <span className="text-red-500"> · {exportJob.error}</span>}
+          </div>
+        ) : (
+          <Button variant="secondary" onClick={requestExport} disabled={busy}>
+            {t("发起导出", "Request export")}
+          </Button>
+        )}
+      </div>
+      <div className="rounded-md border border-rose-200 p-3">
+        <div className="text-sm font-medium text-rose-700">{t("注销账号", "Delete account")}</div>
+        <p className="text-xs text-neutral-500 mb-2">{t("7 天冷静期后可撤销 (PIPL 第47条)", "7-day cooling-off (PIPL Art. 47)")}</p>
+        <div className="flex gap-2">
+          <input className="flex-1 rounded-md border border-neutral-300 px-2 py-1 text-sm"
+            value={dReason} onChange={(e) => setDReason(e.target.value)}
+            placeholder={t("注销原因 (可选)", "Reason (optional)") as string} />
+          <Button variant="danger" onClick={requestDeletion} disabled={busy}>
+            {t("提交注销", "Request")}
+          </Button>
+        </div>
       </div>
     </Card>
   );

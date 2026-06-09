@@ -27,6 +27,10 @@ const KIND: Record<string, [string, string]> = {
   withdrawal_approved: ["提现已批准", "Withdrawal approved"],
   withdrawal_completed: ["提现已到账", "Withdrawal completed"],
   withdrawal_rejected: ["提现被拒", "Withdrawal rejected"],
+  data_export_ready: ["数据导出已就绪", "Data export ready"],
+  account_deletion_cooling: ["账号注销冷静期已开始", "Account deletion cooling period started"],
+  account_deletion_approved: ["账号注销已批准", "Account deletion approved"],
+  account_deletion_rejected: ["账号注销被拒", "Account deletion rejected"],
 };
 
 function Inner() {

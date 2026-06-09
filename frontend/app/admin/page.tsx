@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, yuan, type Dataset, type KYC, type Order, type ComputeAlgorithm, type ComputeJob, type OutboxEntry, type ReconciliationPoint, type AuditLogEntry, type Withdrawal, type Anomaly } from "@/lib/api";
+import { api, yuan, type Dataset, type KYC, type Order, type ComputeAlgorithm, type ComputeJob, type OutboxEntry, type ReconciliationPoint, type AuditLogEntry, type Withdrawal, type Anomaly, type DeletionRequest } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
 import { Alert, Badge, Button, Card, Empty, Input, Spinner } from "@/components/ui";
 import { MiniChart } from "@/components/MiniChart";
 
-type Tab = "review" | "kyc" | "tx" | "compute" | "outbox" | "audit" | "withdraw" | "anomaly";
+type Tab = "review" | "kyc" | "tx" | "compute" | "outbox" | "audit" | "withdraw" | "anomaly" | "deletion";
 
 export default function AdminPage() {
   return (
@@ -30,12 +30,13 @@ function AdminInner() {
     audit: t("审计日志", "Audit logs"),
     withdraw: t("提现审批", "Withdrawals"),
     anomaly: t("异常告警", "Anomalies"),
+    deletion: t("注销审批", "Deletions"),
   };
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">{t("运营后台", "Ops Console")}</h1>
       <div className="flex flex-wrap gap-2">
-        {(["review", "kyc", "tx", "compute", "outbox", "audit", "withdraw", "anomaly"] as const).map((tb) => (
+        {(["review", "kyc", "tx", "compute", "outbox", "audit", "withdraw", "anomaly", "deletion"] as const).map((tb) => (
           <button
             key={tb}
             onClick={() => setTab(tb)}
@@ -55,6 +56,7 @@ function AdminInner() {
       {tab === "audit" && <AuditLogs />}
       {tab === "withdraw" && <WithdrawalAdmin />}
       {tab === "anomaly" && <AnomalyList />}
+      {tab === "deletion" && <DeletionAdmin />}
     </div>
   );
 }
@@ -954,6 +956,80 @@ function AnomalyList() {
               <Button variant="secondary" disabled={busy === a.id} onClick={() => act(a.id, "resolve")}>{t("解决", "Resolve")}</Button>
             </div>
           )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function DeletionAdmin() {
+  const { t } = useT();
+  const [items, setItems] = useState<DeletionRequest[] | null>(null);
+  const [filter, setFilter] = useState("cooling");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState("");
+  const [notes, setNotes] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    setErr("");
+    try {
+      setItems((await api.adminListDeletions(filter === "all" ? undefined : filter, 100)).items);
+    } catch (e) { setErr((e as Error).message); }
+  }, [filter]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function act(id: string, action: "approve" | "reject" | "execute") {
+    setBusy(id); setErr("");
+    try {
+      if (action === "approve") await api.adminApproveDeletion(id, notes[id] || "");
+      else if (action === "reject") await api.adminRejectDeletion(id, notes[id] || "");
+      else await api.adminExecuteDeletion(id, notes[id] || "");
+      await load();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(""); }
+  }
+
+  if (items === null) return <Spinner />;
+  return (
+    <div className="space-y-3">
+      {err && <Alert>{err}</Alert>}
+      <div className="flex gap-2">
+        {(["cooling", "approved", "all"] as const).map((f) => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`rounded-md px-3 py-1 text-sm ${filter === f ? "bg-neutral-900 text-white" : "border"}`}>
+            {f === "cooling" ? t("冷静期", "Cooling") : f === "approved" ? t("已批准", "Approved") : t("全部", "All")}
+          </button>
+        ))}
+      </div>
+      {items.length === 0 ? <Empty>{t("暂无注销申请", "No deletion requests")}</Empty> : items.map((d) => (
+        <Card key={d.id}>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-medium">{d.user_id?.slice(0, 8) || "—"}</div>
+              <div className="text-xs text-neutral-500">
+                {d.reason ? `"${d.reason.slice(0, 50)}" · ` : ""}
+                {t("冷静期至", "Cooling until")} {d.cooling_until?.slice(0, 19)}
+              </div>
+            </div>
+            <Badge>{d.status}</Badge>
+          </div>
+          <div className="mt-2 flex gap-2">
+            <Input value={notes[d.id] || ""} onChange={(e) => setNotes((n) => ({ ...n, [d.id]: e.target.value }))}
+              placeholder={t("备注", "Note")} />
+            {d.status === "cooling" && (
+              <>
+                <Button disabled={busy === d.id} onClick={() => act(d.id, "approve")}>{t("批准", "Approve")}</Button>
+                <Button variant="danger" disabled={busy === d.id} onClick={() => act(d.id, "reject")}>
+                  {t("拒绝", "Reject")}
+                </Button>
+              </>
+            )}
+            {d.status === "approved" && (
+              <Button variant="danger" disabled={busy === d.id} onClick={() => act(d.id, "execute")}>
+                {t("执行删除", "Execute deletion")}
+              </Button>
+            )}
+          </div>
         </Card>
       ))}
     </div>
