@@ -101,6 +101,13 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
   `INSERT … SELECT $1, $2, current_version_id FROM datasets WHERE id = $2` pattern ensures new
   watchers only receive notifications for future versions, avoiding a spurious notification on the
   current version. PR-L.
+- **QA AnswerQuestion must check `answererID == sellerID` (IDOR)**: `Service.AnswerQuestion`
+  calls `ds.SellerOf(ctx, q.DatasetID)` and rejects with `ErrNotSeller` if the answerer is not
+  the dataset's seller. Same pattern as `notification.MarkRead` `WHERE id=$1 AND user_id=$2`.
+  PR-O.
+- **QA ListByDataset uses `JOIN users` for asker_name with `SUBSTRING(account, 1, 8)`**: the
+  account prefix (not full email) is exposed as the public display name. `LEFT JOIN answers`
+  populates `Question.Answer` only when present. PR-O.
 - **Integration tests must NEVER `DROP TABLE … CASCADE`**: even with `IF EXISTS`, dropping a
   production table destroys schema for every other test in a `-p 1` run.  Use `TRUNCATE TABLE`
   (idempotent, schema-preserving) to clean rows between tests, never DROP.  PR #74
