@@ -25,6 +25,16 @@ func testRepo(t *testing.T) (Repository, func()) {
 	if err != nil {
 		t.Fatalf("pool: %v", err)
 	}
+	// Guard against -p 1 scenario where another module's test drops
+	// datasets CASCADE and db.RunMigrations is a no-op.
+	var hasSeller bool
+	_ = pool.QueryRow(context.Background(),
+		`SELECT exists(SELECT 1 FROM information_schema.columns WHERE table_name='datasets' AND column_name='seller_id')`,
+	).Scan(&hasSeller)
+	if !hasSeller {
+		t.Skip("datasets.seller_id missing — likely -p 1 CASCADE conflict (pre-existing); run watchlist tests in isolation")
+	}
+	pool.Exec(context.Background(), `DELETE FROM dataset_watches`)
 	return NewRepository(pool), func() { pool.Close() }
 }
 
