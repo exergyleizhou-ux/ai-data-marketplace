@@ -285,6 +285,17 @@ export type Watch = {
   created_at: string;
 };
 
+export type DatasetQuestion = {
+  id: string;
+  dataset_id: string;
+  asker_id: string;
+  asker_name?: string;
+  body: string;
+  status: string;
+  answer?: { id: string; question_id: string; answerer_id: string; body: string; created_at: string };
+  created_at: string;
+};
+
 export const tokenStore = {
   get access() {
     return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
@@ -534,6 +545,17 @@ export const api = {
   watchDataset:   (id: string) => request<{ ok: boolean }>(`/datasets/${id}/watch`, { method: "POST" }),
   unwatchDataset: (id: string) => request<{ ok: boolean }>(`/datasets/${id}/watch`, { method: "DELETE" }),
   listMyWatches:  () => request<{ items: Watch[] }>("/users/me/watched"),
+
+  // dataset Q&A
+  listDatasetQuestions: (id: string, limit?: number, offset?: number) =>
+    request<{ items: DatasetQuestion[] }>(`/datasets/${id}/questions`, {
+      query: { limit, offset }, auth: false,
+    }),
+  askDatasetQuestion: (id: string, body: string) =>
+    request<DatasetQuestion>(`/datasets/${id}/questions`, { body: { body } }),
+  answerQuestion: (qid: string, body: string) =>
+    request<{ id: string; question_id: string; body: string; created_at: string }>(
+      `/questions/${qid}/answer`, { body: { body } }),
 
   // audit logs (ops)
   adminListAuditLogs: (q: {

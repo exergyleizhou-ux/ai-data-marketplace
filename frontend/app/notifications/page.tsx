@@ -22,6 +22,8 @@ const KIND: Record<string, [string, string]> = {
   quality_done: ["质检完成", "Quality done"],
   compute_released: ["计算结果已放行", "Compute released"],
   dataset_updated: ["数据集有更新", "Dataset updated"],
+  question_asked: ["数据集有新提问", "New question on your dataset"],
+  question_answered: ["您的提问已被回答", "Your question was answered"],
 };
 
 function Inner() {
