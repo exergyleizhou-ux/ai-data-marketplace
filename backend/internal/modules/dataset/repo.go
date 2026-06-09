@@ -57,6 +57,22 @@ type Repository interface {
 	SetVersionSimhash(ctx context.Context, versionID, simhash string) error
 	// ListByStatus returns datasets in a given lifecycle status (ops queues).
 	ListByStatus(ctx context.Context, status string, limit, offset int) ([]Dataset, error)
+
+	// Quality retry (PR-J): persistent queue for transient failures.
+	EnqueueQualityRetry(ctx context.Context, datasetID, versionID, contentSHA string, maxAttempts int) error
+	ListDueQualityRetries(ctx context.Context, limit int) ([]QualityRetryRow, error)
+	MarkQualityRetryAttempt(ctx context.Context, datasetID string, nextAt time.Time, lastErr string) error
+	DeleteQualityRetry(ctx context.Context, datasetID string) error
+}
+
+// QualityRetryRow is a row from quality_retries.
+type QualityRetryRow struct {
+	DatasetID     string
+	VersionID     string
+	ContentSHA256 string
+	Attempts      int
+	MaxAttempts   int
+	LastError     string
 }
 
 // ListFilter is the public catalog query (only published datasets are returned).
@@ -567,4 +583,66 @@ func (r *pgRepo) SignSource(ctx context.Context, id string) (Dataset, error) {
 		return Dataset{}, fmt.Errorf("sign source: %w", err)
 	}
 	return out, nil
+}
+
+// --- quality_retries ---
+
+func (r *pgRepo) EnqueueQualityRetry(ctx context.Context, datasetID, versionID, contentSHA string, maxAttempts int) error {
+	const q = `
+		INSERT INTO quality_retries (dataset_id, version_id, content_sha256, attempts, max_attempts, next_at)
+		VALUES ($1, $2, $3, 0, $4, now())
+		ON CONFLICT (dataset_id) DO UPDATE
+		  SET version_id = EXCLUDED.version_id,
+		      content_sha256 = EXCLUDED.content_sha256,
+		      attempts = 0,
+		      max_attempts = EXCLUDED.max_attempts,
+		      next_at = now(),
+		      last_error = NULL,
+		      updated_at = now()`
+	if _, err := r.pool.Exec(ctx, q, datasetID, versionID, contentSHA, maxAttempts); err != nil {
+		return fmt.Errorf("enqueue quality retry: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepo) ListDueQualityRetries(ctx context.Context, limit int) ([]QualityRetryRow, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT dataset_id::text, version_id::text, content_sha256, attempts, max_attempts, COALESCE(last_error, '')
+		 FROM quality_retries
+		 WHERE next_at <= now() AND attempts < max_attempts
+		 ORDER BY next_at ASC
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list due quality retries: %w", err)
+	}
+	defer rows.Close()
+	var out []QualityRetryRow
+	for rows.Next() {
+		var r QualityRetryRow
+		if err := rows.Scan(&r.DatasetID, &r.VersionID, &r.ContentSHA256, &r.Attempts, &r.MaxAttempts, &r.LastError); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (r *pgRepo) MarkQualityRetryAttempt(ctx context.Context, datasetID string, nextAt time.Time, lastErr string) error {
+	if _, err := r.pool.Exec(ctx,
+		`UPDATE quality_retries
+		 SET attempts = attempts + 1,
+		     next_at = $2,
+		     last_error = $3,
+		     updated_at = now()
+		 WHERE dataset_id = $1`, datasetID, nextAt, lastErr); err != nil {
+		return fmt.Errorf("mark quality retry: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepo) DeleteQualityRetry(ctx context.Context, datasetID string) error {
+	if _, err := r.pool.Exec(ctx, `DELETE FROM quality_retries WHERE dataset_id = $1`, datasetID); err != nil {
+		return fmt.Errorf("delete quality retry: %w", err)
+	}
+	return nil
 }

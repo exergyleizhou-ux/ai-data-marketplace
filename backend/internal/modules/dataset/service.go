@@ -27,6 +27,7 @@ type qualityJob struct {
 	DatasetID     string
 	VersionID     string
 	ContentSHA256 string
+	Attempts      int // retry count (0 on first attempt)
 }
 
 // Service holds dataset business logic.
@@ -96,7 +97,26 @@ func WithAsyncQuality(workers, buffer int) Option {
 				defer svc.wg.Done()
 				for job := range svc.qCh {
 					if err := svc.processQuality(context.Background(), job); err != nil {
-						slog.Error("quality job failed", "dataset_id", job.DatasetID, "version_id", job.VersionID, "err", err)
+						kind := classifyQualityError(err)
+						if kind == QualityErrPermanent {
+							// Permanent → bounce back to draft + notify seller.
+							_ = svc.repo.SetStatus(context.Background(), job.DatasetID, StatusDraft)
+							_ = svc.repo.DeleteQualityRetry(context.Background(), job.DatasetID)
+							if d, gerr := svc.repo.GetByID(context.Background(), job.DatasetID); gerr == nil && svc.notifier != nil {
+								_ = svc.notifier.NotifyUser(context.Background(), d.SellerID, "quality_done",
+									"质检无法处理", "数据集「"+d.Title+"」内容无法解析，请检查后重新上传。",
+									"dataset", d.ID)
+							}
+							slog.Warn("quality permanent fail", "dataset", job.DatasetID, "err", err)
+						} else {
+							// Transient → schedule retry with exponential backoff.
+							nextAt := time.Now().Add(computeRetryBackoff(job.Attempts))
+							_ = svc.repo.MarkQualityRetryAttempt(context.Background(), job.DatasetID, nextAt, err.Error())
+							slog.Info("quality retry scheduled", "dataset", job.DatasetID, "next_at", nextAt, "err", err)
+						}
+					} else {
+						// Success → clean up retry record.
+						_ = svc.repo.DeleteQualityRetry(context.Background(), job.DatasetID)
 					}
 				}
 			}()
@@ -112,6 +132,8 @@ func NewService(repo Repository, identity IdentityChecker, rec audit.Recorder, o
 	for _, o := range opts {
 		o(s)
 	}
+	// Start the background quality retry scanner (PR-J).
+	go s.qualityRetryLoop(context.Background())
 	return s
 }
 
@@ -120,12 +142,23 @@ func NewService(repo Repository, identity IdentityChecker, rec audit.Recorder, o
 // immediately.
 func (s *Service) enqueueQuality(job qualityJob) {
 	if s.qCh != nil {
-		s.qCh <- job
+		select {
+		case s.qCh <- job:
+			return
+		default:
+			// Channel full → persist for retry (60s delay).
+		}
+	} else {
+		// Inline mode (tests): run synchronously and don't persist.
+		if err := s.processQuality(context.Background(), job); err != nil {
+			slog.Error("inline quality job failed", "dataset_id", job.DatasetID, "err", err)
+		}
 		return
 	}
-	if err := s.processQuality(context.Background(), job); err != nil {
-		slog.Error("inline quality job failed", "dataset_id", job.DatasetID, "err", err)
-	}
+	// Either channel was full or no qCh (sync mode handled above).
+	// Persist so the retry scanner picks it up.
+	_ = s.repo.EnqueueQualityRetry(context.Background(),
+		job.DatasetID, job.VersionID, job.ContentSHA256, 3)
 }
 
 // SetQualityNotifier wires the notification emitter so quality completion
@@ -141,6 +174,49 @@ func (s *Service) Close() {
 	if s.qCh != nil {
 		close(s.qCh)
 		s.wg.Wait()
+	}
+}
+
+// qualityRetryLoop periodically scans for due retries and re-enqueues them.
+// Runs as a background goroutine started by NewService.  Exits when ctx is
+// cancelled (Close calls cancel the retry-loop context).  Must NOT read from
+// s.qCh — that channel carries real quality jobs; reading it here would steal
+// work from the worker pool.
+func (s *Service) qualityRetryLoop(ctx context.Context) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			rows, err := s.repo.ListDueQualityRetries(ctx, 10)
+			if err != nil {
+				slog.Warn("quality retry list failed", "err", err)
+				continue
+			}
+			for _, r := range rows {
+				slog.Info("quality retry re-enqueue", "dataset", r.DatasetID, "attempt", r.Attempts)
+				s.enqueueQuality(qualityJob{
+					DatasetID: r.DatasetID, VersionID: r.VersionID,
+					ContentSHA256: r.ContentSHA256,
+					Attempts:      r.Attempts,
+				})
+			}
+		}
+	}
+}
+
+// computeRetryBackoff returns the delay before the next retry attempt:
+// 0→30s, 1→60s, 2+→120s (capped).
+func computeRetryBackoff(attempts int) time.Duration {
+	switch attempts {
+	case 0:
+		return 30 * time.Second
+	case 1:
+		return 60 * time.Second
+	default:
+		return 120 * time.Second
 	}
 }
 
