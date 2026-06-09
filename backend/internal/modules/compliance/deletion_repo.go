@@ -2,10 +2,12 @@ package compliance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -28,10 +30,6 @@ func (r *pgDeletionRepo) Create(ctx context.Context, userID, reason string, cool
 	err := r.pool.QueryRow(ctx,
 		`INSERT INTO account_deletion_requests (user_id, reason, cooling_until)
 		 VALUES ($1,$2,$3)
-		 ON CONFLICT (user_id) DO UPDATE
-		 SET reason=EXCLUDED.reason, cooling_until=EXCLUDED.cooling_until, status='cooling',
-		     ops_note=NULL, processed_at=NULL, processed_by=NULL, requested_at=now()
-		 WHERE account_deletion_requests.status IN ('cooling','approved')
 		 RETURNING id::text, user_id::text, COALESCE(reason,''), status,
 		     cooling_until::text, COALESCE(ops_note,''), requested_at::text,
 		     COALESCE(processed_at::text,''), COALESCE(processed_by::text,'')`,
@@ -39,6 +37,10 @@ func (r *pgDeletionRepo) Create(ctx context.Context, userID, reason string, cool
 		Scan(&d.ID, &d.UserID, &d.Reason, &d.Status,
 			&d.CoolingUntil, &d.OpsNote, &d.RequestedAt, &d.ProcessedAt, &d.ProcessedBy)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return DeletionRequest{}, ErrDeletionExists
+		}
 		return DeletionRequest{}, fmt.Errorf("create deletion request: %w", err)
 	}
 	return d, nil
@@ -156,7 +158,7 @@ func (r *pgDeletionRepo) ExecuteDeletion(ctx context.Context, id, userID, opsID 
 	// 1. Scrub user PII
 	if _, err := tx.Exec(ctx,
 		`UPDATE users SET account = 'deleted-' || id::text,
-			password_hash = 'deleted', kyc_status = 'deleted', kyc_data = '{}'::jsonb
+			password_hash = 'deleted', kyc_status = 'rejected'
 		 WHERE id = $1`, userID); err != nil {
 		return fmt.Errorf("scrub user: %w", err)
 	}

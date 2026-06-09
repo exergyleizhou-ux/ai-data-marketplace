@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,10 +54,10 @@ func TestDeletionRepo_UniquePerUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Second Create should upsert (ON CONFLICT DO UPDATE).
+	// Second Create while cooling active must return ErrDeletionExists.
 	_, err = repo.Create(ctx, uid, "reason2", time.Now().Add(7*24*time.Hour))
-	if err != nil {
-		t.Fatal("second Create must upsert, not error", err)
+	if err != ErrDeletionExists {
+		t.Fatalf("second Create while active must return ErrDeletionExists, got %v", err)
 	}
 }
 
@@ -108,5 +109,101 @@ func TestDeletionRepo_Transition_FromDeletedReturnsErrBadTransition(t *testing.T
 	_, err := repo.Transition(ctx, d.ID, DeletionDeleted, DeletionCooling, uid, "")
 	if err != ErrBadTransition {
 		t.Fatalf("from deleted must be ErrBadTransition, got %v", err)
+	}
+}
+
+func TestDeletionRepo_Create_AllowsReRequestAfterCancel(t *testing.T) {
+	repo, cleanup := testDeletionRepo(t)
+	defer cleanup()
+	ctx := context.Background()
+	pool := repo.(*pgDeletionRepo).pool
+	uid := seedDelUser(t, pool)
+
+	// First request → cooling → cancel
+	d1, err := repo.Create(ctx, uid, "r1", time.Now().Add(7*24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.Transition(ctx, d1.ID, DeletionCooling, DeletionCancelled, uid, "changed mind")
+
+	// Second request — must succeed (cancelled no longer blocks).
+	d2, err := repo.Create(ctx, uid, "r2", time.Now().Add(7*24*time.Hour))
+	if err != nil {
+		t.Fatalf("re-request after cancel must succeed, got %v", err)
+	}
+	if d2.Status != DeletionCooling {
+		t.Fatalf("status = %q, want cooling", d2.Status)
+	}
+}
+
+func TestDeletionRepo_ExecuteDeletion_ScrubsPIIPreservesFinancials(t *testing.T) {
+	repo, cleanup := testDeletionRepo(t)
+	defer cleanup()
+	ctx := context.Background()
+	pool := repo.(*pgDeletionRepo).pool
+	uid := seedDelUser(t, pool)
+
+	// Seed orders, notifications, audit_logs for this user.
+	// Create seller + dataset to satisfy FK constraints.
+	var sellerUUID, dsUUID string
+	pool.QueryRow(ctx, `INSERT INTO users (account, account_type, password_hash, role)
+		VALUES ('ex-seller@x.com','email','x','seller') ON CONFLICT DO NOTHING
+		RETURNING id::text`).Scan(&sellerUUID)
+	pool.QueryRow(ctx, `INSERT INTO datasets (seller_id, title, data_type, license_type, status)
+		VALUES ($1::uuid, 'ex-ds', 'text', 'commercial', 'published')
+		ON CONFLICT (id) DO NOTHING
+		RETURNING id::text`, sellerUUID).Scan(&dsUUID)
+
+	if _, err := pool.Exec(ctx, `INSERT INTO orders (buyer_id, seller_id, dataset_id, license_type,
+		amount_cents, platform_fee_cents, seller_amount_cents, status, product_type)
+		VALUES ($1::uuid, $2::uuid, $3::uuid, 'commercial',
+		100, 10, 90, 'settled', 'download')`, uid, sellerUUID, dsUUID); err != nil {
+		t.Fatalf("seed order: %v", err)
+	}
+	pool.Exec(ctx, `INSERT INTO notifications (user_id, kind, title, body)
+		VALUES ($1, 'k', 't', 'b')`, uid)
+	pool.Exec(ctx, `INSERT INTO audit_logs (actor_id, action, resource_type, resource_id)
+		VALUES ($1::uuid, 'login', 'user', $1::text)`, uid)
+
+	// Create + approve → execute
+	d, _ := repo.Create(ctx, uid, "reason", time.Now().Add(-time.Hour))
+	repo.Transition(ctx, d.ID, DeletionCooling, DeletionApproved, uid, "ok")
+
+	if err := repo.ExecuteDeletion(ctx, d.ID, uid, uid); err != nil {
+		t.Fatal(err)
+	}
+
+	// Assert PII scrubbed: account starts with "deleted-"
+	var account string
+	pool.QueryRow(ctx, `SELECT account FROM users WHERE id=$1`, uid).Scan(&account)
+	if !strings.HasPrefix(account, "deleted-") {
+		t.Errorf("users.account = %q, want deleted-...", account)
+	}
+	// kyc_status must be scrubbed to 'rejected' (only valid CHECK-compliant scrub value)
+	var kyc string
+	pool.QueryRow(ctx, `SELECT kyc_status FROM users WHERE id=$1`, uid).Scan(&kyc)
+	if kyc != "rejected" {
+		t.Errorf("kyc_status = %q, want rejected (scrubbed)", kyc)
+	}
+
+	// Assert notifications deleted.
+	var n int
+	pool.QueryRow(ctx, `SELECT COUNT(*) FROM notifications WHERE user_id=$1`, uid).Scan(&n)
+	if n != 0 {
+		t.Errorf("notifications count = %d, want 0", n)
+	}
+
+	// CRITICAL: orders must be preserved (accounting law).
+	var orderCount int
+	pool.QueryRow(ctx, `SELECT COUNT(*) FROM orders WHERE buyer_id=$1`, uid).Scan(&orderCount)
+	if orderCount != 1 {
+		t.Errorf("orders count = %d, want 1 (must preserve for accounting law)", orderCount)
+	}
+
+	// audit_logs must be preserved.
+	var auditCount int
+	pool.QueryRow(ctx, `SELECT COUNT(*) FROM audit_logs WHERE actor_id=$1`, uid).Scan(&auditCount)
+	if auditCount != 1 {
+		t.Errorf("audit_logs count = %d, want 1 (must preserve)", auditCount)
 	}
 }

@@ -18,7 +18,7 @@ CREATE INDEX IF NOT EXISTS idx_data_export_user_recent
 
 CREATE TABLE IF NOT EXISTS account_deletion_requests (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id           UUID NOT NULL REFERENCES users(id) UNIQUE,
+    user_id           UUID NOT NULL REFERENCES users(id),
     reason            TEXT,
     status            TEXT NOT NULL DEFAULT 'cooling'
                           CHECK (status IN ('cooling', 'approved', 'rejected', 'cancelled', 'deleted')),
@@ -31,4 +31,8 @@ CREATE TABLE IF NOT EXISTS account_deletion_requests (
 
 CREATE INDEX IF NOT EXISTS idx_account_deletion_pending
     ON account_deletion_requests (status, cooling_until)
+    WHERE status IN ('cooling', 'approved');
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_account_deletion_active_per_user
+    ON account_deletion_requests (user_id)
     WHERE status IN ('cooling', 'approved');

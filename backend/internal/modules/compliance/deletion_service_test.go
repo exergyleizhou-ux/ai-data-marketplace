@@ -105,7 +105,7 @@ func TestExecuteDeletion_OnlyAcceptsApproved(t *testing.T) {
 	}
 }
 
-func TestExecuteDeletion_ScrubsPIIPreservesAuditTrail(t *testing.T) {
+func TestRequestDeletion_StartsCooling(t *testing.T) {
 	// Integration test: covered by repo test (ExecuteDeletion in deletion_repo.go
 	// does the actual SQL scrub).
 	// This unit test confirms the flow: Execute checks status=approved, calls

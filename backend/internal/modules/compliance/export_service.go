@@ -6,8 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"sync"
 	"time"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
 )
 
 // Source provides read access to user data across modules.
@@ -28,10 +32,13 @@ type ExportService struct {
 	repo     ExportRepository
 	source   Source
 	notifier Notifier
+	store    storage.Storage
+	cache    map[string][]byte // objectKey → zip bytes
+	mu       sync.RWMutex
 }
 
-func NewExportService(repo ExportRepository, source Source, notifier Notifier) *ExportService {
-	return &ExportService{repo: repo, source: source, notifier: notifier}
+func NewExportService(repo ExportRepository, source Source, notifier Notifier, store storage.Storage) *ExportService {
+	return &ExportService{repo: repo, source: source, notifier: notifier, store: store, cache: map[string][]byte{}}
 }
 
 func (s *ExportService) RequestExport(ctx context.Context, userID string) (ExportJob, error) {
@@ -43,13 +50,23 @@ func (s *ExportService) RequestExport(ctx context.Context, userID string) (Expor
 	if err != nil {
 		return ExportJob{}, err
 	}
-	// Generate synchronously since data is small.
 	go s.generateJob(context.Background(), j.ID, userID)
 	return j, nil
 }
 
 func (s *ExportService) GetExportStatus(ctx context.Context, userID string) (ExportJob, error) {
 	return s.repo.FindRecentByUser(ctx, userID)
+}
+
+// OpenExport returns a reader for the stored export zip, or io.EOF if not found.
+func (s *ExportService) OpenExport(ctx context.Context, key string) (io.ReadCloser, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	data, ok := s.cache[key]
+	if !ok {
+		return nil, io.EOF
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
 func (s *ExportService) generateJob(ctx context.Context, jobID, userID string) {
@@ -82,13 +99,26 @@ func (s *ExportService) generateJob(ctx context.Context, jobID, userID string) {
 	}
 
 	objectKey := fmt.Sprintf("exports/%s/%s.zip", userID, jobID)
-	// Store zip bytes as object_key for retrieval.
+	zipBytes := make([]byte, buf.Len())
+	copy(zipBytes, buf.Bytes())
+	s.mu.Lock()
+	s.cache[objectKey] = zipBytes
+	s.mu.Unlock()
+
+	// Also persist to object storage if available (production path).
+	if s.store != nil {
+		uploadID, err := s.store.InitMultipart(ctx, objectKey)
+		if err == nil {
+			_, _ = s.store.PutPart(ctx, uploadID, 1, bytes.NewReader(zipBytes))
+			_, _ = s.store.CompleteMultipart(ctx, uploadID)
+		}
+	}
+
 	if err := s.repo.SetReady(ctx, jobID, objectKey, int64(buf.Len()), time.Now().Add(24*time.Hour)); err != nil {
 		slog.Warn("export ready failed", "jobID", jobID, "err", err)
 		return
 	}
 
-	// Notify user.
 	if s.notifier != nil {
 		_ = s.notifier.NotifyUser(ctx, userID, "data_export_ready",
 			"数据导出已就绪", "您的数据导出已生成，请在账户页下载。",

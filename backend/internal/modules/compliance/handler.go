@@ -2,6 +2,7 @@ package compliance
 
 import (
 	"errors"
+	"io"
 	"strconv"
 	"time"
 
@@ -60,13 +61,18 @@ func (h *handler) downloadExport(c *gin.Context) {
 		fail(c, ErrExportNotReady)
 		return
 	}
+	// Try local cache first (in-memory), fall back to object storage.
+	rc, err := h.exportSvc.OpenExport(c.Request.Context(), j.ID)
+	if err != nil {
+		httpx.Fail(c, httpx.ErrInternal.WithMessage("export file not found"))
+		return
+	}
+	defer rc.Close()
+
 	c.Header("Content-Type", "application/zip")
 	c.Header("Content-Disposition", "attachment; filename=\"oasis-data-export-"+time.Now().Format("20060102")+".zip\"")
-	c.Header("X-Export-ID", j.ID)
 	c.Status(200)
-	// For now, the zip bytes were captured in the export job record as a reference.
-	// In production, this would redirect to a pre-signed S3 URL.
-	httpx.OK(c, gin.H{"download_url": j.DownloadURL, "object_key": j.ID})
+	_, _ = io.Copy(c.Writer, rc)
 }
 
 // --- deletion ---

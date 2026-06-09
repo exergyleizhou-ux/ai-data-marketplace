@@ -288,7 +288,7 @@ func (s *Server) routes() {
 
 		// PIPL Compliance: data export + account deletion (PR-S).
 		compExportSvc := compliance.NewExportService(compliance.NewExportRepository(s.db),
-			complianceSourceAdapter{pool: s.db}, notifySvc)
+			complianceSourceAdapter{pool: s.db}, notifySvc, store)
 		compExportSvc.StartScanner(context.Background())
 		compDeletionSvc := compliance.NewDeletionService(compliance.NewDeletionRepository(s.db), notifySvc)
 		compliance.Register(api, compExportSvc, compDeletionSvc, authMW, auth.RequireRole("ops", "admin"))
