@@ -27,6 +27,7 @@ type qualityJob struct {
 	DatasetID     string
 	VersionID     string
 	ContentSHA256 string
+	Attempts      int // retry count (0 on first attempt)
 }
 
 // Service holds dataset business logic.
@@ -108,8 +109,8 @@ func WithAsyncQuality(workers, buffer int) Option {
 							}
 							slog.Warn("quality permanent fail", "dataset", job.DatasetID, "err", err)
 						} else {
-							// Transient → schedule retry with backoff.
-							nextAt := time.Now().Add(30 * time.Second)
+							// Transient → schedule retry with exponential backoff.
+							nextAt := time.Now().Add(computeRetryBackoff(job.Attempts))
 							_ = svc.repo.MarkQualityRetryAttempt(context.Background(), job.DatasetID, nextAt, err.Error())
 							slog.Info("quality retry scheduled", "dataset", job.DatasetID, "next_at", nextAt, "err", err)
 						}
@@ -177,19 +178,14 @@ func (s *Service) Close() {
 }
 
 // qualityRetryLoop periodically scans for due retries and re-enqueues them.
-// Runs as a background goroutine started by NewService.
+// Runs as a background goroutine started by NewService.  Exits when ctx is
+// cancelled (Close calls cancel the retry-loop context).  Must NOT read from
+// s.qCh — that channel carries real quality jobs; reading it here would steal
+// work from the worker pool.
 func (s *Service) qualityRetryLoop(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.qCh:
-			// qCh was closed (Close() was called).
-			return
-		default:
-		}
 		select {
 		case <-ctx.Done():
 			return
@@ -204,9 +200,23 @@ func (s *Service) qualityRetryLoop(ctx context.Context) {
 				s.enqueueQuality(qualityJob{
 					DatasetID: r.DatasetID, VersionID: r.VersionID,
 					ContentSHA256: r.ContentSHA256,
+					Attempts:      r.Attempts,
 				})
 			}
 		}
+	}
+}
+
+// computeRetryBackoff returns the delay before the next retry attempt:
+// 0→30s, 1→60s, 2+→120s (capped).
+func computeRetryBackoff(attempts int) time.Duration {
+	switch attempts {
+	case 0:
+		return 30 * time.Second
+	case 1:
+		return 60 * time.Second
+	default:
+		return 120 * time.Second
 	}
 }
 
