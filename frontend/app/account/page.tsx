@@ -148,6 +148,8 @@ function AccountInner() {
 
       <WatchlistCard />
 
+      <NotificationPreferencesCard />
+
       <DataRightsCard />
 
       <FederatedComputePanel />
@@ -361,4 +363,26 @@ function DataRightsCard() {
       </div>
     </Card>
   );
+}
+function NotificationPreferencesCard() {
+  const { t } = useT();
+  const [prefs, setPrefs] = useState<Record<string, { kind: string; email_enabled: boolean; in_app_enabled: boolean }> | null>(null);
+  const [busy, setBusy] = useState("");
+  useEffect(() => { api.getNotificationPreferences().then((r) => setPrefs(r.items)).catch(() => setPrefs({})); }, []);
+  const KINDS: Record<string, string> = {
+    order_paid: t("订单已支付", "Order paid"), order_settled: t("订单已结算", "Order settled"),
+    order_disputed: t("订单纠纷", "Order dispute"), quality_done: t("质检完成", "Quality done"),
+    dataset_updated: t("数据集有更新", "Dataset updated"),
+  };
+  async function toggle(kind: string, email: boolean, inApp: boolean) { setBusy(kind); try { await api.updateNotificationPreference(kind, email, inApp); } finally { setBusy(""); } }
+  if (!prefs) return null;
+  return (<Card><h2 className="mb-3 font-semibold">{t("通知偏好", "Notification preferences")}</h2>
+    <div className="space-y-1">{Object.entries(KINDS).map(([kind, label]) => {
+      const p = prefs[kind]; const email = !p || p.email_enabled; const inApp = !p || p.in_app_enabled;
+      return (<div key={kind} className="flex items-center justify-between border rounded px-3 py-2 text-sm">
+        <span>{label}</span>
+        <label className="text-xs">{t("邮件", "Email")}<input type="checkbox" checked={email} disabled={busy===kind} onChange={() => toggle(kind, !email, inApp)} /></label>
+        <label className="ml-3 text-xs">{t("站内", "In-app")}<input type="checkbox" checked={inApp} disabled={busy===kind} onChange={() => toggle(kind, email, !inApp)} /></label>
+      </div>);
+    })}</div></Card>);
 }
