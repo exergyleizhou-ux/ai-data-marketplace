@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -43,9 +42,8 @@ func TestComputeHTTPIntegration(t *testing.T) {
 		t.Fatalf("storage: %v", err)
 	}
 
-	uniq := time.Now().UnixNano()
-	seller := seedUser(t, pool, fmt.Sprintf("hseller-%d", uniq), "seller")
-	buyer := seedUser(t, pool, fmt.Sprintf("hbuyer-%d", uniq), "buyer")
+	seller := seedUser(t, pool, "hseller", "seller")
+	buyer := seedUser(t, pool, "hbuyer", "buyer")
 	dsID := seedDataset(t, pool, seller)
 
 	svc := NewService(repo,

@@ -2,7 +2,6 @@ package compute
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -39,9 +38,8 @@ func TestComputeTEEAttestationIntegration(t *testing.T) {
 		t.Fatalf("storage: %v", err)
 	}
 
-	uniq := time.Now().UnixNano()
-	seller := seedUser(t, pool, fmt.Sprintf("teeseller-%d", uniq), "seller")
-	buyer := seedUser(t, pool, fmt.Sprintf("teebuyer-%d", uniq), "buyer")
+	seller := seedUser(t, pool, "teeseller", "seller")
+	buyer := seedUser(t, pool, "teebuyer", "buyer")
 	dsID := seedDataset(t, pool, seller)
 
 	const digest = "sha256:codedigest-l2"

@@ -2,6 +2,8 @@ package compute
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -38,8 +40,8 @@ func TestComputeRepoIntegration(t *testing.T) {
 	repo := NewRepository(pool)
 	uniq := fmt.Sprintf("%d", time.Now().UnixNano())
 
-	seller := seedUser(t, pool, "cseller-"+uniq, "seller")
-	buyer := seedUser(t, pool, "cbuyer-"+uniq, "buyer")
+	seller := seedUser(t, pool, "cseller", "seller")
+	buyer := seedUser(t, pool, "cbuyer", "buyer")
 	dsID := seedDataset(t, pool, seller)
 
 	// --- algorithm registry ---
@@ -225,12 +227,22 @@ func TestComputeRepoIntegration(t *testing.T) {
 
 // --- seed helpers ---
 
-func seedUser(t *testing.T, pool *pgxpool.Pool, account, role string) string {
+// uniqAccountSuffix returns 16 hex characters from 8 random bytes.
+func uniqAccountSuffix() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func seedUser(t *testing.T, pool *pgxpool.Pool, prefix, role string) string {
 	t.Helper()
+	account := prefix + "-" + uniqAccountSuffix() + "@example.com"
 	var id string
 	if err := pool.QueryRow(context.Background(),
 		`INSERT INTO users (account, account_type, password_hash, role, kyc_status)
-		 VALUES ($1,'email','x',$2,'verified') RETURNING id::text`, account+"@example.com", role).Scan(&id); err != nil {
+		 VALUES ($1,'email','x',$2,'verified')
+		 ON CONFLICT (account) DO UPDATE SET role = EXCLUDED.role
+		 RETURNING id::text`, account, role).Scan(&id); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 	return id
