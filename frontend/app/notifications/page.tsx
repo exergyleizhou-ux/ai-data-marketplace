@@ -24,6 +24,9 @@ const KIND: Record<string, [string, string]> = {
   dataset_updated: ["数据集有更新", "Dataset updated"],
   question_asked: ["数据集有新提问", "New question on your dataset"],
   question_answered: ["您的提问已被回答", "Your question was answered"],
+  withdrawal_approved: ["提现已批准", "Withdrawal approved"],
+  withdrawal_completed: ["提现已到账", "Withdrawal completed"],
+  withdrawal_rejected: ["提现被拒", "Withdrawal rejected"],
 };
 
 function Inner() {

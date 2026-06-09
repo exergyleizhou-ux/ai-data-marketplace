@@ -296,6 +296,13 @@ export type DatasetQuestion = {
   created_at: string;
 };
 
+export type Withdrawal = {
+  id: string; seller_id: string; amount_cents: number;
+  channel: string; account_label: string; status: string;
+  ops_note?: string; requested_at: string;
+  processed_at?: string; processed_by?: string;
+};
+
 export const tokenStore = {
   get access() {
     return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
@@ -556,6 +563,20 @@ export const api = {
   answerQuestion: (qid: string, body: string) =>
     request<{ id: string; question_id: string; body: string; created_at: string }>(
       `/questions/${qid}/answer`, { body: { body } }),
+
+  // withdrawal (book-keeping, P module)
+  requestWithdrawal: (b: { amount_cents: number; channel: string; account_label: string }) =>
+    request<Withdrawal>("/sellers/me/withdrawals", { body: b }),
+  listMyWithdrawals: (limit?: number, offset?: number) =>
+    request<{ items: Withdrawal[] }>("/sellers/me/withdrawals", { query: { limit, offset } }),
+  adminListWithdrawals: (status?: string, limit?: number, offset?: number) =>
+    request<{ items: Withdrawal[] }>("/admin/withdrawals", { query: { status, limit, offset } }),
+  adminApproveWithdrawal: (id: string, note?: string) =>
+    request<Withdrawal>(`/admin/withdrawals/${id}/approve`, { body: { note } }),
+  adminRejectWithdrawal: (id: string, reason: string) =>
+    request<Withdrawal>(`/admin/withdrawals/${id}/reject`, { body: { reason } }),
+  adminCompleteWithdrawal: (id: string, note?: string) =>
+    request<Withdrawal>(`/admin/withdrawals/${id}/complete`, { body: { note } }),
 
   // audit logs (ops)
   adminListAuditLogs: (q: {
