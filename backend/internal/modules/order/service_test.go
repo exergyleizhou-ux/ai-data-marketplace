@@ -409,3 +409,192 @@ func TestCreateCompute_RequiresVerified(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotVerified", err)
 	}
 }
+
+// --- Notifier 集成测试(回归 PR #75 通知 emit)---
+
+type fakeNotifier struct {
+	calls []notifyCall
+}
+type notifyCall struct {
+	UserID, Kind, Title, Body, ResourceType, ResourceID string
+}
+
+func (f *fakeNotifier) NotifyUser(ctx context.Context, userID, kind, title, body, resourceType, resourceID string) error {
+	f.calls = append(f.calls, notifyCall{userID, kind, title, body, resourceType, resourceID})
+	return nil
+}
+
+func TestMarkPaid_DownloadOrder_EmitsBuyerNotification(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSvc(true, published())
+	n := &fakeNotifier{}
+	svc.SetNotifier(n)
+
+	o, err := svc.Create(ctx, "buyer", "ds1", "commercial")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.MarkPaid(ctx, o.ID); err != nil {
+		t.Fatalf("markPaid: %v", err)
+	}
+	if len(n.calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(n.calls))
+	}
+	c := n.calls[0]
+	if c.Kind != "order_paid" {
+		t.Fatalf("kind = %q, want order_paid", c.Kind)
+	}
+	if c.UserID != "buyer" {
+		t.Fatalf("userID = %q, want buyer", c.UserID)
+	}
+	if c.ResourceType != "order" {
+		t.Fatalf("resourceType = %q, want order", c.ResourceType)
+	}
+	if c.ResourceID != o.ID {
+		t.Fatalf("resourceID = %q, want %s", c.ResourceID, o.ID)
+	}
+}
+
+func TestMarkPaid_ComputeOrder_DoesNotEmitBuyerNotification(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSvc(true, published())
+	n := &fakeNotifier{}
+	svc.SetNotifier(n)
+	svc.SetComputeGranter(&fakeGranter{})
+
+	o, err := svc.CreateCompute(ctx, "buyer", "seller", "ds1", 5000)
+	if err != nil {
+		t.Fatalf("create compute: %v", err)
+	}
+	if _, err := svc.MarkPaid(ctx, o.ID); err != nil {
+		t.Fatalf("markPaid: %v", err)
+	}
+	if len(n.calls) != 0 {
+		t.Fatalf("calls = %d, want 0 (compute orders do not emit order_paid to buyer)", len(n.calls))
+	}
+}
+
+func TestMarkSettled_EmitsSellerNotification(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSvc(true, published())
+	n := &fakeNotifier{}
+	svc.SetNotifier(n)
+
+	o, err := svc.Create(ctx, "buyer", "ds1", "commercial")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.MarkPaid(ctx, o.ID); err != nil {
+		t.Fatalf("markPaid: %v", err)
+	}
+	if _, err := svc.MarkDelivered(ctx, o.ID); err != nil {
+		t.Fatalf("markDelivered: %v", err)
+	}
+	if _, err := svc.ConfirmDelivery(ctx, "buyer", o.ID); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	if _, err := svc.MarkSettled(ctx, o.ID); err != nil {
+		t.Fatalf("markSettled: %v", err)
+	}
+
+	var settleCall *notifyCall
+	for i := range n.calls {
+		if n.calls[i].Kind == "order_settled" {
+			settleCall = &n.calls[i]
+			break
+		}
+	}
+	if settleCall == nil {
+		t.Fatal("no order_settled notification emitted")
+	}
+	if settleCall.UserID != "seller" {
+		t.Fatalf("userID = %q, want seller", settleCall.UserID)
+	}
+	// Body must contain ¥ (formatted amount).
+	found := false
+	for _, r := range settleCall.Body {
+		if r == '¥' {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("body must contain ¥, got: %s", settleCall.Body)
+	}
+	if settleCall.ResourceType != "order" {
+		t.Fatalf("resourceType = %q, want order", settleCall.ResourceType)
+	}
+}
+
+func TestDispute_BuyerInitiated_NotifiesSeller(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSvc(true, published())
+	n := &fakeNotifier{}
+	svc.SetNotifier(n)
+
+	o, err := svc.Create(ctx, "buyer", "ds1", "commercial")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.MarkPaid(ctx, o.ID); err != nil {
+		t.Fatalf("markPaid: %v", err)
+	}
+	// Clear calls from MarkPaid.
+	n.calls = nil
+
+	if _, err := svc.Dispute(ctx, "buyer", o.ID, "reason"); err != nil {
+		t.Fatalf("dispute: %v", err)
+	}
+	if len(n.calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(n.calls))
+	}
+	if n.calls[0].Kind != "order_disputed" {
+		t.Fatalf("kind = %q, want order_disputed", n.calls[0].Kind)
+	}
+	if n.calls[0].UserID != "seller" {
+		t.Fatalf("userID = %q, want seller (buyer initiated, notifies seller)", n.calls[0].UserID)
+	}
+}
+
+func TestDispute_SellerInitiated_NotifiesBuyer(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSvc(true, published())
+	n := &fakeNotifier{}
+	svc.SetNotifier(n)
+
+	o, err := svc.Create(ctx, "buyer", "ds1", "commercial")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.MarkPaid(ctx, o.ID); err != nil {
+		t.Fatalf("markPaid: %v", err)
+	}
+	n.calls = nil
+
+	if _, err := svc.Dispute(ctx, "seller", o.ID, "reason"); err != nil {
+		t.Fatalf("dispute: %v", err)
+	}
+	if len(n.calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(n.calls))
+	}
+	if n.calls[0].Kind != "order_disputed" {
+		t.Fatalf("kind = %q, want order_disputed", n.calls[0].Kind)
+	}
+	if n.calls[0].UserID != "buyer" {
+		t.Fatalf("userID = %q, want buyer", n.calls[0].UserID)
+	}
+}
+
+func TestMarkPaid_NilNotifier_NoPanic(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSvc(true, published())
+	// svc.SetNotifier is NOT called → s.notifier == nil.
+
+	o, err := svc.Create(ctx, "buyer", "ds1", "commercial")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.MarkPaid(ctx, o.ID); err != nil {
+		t.Fatalf("MarkPaid with nil notifier must not panic or error, got: %v", err)
+	}
+}
