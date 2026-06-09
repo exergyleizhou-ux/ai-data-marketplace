@@ -53,6 +53,12 @@ type ComputeGranter interface {
 	GrantForOrder(ctx context.Context, orderID, datasetID, buyerID string) error
 }
 
+// Notifier emits user-facing notifications for order lifecycle events.
+// Implemented by the notification module; injected late. Optional.
+type Notifier interface {
+	NotifyUser(ctx context.Context, userID, kind, title, body, resourceType, resourceID string) error
+}
+
 // Service holds order business logic and drives the status state machine.
 type Service struct {
 	repo     Repository
@@ -63,6 +69,7 @@ type Service struct {
 	refund   RefundTrigger
 	compute  ComputeRevoker
 	granter  ComputeGranter
+	notifier Notifier
 }
 
 func NewService(repo Repository, identity IdentityChecker, datasets DatasetReader, rec audit.Recorder) *Service {
@@ -86,6 +93,10 @@ func (s *Service) SetComputeRevoker(r ComputeRevoker) { s.compute = r }
 // SetComputeGranter wires the compute-entitlement granter (compute) so paying a
 // compute order grants its entitlement. Optional.
 func (s *Service) SetComputeGranter(g ComputeGranter) { s.granter = g }
+
+// SetNotifier wires the notification emitter so order lifecycle events produce
+// user-facing notifications. Optional (may be nil in tests).
+func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 
 // CreateCompute places a compute (C2D) order priced by the caller (the compute
 // module passes the offer price). Same KYC / self-purchase / fee-split / state
@@ -204,6 +215,11 @@ func (s *Service) MarkPaid(ctx context.Context, id string) (Order, error) {
 		return Order{}, err
 	}
 	if paid.ProductType != ProductCompute {
+		if s.notifier != nil {
+			_ = s.notifier.NotifyUser(ctx, paid.BuyerID, "order_paid",
+				"订单已支付", "您的订单 #"+trunc8(paid.ID)+" 已支付成功，等待交付。",
+				"order", paid.ID)
+		}
 		return paid, nil
 	}
 	if s.granter != nil {
@@ -256,7 +272,13 @@ func (s *Service) MarkSettled(ctx context.Context, id string) (Order, error) {
 	if o, err := s.repo.GetByID(ctx, id); err == nil && o.Status == StatusSettled {
 		return o, nil
 	}
-	return s.transition(ctx, "", id, StatusConfirmed, StatusSettled, false)
+	settled, err := s.transition(ctx, "", id, StatusConfirmed, StatusSettled, false)
+	if err == nil && s.notifier != nil {
+		_ = s.notifier.NotifyUser(ctx, settled.SellerID, "order_settled",
+			"订单已结算", "订单 #"+trunc8(settled.ID)+" 已结算，金额 ¥"+centsStr(settled.SellerAmountCents)+" 已分账至您的账户。",
+			"order", settled.ID)
+	}
+	return settled, err
 }
 
 // Cancel: created -> cancelled (payment timeout).
@@ -281,7 +303,17 @@ func (s *Service) Dispute(ctx context.Context, userID, id, reason string) (Order
 	if err := s.repo.CreateDispute(ctx, id, userID, reason); err != nil {
 		return Order{}, err
 	}
-	return s.transition(ctx, userID, id, o.Status, StatusDisputed, false)
+	result, err := s.transition(ctx, userID, id, o.Status, StatusDisputed, false)
+	if err == nil && s.notifier != nil {
+		other := result.SellerID
+		if userID == result.SellerID {
+			other = result.BuyerID
+		}
+		_ = s.notifier.NotifyUser(ctx, other, "order_disputed",
+			"订单纠纷", "订单 #"+trunc8(result.ID)+" 已被对方提起纠纷。",
+			"order", result.ID)
+	}
+	return result, err
 }
 
 // Earnings returns the seller's money summary.
@@ -406,4 +438,15 @@ func max0(n int) int {
 		return 0
 	}
 	return n
+}
+
+func trunc8(s string) string {
+	if len(s) > 8 {
+		return s[:8]
+	}
+	return s
+}
+
+func centsStr(c int64) string {
+	return fmt.Sprintf("%.2f", float64(c)/100)
 }

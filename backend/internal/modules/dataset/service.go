@@ -46,6 +46,23 @@ type Service struct {
 	// Optional PaperGuard authenticity sidecar. When nil, processQuality uses
 	// the in-process Go baseline (quality.Authenticity).
 	screener authenticityScreener
+
+	// Optional notification emitter. When set, quality completion triggers
+	// a seller notification.
+	notifier QualityNotifier
+
+	// Optional cert registrar for public verification.
+	certReg CertRegistrar
+}
+
+// QualityNotifier emits a notification when quality checks finish.
+type QualityNotifier interface {
+	NotifyUser(ctx context.Context, userID, kind, title, body, resourceType, resourceID string) error
+}
+
+// CertRegistrar persists a certificate idempotently for public lookup.
+type CertRegistrar interface {
+	Register(ctx context.Context, certID, resourceType, resourceID string) error
 }
 
 // Option configures optional Service dependencies.
@@ -110,6 +127,14 @@ func (s *Service) enqueueQuality(job qualityJob) {
 		slog.Error("inline quality job failed", "dataset_id", job.DatasetID, "err", err)
 	}
 }
+
+// SetQualityNotifier wires the notification emitter so quality completion
+// sends a seller notification. Optional (may be nil in tests).
+func (s *Service) SetQualityNotifier(n QualityNotifier) { s.notifier = n }
+
+// SetCertRegistrar wires the cert registrar so dataset certificates are
+// registered for public lookup.
+func (s *Service) SetCertRegistrar(r CertRegistrar) { s.certReg = r }
 
 // Close drains and stops the quality workers (no-op if async wasn't enabled).
 func (s *Service) Close() {
@@ -244,7 +269,14 @@ func (s *Service) Certificate(ctx context.Context, id string) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
-	return BuildCertificate(d, vm, checks), nil
+	cert := BuildCertificate(d, vm, checks)
+	// Register for public verification (best-effort, non-blocking).
+	if s.certReg != nil {
+		if cid, ok := cert["certificate_id"].(string); ok && cid != "" {
+			_ = s.certReg.Register(ctx, cid, "dataset", d.ID)
+		}
+	}
+	return cert, nil
 }
 
 // CroissantMetadata returns the dataset's MLCommons Croissant 1.0 JSON-LD — a
