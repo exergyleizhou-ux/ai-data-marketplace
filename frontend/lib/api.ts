@@ -324,6 +324,12 @@ export type DeletionRequest = {
   processed_at?: string; processed_by?: string;
 };
 
+export type NotificationPreference = {
+  kind: string;
+  email_enabled: boolean;
+  in_app_enabled: boolean;
+};
+
 export const tokenStore = {
   get access() {
     return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
@@ -560,6 +566,15 @@ export const api = {
     request<{ ok: boolean }>(`/users/me/notifications/${id}/read`, { method: "POST" }),
   markAllNotificationsRead: () =>
     request<{ marked: number }>("/users/me/notifications/read-all", { method: "POST" }),
+
+  // notification preferences
+  getNotificationPreferences: () =>
+    request<{ items: Record<string, { kind: string; email_enabled: boolean; in_app_enabled: boolean }> }>(
+      "/users/me/notification-preferences"),
+  updateNotificationPreference: (kind: string, email: boolean, inApp: boolean) =>
+    request<NotificationPreference>("/users/me/notification-preferences", {
+      method: "PUT", body: { kind, email_enabled: email, in_app_enabled: inApp },
+    }),
 
   // certificate verification (public)
   verifyCertificate: (certId: string) =>
