@@ -4,24 +4,29 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
 )
 
 type handler struct{ svc *Service }
 
 // Register mounts QA routes. /datasets/:id/questions is public-read;
 // POST /datasets/:id/questions (ask) and POST /questions/:id/answer require auth.
-func Register(rg *gin.RouterGroup, svc *Service, authMW gin.HandlerFunc) {
+func Register(rg *gin.RouterGroup, svc *Service, authMW gin.HandlerFunc, limiter ratelimit.Limiter) {
 	h := &handler{svc: svc}
 
 	rg.GET("/datasets/:id/questions", h.list)
 
 	authed := rg.Group("")
 	authed.Use(authMW)
-	authed.POST("/datasets/:id/questions", h.ask)
+	authed.POST("/datasets/:id/questions",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "qa_ask", Limit: 10, Window: time.Minute}),
+		h.ask)
 	authed.POST("/questions/:id/answer", h.answer)
 }
 

@@ -1,20 +1,31 @@
 package order
 
-import "github.com/gin-gonic/gin"
+import (
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
+)
 
 // Register mounts order routes. authMW protects buyer/seller actions; opsGate
 // guards ops endpoints (transactions, dispute resolution). The service enforces
 // party/ownership and the state machine.
-func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc) {
+func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc, limiter ratelimit.Limiter) {
 	h := &handler{svc: svc}
 
 	g := rg.Group("/orders")
 	g.Use(authMW)
-	g.POST("", h.create)
+	g.POST("",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "order_create", Limit: 20, Window: time.Minute}),
+		h.create)
 	g.GET("", h.list)
 	g.GET("/:id", h.get)
 	g.POST("/:id/confirm-delivery", h.confirmDelivery)
-	g.POST("/:id/dispute", h.dispute)
+	g.POST("/:id/dispute",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "order_dispute", Limit: 10, Window: time.Minute}),
+		h.dispute)
 	g.POST("/:id/review", h.createReview)
 
 	authed := rg.Group("")

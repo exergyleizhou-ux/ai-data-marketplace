@@ -294,7 +294,7 @@ func (s *Server) routes() {
 		search.Register(api, datasetSearchAdapter{ds: dsSvc})
 
 		orderSvc := order.NewService(order.NewRepository(s.db), authSvc, datasetPurchaseAdapter{ds: dsSvc}, rec)
-		order.Register(api, orderSvc, authMW, auth.RequireRole("ops", "admin"))
+		order.Register(api, orderSvc, authMW, auth.RequireRole("ops", "admin"), lim)
 
 		// Notification module: user-facing event feed (order paid/settled/disputed,
 		// quality done, compute released). Wired as a Notifier into order + dataset.
@@ -328,7 +328,7 @@ func (s *Server) routes() {
 
 		// Audit-log viewer: ops-only, read-only over audit_logs.
 		auditSvc := auditlog.NewService(auditlog.NewRepository(s.db))
-		auditlog.Register(api, auditSvc, auth.RequireRole("ops", "admin"))
+		auditlog.Register(api, auditSvc, authMW, auth.RequireRole("ops", "admin"))
 		dsSvc.SetCertRegistrar(verifyRepo) // dataset certs → registered for public lookup
 
 		// Watchlist: dataset watching + new-version notification.
@@ -340,12 +340,12 @@ func (s *Server) routes() {
 		// Dataset Q&A: buyer asks + seller answers (PR-O).
 		qaRepo := qa.NewRepository(s.db)
 		qaSvc := qa.NewService(qaRepo, qaDatasetAdapter{ds: dsSvc}, notifySvc)
-		qa.Register(api, qaSvc, authMW)
+		qa.Register(api, qaSvc, authMW, lim)
 
 		// Withdrawal: seller requests + ops approves (book-keeping only, P module).
 		withdrawRepo := withdrawal.NewRepository(s.db)
 		withdrawSvc := withdrawal.NewService(withdrawRepo, withdrawEarningsAdapter{order: orderSvc}, notifySvc)
-		withdrawal.Register(api, withdrawSvc, authMW, auth.RequireRole("ops", "admin"))
+		withdrawal.Register(api, withdrawSvc, authMW, auth.RequireRole("ops", "admin"), lim)
 
 		// Anomaly scanner: periodic audit pattern detection (PR-Q).
 		anomalyRepo := anomaly.NewRepository(s.db)
@@ -360,7 +360,7 @@ func (s *Server) routes() {
 		}
 		anomalySvc := anomaly.NewService(anomalyRepo, s.db, anomalyAlerter)
 		anomalySvc.StartScanner(context.Background())
-		anomaly.Register(api, anomalySvc, auth.RequireRole("ops", "admin"))
+		anomaly.Register(api, anomalySvc, authMW, auth.RequireRole("ops", "admin"))
 
 		// PIPL Compliance: data export + account deletion (PR-S).
 		compExportSvc := compliance.NewExportService(compliance.NewExportRepository(s.db),
@@ -394,7 +394,7 @@ func (s *Server) routes() {
 		// H3: durable settlement — outbox + PG advisory lock + retry worker.
 		paySvc.StartSettlementOutbox(payment.NewOutboxRepository(s.db), payment.NewPGLocker(s.db))
 		s.closers = append(s.closers, paySvc.Close)
-		payment.Register(api, paySvc, authMW, auth.RequireRole("ops", "admin"), s.cfg.Env != "production")
+		payment.Register(api, paySvc, authMW, auth.RequireRole("ops", "admin"), lim, s.cfg.Env != "production")
 		orderSvc.SetSettlementTrigger(paySvc) // confirm-delivery -> auto settle
 		orderSvc.SetRefundTrigger(paySvc)     // dispute refund -> provider refund + reversal (H2)
 
@@ -458,7 +458,7 @@ func (s *Server) routes() {
 			computeDatasetAdapter{ds: dsSvc}, rec, computeOpts...)
 		s.closers = append(s.closers, computeSvc.Close)
 		// dev grant gated like payment's dev mark-paid (never in production).
-		compute.Register(api, computeSvc, authMW, auth.RequireRole("ops", "admin"), s.cfg.Env != "production")
+		compute.Register(api, computeSvc, authMW, auth.RequireRole("ops", "admin"), lim, s.cfg.Env != "production")
 		// Refund→revoke (H2): when a dispute refund lands, revoke the buyer's
 		// compute credits tied to that order.
 		orderSvc.SetComputeRevoker(orderComputeAdapter{c: computeSvc})
