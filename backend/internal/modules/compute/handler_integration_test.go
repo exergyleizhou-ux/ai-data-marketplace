@@ -15,6 +15,7 @@ import (
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/db"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
 )
 
@@ -56,7 +57,7 @@ func TestComputeHTTPIntegration(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	api := r.Group("/api/v1")
-	Register(api, svc, testAuth(), testOpsGate(), true)
+	Register(api, svc, testAuth(), testOpsGate(), ratelimit.NewInMemory(), true)
 
 	// helper to issue a request as a given user/role and decode data.
 	call := func(method, path, user, role string, body any, out any) int {
