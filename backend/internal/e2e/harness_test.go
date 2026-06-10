@@ -135,7 +135,7 @@ func (e *e2eEnv) get(path string, bearer string) *e2eResp {
 // Useful for driving payment.HandleCallback end-to-end from E2E tests.
 //
 // The caller is responsible for computing the signature (see payment.Sign with
-// the harness PaymentMockSecret = "dev-pay-secret").
+// the harness PaymentMockSecret = "e2e-pay-secret").
 func (e *e2eEnv) postWebhook(t *testing.T, path string, payload []byte, signature string) *e2eResp {
 	t.Helper()
 	req, err := http.NewRequest("POST", e.ts.URL+path, bytes.NewReader(payload))

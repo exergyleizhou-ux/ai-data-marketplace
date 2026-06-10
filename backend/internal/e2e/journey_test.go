@@ -15,6 +15,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pquerna/otp/totp"
 
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/payment"
 	"github.com/lei/ai-data-marketplace/backend/migrations"
 )
 
@@ -72,55 +73,71 @@ func TestE2E_FullPurchaseJourney(t *testing.T) {
 		t.Fatalf("published dataset %s not visible in browse", datasetID)
 	}
 
-	// Buyer views detail.
-	var detailRes struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
-	}
-	e.get("/api/v1/datasets/"+datasetID, buyerTok).ok(t, &detailRes)
-
 	// Buyer creates order.
-	type orderReq struct {
-		DatasetID   string `json:"dataset_id"`
-		LicenseType string `json:"license_type"`
+	type orderRes struct {
+		ID       string `json:"id"`
+		BuyerID  string `json:"buyer_id"`
+		SellerID string `json:"seller_id"`
+		Status   string `json:"status"`
 	}
-	var orderRes struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
-	}
-	e.post("/api/v1/orders", orderReq{
-		DatasetID:   datasetID,
-		LicenseType: "commercial",
-	}, buyerTok).ok(t, &orderRes)
-	if orderRes.ID == "" {
-		t.Fatal("order id must not be empty")
-	}
-	orderID := orderRes.ID
-
-	// Buyer pays (mock provider).  The payment endpoint returns PayInfo
-	// (pay URL + channel txn), not order status.  Mock auto-completes.
-	type payReq struct {
-		OrderID string `json:"order_id"`
-		Channel string `json:"channel"`
-	}
-	resp := e.post("/api/v1/payments/create", payReq{
-		OrderID: orderID,
-		Channel: "mock",
-	}, buyerTok)
-	if resp.status != 200 {
-		t.Fatalf("payment create: status=%d body=%s", resp.status, resp.body())
+	var ord orderRes
+	e.post("/api/v1/orders", map[string]any{
+		"dataset_id":   datasetID,
+		"license_type": "commercial",
+	}, buyerTok).ok(t, &ord)
+	if ord.Status != "created" {
+		t.Fatalf("order status after create = %q, want created", ord.Status)
 	}
 
-	// Verify order reached a terminal state after mock payment.
-	var orderAfter struct {
-		Status string `json:"status"`
+	// Buyer initiates payment.
+	type payInfo struct {
+		ChannelTxnID string `json:"channel_txn_id"`
 	}
-	e.get("/api/v1/orders/"+orderID, buyerTok).ok(t, &orderAfter)
-	valid := map[string]bool{"paid": true, "settled": true, "delivered": true, "confirmed": true, "created": true}
-	if !valid[orderAfter.Status] {
-		t.Errorf("order in unexpected final state: %s", orderAfter.Status)
+	var pi payInfo
+	e.post("/api/v1/payments/create", map[string]any{"order_id": ord.ID}, buyerTok).ok(t, &pi)
+	if pi.ChannelTxnID == "" {
+		t.Fatalf("expected channel_txn_id from /payments/create")
 	}
-	t.Logf("full purchase journey: dataset=%s order=%s final=%s", datasetID, orderID, orderAfter.Status)
+
+	// Mock provider webhook: payload format is "<order_id>:<channel_txn_id>:true",
+	// signature is HMAC-SHA256 hex with the PaymentMockSecret ("e2e-pay-secret").
+	payload := []byte(fmt.Sprintf("%s:%s:true", ord.ID, pi.ChannelTxnID))
+	sig := payment.Sign("e2e-pay-secret", string(payload))
+	res := e.postWebhook(t, "/api/v1/payments/webhook/mock", payload, sig)
+	if res.status != 200 {
+		t.Fatalf("webhook status=%d body=%s", res.status, res.body())
+	}
+
+	// Poll order status: should reach "paid".
+	deadline := time.Now().Add(3 * time.Second)
+	var final orderRes
+	for time.Now().Before(deadline) {
+		e.get("/api/v1/orders/"+ord.ID, buyerTok).ok(t, &final)
+		if final.Status == "paid" || final.Status == "delivered" || final.Status == "confirmed" || final.Status == "settled" {
+			break
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	if final.Status != "paid" {
+		t.Fatalf("order status after webhook = %q, want paid", final.Status)
+	}
+
+	// Seed to delivered so confirm-delivery can run (delivery flow has its own
+	// module-level integration tests for the token issuance / file-staging steps).
+	e.seedQuery(t, `UPDATE orders SET status='delivered' WHERE id=$1`, ord.ID)
+
+	e.post("/api/v1/orders/"+ord.ID+"/confirm-delivery", nil, buyerTok).ok(t, &final)
+	if final.Status != "settled" && final.Status != "confirmed" {
+		t.Fatalf("order status after confirm = %q, want settled or confirmed", final.Status)
+	}
+
+	// Review.
+	res2 := e.post("/api/v1/orders/"+ord.ID+"/review",
+		map[string]any{"score": 5, "comment": "great dataset"}, buyerTok)
+	if res2.status != 200 {
+		t.Fatalf("review status=%d body=%s", res2.status, res2.body())
+	}
+	t.Logf("full purchase journey: dataset=%s order=%s final=%s", datasetID, ord.ID, final.Status)
 }
 
 // ---------------------------------------------------------------------------
@@ -236,31 +253,91 @@ func TestE2E_PasswordResetFlow(t *testing.T) {
 
 func TestE2E_WithdrawalApprovalFlow(t *testing.T) {
 	e := newE2E(t)
+	sellerTok, sellerID := e.registerAndLogin(uniqueAccount("wseller"), "password123")
+	_, opsID := e.registerAndLogin(uniqueAccount("wops"), "password123")
+	e.seedQuery(t, `UPDATE users SET kyc_status='verified' WHERE id=$1`, sellerID)
 
-	sellerTok, _ := e.registerAndLogin(uniqueAccount("wdseller"), "password123")
-	opsTok, _ := e.registerAndLogin(uniqueAccount("opsuser"), "password123")
+	// Seed a dataset + version so the settled order FK chain is satisfied.
+	e.seedQuery(t, `
+		INSERT INTO datasets (id, seller_id, title, description, data_type, license_type, status, created_at, updated_at)
+		VALUES (gen_random_uuid(), $1, 'WD Test DS', 'Seeded', 'text', 'commercial', 'published', now(), now())
+	`, sellerID)
+	var dsID string
+	e.seedQueryRow(t, []any{&dsID},
+		`SELECT id FROM datasets WHERE seller_id=$1 AND title='WD Test DS' LIMIT 1`, sellerID)
+	e.seedQuery(t, `
+		INSERT INTO dataset_versions (id, dataset_id, version_no, manifest, created_at)
+		VALUES (gen_random_uuid(), $1, 1, '[]', now())
+	`, dsID)
+	var verID string
+	e.seedQueryRow(t, []any{&verID},
+		`SELECT id FROM dataset_versions WHERE dataset_id=$1 LIMIT 1`, dsID)
 
-	// SIMPLIFICATION: promote roles via seed.
-	e.seedQuery(t, `UPDATE users SET role='ops' WHERE account LIKE 'opsuser_%'`)
-	e.seedQuery(t, `UPDATE users SET role='seller', kyc_status='verified' WHERE account LIKE 'wdseller_%'`)
+	// Seed a settled order so the seller has withdrawable balance.
+	e.seedQuery(t, `
+		INSERT INTO orders (id, buyer_id, seller_id, dataset_id, version_id, license_type,
+			amount_cents, platform_fee_cents, seller_amount_cents, status, product_type, created_at, updated_at)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4, 'commercial',
+			5000, 500, 4500, 'settled', 'download', now(), now())
+	`, sellerID, sellerID, dsID, verID)
 
-	// Withdrawal endpoint: must exist, authenticate, and not 500.
-	// May fail with "insufficient balance" (expected — no settled orders).
-	resp := e.post("/api/v1/sellers/me/withdrawals", map[string]interface{}{
-		"amount_cents": 3000,
-		"channel":      "mock",
-	}, sellerTok)
-	if resp.status >= 500 {
-		t.Fatalf("withdrawal request must not 500, got %d: %s", resp.status, resp.body())
+	// Seller files withdrawal.
+	type wd struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
 	}
-	t.Logf("withdrawal request status: %d (insufficient balance expected)", resp.status)
-
-	// Admin endpoint: exists, authenticated (ops role), doesn't 500.
-	resp2 := e.get("/api/v1/admin/withdrawals?status=pending", opsTok)
-	if resp2.status >= 500 {
-		t.Fatalf("admin withdrawals must not 500, got %d", resp2.status)
+	var w wd
+	e.post("/api/v1/sellers/me/withdrawals", map[string]any{
+		"amount_cents":  3000,
+		"channel":       "bank",
+		"account_label": "test-bank-1234",
+	}, sellerTok).ok(t, &w)
+	if w.Status != "pending" {
+		t.Fatalf("withdrawal status after request = %q, want pending", w.Status)
 	}
-	t.Logf("admin withdrawals (ops) status: %d", resp2.status)
+
+	// Promote ops user. Role change invalidates the old token — reissue by login.
+	e.seedQuery(t, `UPDATE users SET role='ops' WHERE id=$1`, opsID)
+	var opsAccount string
+	e.seedQueryRow(t, []any{&opsAccount}, `SELECT account FROM users WHERE id=$1`, opsID)
+	var loginRes struct {
+		Tokens struct {
+			AccessToken string `json:"access_token"`
+		} `json:"tokens"`
+	}
+	e.post("/api/v1/auth/login", map[string]any{
+		"account":  opsAccount,
+		"password": "password123",
+	}, "").ok(t, &loginRes)
+	opsTok := loginRes.Tokens.AccessToken
+
+	// Approve → complete.
+	e.post("/api/v1/admin/withdrawals/"+w.ID+"/approve", map[string]any{"note": "e2e"}, opsTok).ok(t, &w)
+	if w.Status != "approved" {
+		t.Fatalf("withdrawal after approve = %q, want approved", w.Status)
+	}
+	e.post("/api/v1/admin/withdrawals/"+w.ID+"/complete", map[string]any{"note": "e2e"}, opsTok).ok(t, &w)
+	if w.Status != "completed" {
+		t.Fatalf("withdrawal after complete = %q, want completed", w.Status)
+	}
+
+	// Seller should now have a withdrawal_completed notification.
+	var notifs struct {
+		Items []struct {
+			Kind string `json:"kind"`
+		} `json:"items"`
+	}
+	e.get("/api/v1/users/me/notifications", sellerTok).ok(t, &notifs)
+	found := false
+	for _, n := range notifs.Items {
+		if n.Kind == "withdrawal_completed" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected withdrawal_completed notification, got %+v", notifs.Items)
+	}
 }
 
 // ---------------------------------------------------------------------------
