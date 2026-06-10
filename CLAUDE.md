@@ -130,6 +130,12 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
 - **`seedUser` for integration tests must use crypto/rand suffix + ON CONFLICT DO UPDATE**:
   `time.Now().UnixNano()` collides under nano-clock resolution or parallel test runs.  The
   combination guarantees zero `users.account` UNIQUE conflicts even at high call rates.  PR-N fix.
+- **E2E tests must assert real cross-module contract outcomes, not absence of 500s**:
+  accepting `"created"` or `"paid"` as a valid final state for a *purchase* journey
+  means the test only proves the endpoints exist — it never exercises the
+  payment→delivery→settlement contract.  A proper E2E asserts the *terminal* state
+  (`settled` / `confirmed`) and the cross-module side effects (notification rows,
+  ledger entries, etc.).  PR-W follow-up.
 
 ## C2D / privacy compute (信任阶梯 L0→L3)
 
