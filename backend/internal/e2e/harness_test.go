@@ -242,5 +242,18 @@ func (e *e2eEnv) seedQuery(t *testing.T, query string, args ...any) {
 	}
 }
 
+// seedQueryRow runs a query that returns a single row, scanning into dest.
+func (e *e2eEnv) seedQueryRow(t *testing.T, dest []any, query string, args ...any) {
+	t.Helper()
+	pool, err := db.NewPool(context.Background(), e.dbDSN)
+	if err != nil {
+		t.Fatalf("query pool: %v", err)
+	}
+	defer pool.Close()
+	if err := pool.QueryRow(context.Background(), query, args...).Scan(dest...); err != nil {
+		t.Fatalf("query row: %v (sql=%s)", err, query)
+	}
+}
+
 // Ensure types are available (avoids unused import lint).
 var _ = server.New
