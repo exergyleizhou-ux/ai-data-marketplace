@@ -1,0 +1,69 @@
+# Nightly logical backup (pg_dump custom format) of the marketplace database.
+#
+# - Image postgres:16 ships pg_dump/pg_restore — no custom image needed.
+# - Dumps land on the backups PVC; ship them OFF-CLUSTER (object storage /
+#   restic / cloud snapshot) — a PVC in the same cluster is not a DR plan.
+# - Restore procedure + drill: see deploy/backup/README.md.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pg-backups
+  namespace: marketplace
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup
+  namespace: marketplace
+spec:
+  schedule: "0 3 * * *"          # daily 03:00 cluster time
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: pg-backup
+              image: postgres:16
+              command: ["/bin/bash", "/scripts/backup.sh"]
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: marketplace-secrets
+                      key: database-url
+                - name: BACKUP_DIR
+                  value: /backups
+                - name: RETENTION_DAYS
+                  value: "14"
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests: { cpu: 100m, memory: 256Mi }
+                limits: { cpu: "1", memory: 1Gi }
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: pg-backups
+            - name: scripts
+              configMap:
+                name: pg-backup-scripts
+                defaultMode: 0755
+---
+# kubectl -n marketplace create configmap pg-backup-scripts \
+#   --from-file=backup.sh=deploy/backup/backup.sh \
+#   --from-file=restore.sh=deploy/backup/restore.sh \
+#   --dry-run=client -o yaml | kubectl apply -f -
