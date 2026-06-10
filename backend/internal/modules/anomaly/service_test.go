@@ -30,6 +30,13 @@ func (r *fakeAnomalyRepo) Upsert(_ context.Context, a Anomaly) error {
 	r.upserted = append(r.upserted, a)
 	return r.err
 }
+func (r *fakeAnomalyRepo) UpsertReturningIsNew(_ context.Context, a Anomaly) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	isNew := len(r.upserted) == 0
+	r.upserted = append(r.upserted, a)
+	return isNew, r.err
+}
 func (r *fakeAnomalyRepo) List(_ context.Context, _ string, _, _ int) ([]Anomaly, error) {
 	return nil, nil
 }
@@ -41,7 +48,8 @@ func (r *fakeAnomalyRepo) SetStatus(_ context.Context, _, _, _, _ string) (Anoma
 func TestScanOnce_RunsAllRulesAndUpsertsResults(t *testing.T) {
 	repo := &fakeAnomalyRepo{}
 	svc := &Service{
-		repo: repo,
+		repo:    repo,
+		alerter: NopAlerter{},
 		rules: []Rule{
 			&fakeRule{kind: "r1", output: []Anomaly{{Kind: "r1", ResourcePattern: "x"}}},
 			&fakeRule{kind: "r2", output: []Anomaly{{Kind: "r2", ResourcePattern: "y"}}},
@@ -62,7 +70,8 @@ func TestScanOnce_RunsAllRulesAndUpsertsResults(t *testing.T) {
 func TestScanOnce_RuleFailureDoesNotBlockOthers(t *testing.T) {
 	repo := &fakeAnomalyRepo{}
 	svc := &Service{
-		repo: repo,
+		repo:    repo,
+		alerter: NopAlerter{},
 		rules: []Rule{
 			&fakeRule{kind: "r1", callErr: context.DeadlineExceeded},
 			&fakeRule{kind: "r2", output: []Anomaly{{Kind: "r2", ResourcePattern: "ok"}}},
@@ -81,8 +90,43 @@ func TestScanOnce_RuleFailureDoesNotBlockOthers(t *testing.T) {
 }
 
 func TestUpsert_DoesNotOverrideResolvedAnomaly(t *testing.T) {
-	// The SQL has WHERE status='open' in the ON CONFLICT DO UPDATE clause.
-	// This test verifies the documented guarantee; the SQL verification
-	// happens in the real-DB repo_test.
 	t.Skip("ON CONFLICT DO UPDATE WHERE status='open' is a SQL-level guarantee; covered by repo test")
+}
+
+type fakeAlerter struct {
+	mu    sync.Mutex
+	calls []Anomaly
+	perr  error
+}
+
+func (a *fakeAlerter) Alert(_ context.Context, an Anomaly) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.calls = append(a.calls, an)
+	return a.perr
+}
+
+func TestScanOnce_AlertsOnNewAnomalyOnly(t *testing.T) {
+	repo := &fakeAnomalyRepo{}
+	alerter := &fakeAlerter{}
+	svc := &Service{
+		repo:    repo,
+		alerter: alerter,
+		rules: []Rule{
+			&fakeRule{kind: "r1", output: []Anomaly{
+				{Kind: "r1", ResourcePattern: "x"},
+				{Kind: "r1", ResourcePattern: "y"},
+			}},
+		},
+	}
+	n, err := svc.ScanOnce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("total = %d, want 2", n)
+	}
+	if len(alerter.calls) != 1 {
+		t.Fatalf("alerter calls = %d, want 1 (first new, second existing)", len(alerter.calls))
+	}
 }

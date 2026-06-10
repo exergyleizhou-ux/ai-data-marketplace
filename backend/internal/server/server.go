@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -68,6 +69,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 	engine.Use(
 		middleware.CORS(cfg.CORSAllowOrigin),
 		middleware.RequestID(),
+		middleware.TraceID(),
 		metrics.Middleware(),
 		middleware.Logger(),
 		middleware.Recovery(),
@@ -294,7 +296,16 @@ func (s *Server) routes() {
 
 		// Anomaly scanner: periodic audit pattern detection (PR-Q).
 		anomalyRepo := anomaly.NewRepository(s.db)
-		anomalySvc := anomaly.NewService(anomalyRepo, s.db)
+		var anomalyAlerter anomaly.Alerter = anomaly.NopAlerter{}
+		if whURL := os.Getenv("ANOMALY_WEBHOOK_URL"); whURL != "" {
+			kinds := strings.Split(os.Getenv("ANOMALY_WEBHOOK_KINDS"), ",")
+			if len(kinds) == 1 && kinds[0] == "" {
+				kinds = []string{"high_risk_action", "repeated_failure"}
+			}
+			anomalyAlerter = anomaly.NewWebhookAlerter(whURL, kinds)
+			slog.Info("anomaly webhook alerting enabled", "url", whURL[:minInt(30, len(whURL))])
+		}
+		anomalySvc := anomaly.NewService(anomalyRepo, s.db, anomalyAlerter)
 		anomalySvc.StartScanner(context.Background())
 		anomaly.Register(api, anomalySvc, auth.RequireRole("ops", "admin"))
 
@@ -748,4 +759,11 @@ func envDefault(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
