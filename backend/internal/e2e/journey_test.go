@@ -15,7 +15,10 @@ func TestE2E_FullPurchaseJourney(t *testing.T) {
 	e := newE2E(t)
 
 	_, sellerID := e.registerAndLogin(uniqueAccount("pseller"), "password123")
-	buyerTok, _ := e.registerAndLogin(uniqueAccount("pbuyer"), "password123")
+	buyerTok, buyerID := e.registerAndLogin(uniqueAccount("pbuyer"), "password123")
+
+	e.seedQuery(t, `UPDATE users SET kyc_status='verified' WHERE id=$1`, sellerID)
+	e.seedQuery(t, `UPDATE users SET kyc_status='verified' WHERE id=$1`, buyerID)
 
 	// SIMPLIFICATION: seed dataset+version in published state directly.
 	// The dataset create API is tested by the dataset module's own integration
