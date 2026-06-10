@@ -41,6 +41,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
 	redispkg "github.com/lei/ai-data-marketplace/backend/internal/platform/redis"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/storage"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 type Server struct {
@@ -113,6 +114,9 @@ func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 	// metrics times the whole handler stack.
 	engine.Use(
 		middleware.CORS(cfg.CORSAllowOrigin),
+		// otelgin starts a span per request (no-op unless tracing.Init enabled
+		// a provider); it must run before TraceID so trace_id == span trace ID.
+		otelgin.Middleware("marketplace-backend"),
 		middleware.RequestID(),
 		middleware.TraceID(),
 		middleware.RemoveServerHeader(),

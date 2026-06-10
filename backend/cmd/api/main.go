@@ -17,6 +17,7 @@ import (
 
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/db"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/tracing"
 	"github.com/lei/ai-data-marketplace/backend/internal/server"
 )
 
@@ -52,6 +53,17 @@ func main() {
 	}
 
 	ctx := context.Background()
+
+	// Distributed tracing — no-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set.
+	traceShutdown, traceOn, err := tracing.Init(ctx, "marketplace-backend", cfg.Env)
+	if err != nil {
+		slog.Error("failed to init tracing", "err", err)
+		os.Exit(1)
+	}
+	if traceOn {
+		slog.Info("otel tracing enabled", "endpoint", os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	}
+
 	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("failed to connect database", "err", err)
@@ -86,6 +98,9 @@ func main() {
 		os.Exit(1)
 	}
 	srv.Close() // drain background workers (async quality) after connections close
+	if err := traceShutdown(ctx); err != nil {
+		slog.Warn("trace flush on shutdown failed", "err", err)
+	}
 	slog.Info("server stopped cleanly")
 }
 
