@@ -156,6 +156,9 @@ func (s *Service) CompletePasswordReset(ctx context.Context, rawToken, newPasswo
 	if err != nil {
 		return ErrTokenInvalidOrExpired
 	}
+	// A completed reset proves account ownership — clear any login lockout so
+	// the legitimate owner isn't stuck behind an attacker's failed attempts.
+	_ = s.repo.ClearLoginFailures(ctx, userID)
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hash new password: %w", err)

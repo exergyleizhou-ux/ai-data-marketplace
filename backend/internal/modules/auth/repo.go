@@ -17,6 +17,13 @@ import (
 type Repository interface {
 	CreateUser(ctx context.Context, account, accountType, passwordHash string) (User, error)
 	GetUserByAccount(ctx context.Context, account string) (User, string, error) // also returns password hash
+
+	// Account lockout (anti-bruteforce). RecordLoginFailure increments the
+	// consecutive-failure counter atomically and locks at maxFailures;
+	// returns the counter and lock expiry (zero when not locked).
+	RecordLoginFailure(ctx context.Context, userID string, maxFailures int, lockFor time.Duration) (int, time.Time, error)
+	LoginLockedUntil(ctx context.Context, userID string) (time.Time, bool, error)
+	ClearLoginFailures(ctx context.Context, userID string) error
 	GetUserByID(ctx context.Context, id string) (User, error)
 	UpdateUserRole(ctx context.Context, id, role string) (User, error)
 

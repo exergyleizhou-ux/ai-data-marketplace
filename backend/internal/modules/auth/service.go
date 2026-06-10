@@ -108,6 +108,15 @@ func (s *Service) ListAgreements(ctx context.Context, userID string) ([]Agreemen
 	return s.repo.ListAgreements(ctx, userID)
 }
 
+const (
+	// maxLoginFailures consecutive bad passwords lock the account for
+	// loginLockoutWindow. The lock answers with the same ErrInvalidCredentials
+	// (no enumeration); the counter resets on success, lock expiry, or a
+	// completed password reset.
+	maxLoginFailures   = 5
+	loginLockoutWindow = 15 * time.Minute
+)
+
 // Login verifies credentials and returns a token pair, or a 2FA challenge if
 // TOTP is enabled for this account.
 func (s *Service) Login(ctx context.Context, account, password string) (LoginResult, error) {
@@ -119,9 +128,21 @@ func (s *Service) Login(ctx context.Context, account, password string) (LoginRes
 	if user.Status == statusFrozen {
 		return LoginResult{}, ErrUserFrozen
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+	// Account lockout: same generic error as a wrong password so a locked
+	// state never confirms account existence (anti-enumeration). Repo errors
+	// fail open — bcrypt below still gates — mirroring the rate limiter.
+	if _, locked, err := s.repo.LoginLockedUntil(ctx, user.ID); err == nil && locked {
+		slog.Warn("login attempt on locked account", "user_id", user.ID)
 		return LoginResult{}, ErrInvalidCredentials
 	}
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+		if n, until, err := s.repo.RecordLoginFailure(ctx, user.ID, maxLoginFailures, loginLockoutWindow); err == nil && !until.IsZero() {
+			slog.Warn("account locked after repeated login failures",
+				"user_id", user.ID, "failures", n, "locked_until", until)
+		}
+		return LoginResult{}, ErrInvalidCredentials
+	}
+	_ = s.repo.ClearLoginFailures(ctx, user.ID)
 	// GetByAccount doesn't return totp_enabled. Reload.
 	u2, err := s.repo.GetUserByID(ctx, user.ID)
 	if err != nil {
