@@ -283,11 +283,10 @@ func TestE2E_WatchlistNotificationFlow(t *testing.T) {
 		ID string `json:"id"`
 	}
 	e.post("/api/v1/datasets", map[string]interface{}{
-		"title":                 "Watchlist Test Dataset",
-		"description":           "Testing watchlist notifications",
-		"data_type":             "text",
-		"suggested_price_cents": 99,
-		"license_type":          "commercial",
+		"title":        "Watchlist Test Dataset",
+		"description":  "Testing watchlist notifications",
+		"data_type":    "text",
+		"license_type": "commercial",
 	}, sellerTok).ok(t, &dsRes)
 	datasetID := dsRes.ID
 
@@ -349,11 +348,10 @@ func TestE2E_ComputeJobJourney(t *testing.T) {
 		ID string `json:"id"`
 	}
 	e.post("/api/v1/datasets", map[string]interface{}{
-		"title":                 "C2D Test Dataset",
-		"description":           "Dataset for compute-to-data E2E",
-		"data_type":             "text",
-		"suggested_price_cents": 299,
-		"license_type":          "commercial",
+		"title":        "C2D Test Dataset",
+		"description":  "Dataset for compute-to-data E2E",
+		"data_type":    "text",
+		"license_type": "commercial",
 	}, sellerTok).ok(t, &dsRes)
 	datasetID := dsRes.ID
 
