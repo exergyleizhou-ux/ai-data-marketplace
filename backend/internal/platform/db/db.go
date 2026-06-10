@@ -21,8 +21,14 @@ func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse database dsn: %w", err)
 	}
-	cfg.MaxConns = 10
-	cfg.MaxConnLifetime = time.Hour
+	// Pool sizing is env-tunable for production (defaults preserve the old
+	// hardcoded behavior). Rule of thumb: MaxConns ~ (cores*2) on the PG box
+	// divided across app replicas; never exceed PG max_connections headroom.
+	cfg.MaxConns = envInt32("DB_MAX_CONNS", 10)
+	cfg.MinConns = envInt32("DB_MIN_CONNS", 2) // warm conns cut p99 on idle->burst
+	cfg.MaxConnLifetime = envDuration("DB_MAX_CONN_LIFETIME", time.Hour)
+	cfg.MaxConnIdleTime = envDuration("DB_MAX_CONN_IDLE_TIME", 30*time.Minute)
+	cfg.HealthCheckPeriod = envDuration("DB_HEALTH_CHECK_PERIOD", time.Minute)
 	// Per-query OTel spans; no-op (and effectively free) unless tracing.Init
 	// installed a real provider at startup.
 	cfg.ConnConfig.Tracer = tracing.NewPgxTracer()
