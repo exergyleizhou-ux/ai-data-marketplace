@@ -67,16 +67,16 @@ func TestE2E_FullPurchaseJourney(t *testing.T) {
 
 	// Buyer creates order.
 	type orderReq struct {
-		DatasetID string `json:"dataset_id"`
-		VersionID string `json:"version_id"`
+		DatasetID   string `json:"dataset_id"`
+		LicenseType string `json:"license_type"`
 	}
 	var orderRes struct {
 		ID     string `json:"id"`
 		Status string `json:"status"`
 	}
 	e.post("/api/v1/orders", orderReq{
-		DatasetID: datasetID,
-		VersionID: verID,
+		DatasetID:   datasetID,
+		LicenseType: "commercial",
 	}, buyerTok).ok(t, &orderRes)
 	if orderRes.ID == "" {
 		t.Fatal("order id must not be empty")
