@@ -1,0 +1,1875 @@
+openapi: "3.0.3"
+info:
+  title: AI Data Marketplace API
+  description: >
+    Oasis (绿洲) — a privacy-preserving data marketplace.  Modules: auth,
+    datasets, orders, payments, delivery, compute (C2D), notifications,
+    watchlist, Q&A, withdrawals, compliance, anomaly, audit-logs, search,
+    verify.  Every response uses a uniform envelope (see
+    components/schemas/Envelope).
+  version: "1.0.0"
+  contact:
+    name: Oasis API Support
+
+servers:
+  - url: https://api.oasis.example.com/api/v1
+    description: Production
+  - url: http://localhost:8080/api/v1
+    description: Local development
+
+tags:
+  - name: auth
+    description: Registration, login, 2FA, password reset, KYC, user profile
+  - name: datasets
+    description: CRUD, upload, quality, certificate, croissant, datasheet, preview
+  - name: orders
+    description: Purchase lifecycle (create → pay → deliver → confirm → review)
+  - name: payments
+    description: Payment initiation, provider webhooks, settlement outbox
+  - name: delivery
+    description: Download grant issuance + byte streaming
+  - name: compute
+    description: C2D sandbox & federated compute (jobs, algorithms, entitlements)
+  - name: notifications
+    description: User notification list, read, preferences
+  - name: watchlist
+    description: Dataset watch / unwatch
+  - name: qa
+    description: Dataset Q&A (public questions, seller answers)
+  - name: withdrawals
+    description: Seller withdrawal requests + ops approval pipeline
+  - name: compliance
+    description: PIPL data export + account deletion
+  - name: admin
+    description: Ops-gated admin endpoints (KYC, datasets, reconciliation, anomalies, audit-logs)
+  - name: search
+    description: Full-text dataset search
+  - name: verify
+    description: Certificate verification
+
+security:
+  - bearerAuth: []
+
+paths:
+  # =========================================================================
+  # AUTH
+  # =========================================================================
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account, account_type, password]
+              properties:
+                account:      { type: string, description: "Email address" }
+                account_type: { type: string, enum: [email] }
+                password:     { type: string, minLength: 8 }
+                agreements:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      doc:     { type: string }
+                      version: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPairWithUser" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login — returns tokens or a 2FA challenge
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account, password]
+              properties:
+                account:  { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: >
+            Tokens if 2FA not enrolled; challenge_token + need_2fa:true if
+            2FA is active.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/TokenPairWithUser"
+                  - $ref: "#/components/schemas/TwoFAChallenge"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate tokens with a valid refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPairWithUser" }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke a refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: Token revoked
+          content: { application/json: { schema: { $ref: "#/components/schemas/Envelope" } } }
+
+  /auth/2fa/enroll:
+    post:
+      tags: [auth]
+      summary: Start 2FA enrollment — returns secret URI + recovery codes
+      responses:
+        "200":
+          description: Enrollment secret and recovery codes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/2fa/verify-enrollment:
+    post:
+      tags: [auth]
+      summary: Verify 2FA enrollment with a TOTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, description: "6-digit TOTP code" }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/2fa/disable:
+    post:
+      tags: [auth]
+      summary: Disable 2FA (requires a valid TOTP code)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+
+  /auth/2fa/recovery-status:
+    get:
+      tags: [auth]
+      summary: Get remaining recovery code count
+      responses:
+        "200":
+          description: Recovery code status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /auth/2fa/verify:
+    post:
+      tags: [auth]
+      summary: Complete 2FA challenge — returns real tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_token, code]
+              properties:
+                challenge_token: { type: string }
+                code:            { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPairWithUser" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/password-reset/request:
+    post:
+      tags: [auth]
+      summary: Request a password-reset email (always returns 200 for anti-enumeration)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account]
+              properties:
+                account: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+
+  /auth/password-reset/complete:
+    post:
+      tags: [auth]
+      summary: Complete password reset with the emailed token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, new_password]
+              properties:
+                token:        { type: string }
+                new_password: { type: string, minLength: 8 }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /users/me:
+    get:
+      tags: [auth]
+      summary: Get the authenticated user's profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    put:
+      tags: [auth]
+      summary: Update the authenticated user's profile (role selection)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string }
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /users/me/kyc:
+    post:
+      tags: [auth]
+      summary: Submit KYC (real-name verification)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, real_name]
+              properties:
+                type:          { type: string, enum: [individual, enterprise] }
+                real_name:     { type: string }
+                company_name:  { type: string }
+                id_no:         { type: string }
+                material_urls: { type: array, items: { type: string } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+    get:
+      tags: [auth]
+      summary: Get the authenticated user's KYC status
+      responses:
+        "200":
+          description: KYC record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /users/me/agreements:
+    get:
+      tags: [auth]
+      summary: List signed agreements
+      responses:
+        "200":
+          description: Agreement list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    post:
+      tags: [auth]
+      summary: Record signed agreements
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agreements]
+              properties:
+                agreements:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      doc:     { type: string }
+                      version: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  # =========================================================================
+  # DATASETS
+  # =========================================================================
+  /datasets:
+    get:
+      tags: [datasets]
+      summary: Browse / search published datasets
+      security: []
+      parameters:
+        - { name: q,             in: query, schema: { type: string }, description: "Full-text search query" }
+        - { name: data_type,     in: query, schema: { type: string } }
+        - { name: license_type,  in: query, schema: { type: string } }
+        - { name: domain,        in: query, schema: { type: string } }
+        - { name: min_price,     in: query, schema: { type: integer } }
+        - { name: max_price,     in: query, schema: { type: integer } }
+        - { name: sort,          in: query, schema: { type: string } }
+        - { name: limit,         in: query, schema: { type: integer, default: 20 } }
+        - { name: offset,        in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: Paginated dataset list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    post:
+      tags: [datasets]
+      summary: Create a new dataset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, description, data_type, license_type]
+              properties:
+                title:                 { type: string }
+                description:           { type: string }
+                data_type:             { type: string }
+                domain:                { type: string }
+                license_type:          { type: string }
+                suggested_price_cents: { type: integer }
+                source_declaration:    { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /datasets/{id}:
+    get:
+      tags: [datasets]
+      summary: Get a single dataset by ID
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Dataset detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [datasets]
+      summary: Update a dataset
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:       { type: string }
+                description: { type: string }
+                data_type:   { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /datasets/{id}/quality:
+    get:
+      tags: [datasets]
+      summary: Get quality check results
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Quality check list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /datasets/{id}/certificate:
+    get:
+      tags: [datasets]
+      summary: Get dataset certificate
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Dataset certificate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /datasets/{id}/croissant:
+    get:
+      tags: [datasets]
+      summary: Get MLCommons Croissant metadata (JSON-LD)
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Croissant metadata
+          content:
+            application/ld+json: {}
+
+  /datasets/{id}/versions:
+    get:
+      tags: [datasets]
+      summary: List dataset versions
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Version list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /datasets/{id}/preview:
+    get:
+      tags: [datasets]
+      summary: Get a preview of the dataset (rate-limited)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /datasets/{id}/datasheet:
+    put:
+      tags: [datasets]
+      summary: Set the dataset datasheet
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /datasets/{id}/source-declaration/sign:
+    post:
+      tags: [datasets]
+      summary: Sign the source declaration
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /users/me/datasets:
+    get:
+      tags: [datasets]
+      summary: List the authenticated user's own datasets
+      parameters:
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Owned datasets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /datasets/{id}/upload/init:
+    post:
+      tags: [datasets]
+      summary: Initiate a multipart upload
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename]
+              properties:
+                filename: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /datasets/{id}/upload/part:
+    put:
+      tags: [datasets]
+      summary: Upload one part of a multipart upload
+      parameters:
+        - { name: id,         in: path,  required: true,  schema: { type: string, format: uuid } }
+        - { name: upload_id,  in: query, required: true,  schema: { type: string } }
+        - { name: part_number,in: query, required: true,  schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /datasets/{id}/upload/complete:
+    post:
+      tags: [datasets]
+      summary: Complete a multipart upload
+      parameters:
+        - { name: id,        in: path,  required: true, schema: { type: string, format: uuid } }
+        - { name: upload_id, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /datasets/{id}/upload/status:
+    get:
+      tags: [datasets]
+      summary: Get upload status
+      parameters:
+        - { name: id,        in: path,  required: true, schema: { type: string, format: uuid } }
+        - { name: upload_id, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  # =========================================================================
+  # ORDERS
+  # =========================================================================
+  /orders:
+    post:
+      tags: [orders]
+      summary: Create an order for a dataset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dataset_id, license_type]
+              properties:
+                dataset_id:   { type: string, format: uuid }
+                license_type: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    get:
+      tags: [orders]
+      summary: List the authenticated user's orders (buyer or seller view)
+      parameters:
+        - { name: role,   in: query, schema: { type: string, enum: [seller] }, description: "Set to 'seller' for sales view" }
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Order list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /orders/{id}:
+    get:
+      tags: [orders]
+      summary: Get a single order
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /orders/{id}/confirm-delivery:
+    post:
+      tags: [orders]
+      summary: Buyer confirms delivery (triggers settlement)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /orders/{id}/dispute:
+    post:
+      tags: [orders]
+      summary: Raise a dispute on an order
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /orders/{id}/review:
+    post:
+      tags: [orders]
+      summary: Review a settled order
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [score]
+              properties:
+                score:      { type: integer, minimum: 1, maximum: 5 }
+                comment:    { type: string }
+                issue_flag: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /sellers/me/earnings:
+    get:
+      tags: [orders]
+      summary: Get the seller's earnings summary
+      responses:
+        "200":
+          description: Earnings summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /sellers/me/earnings/timeseries:
+    get:
+      tags: [orders]
+      summary: Get seller's daily earnings timeseries
+      parameters:
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 90, default: 30 } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /sellers/me/earnings/by-dataset:
+    get:
+      tags: [orders]
+      summary: Get seller's earnings broken down by dataset
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /datasets/{id}/reviews:
+    get:
+      tags: [orders]
+      summary: List reviews for a dataset
+      security: []
+      parameters:
+        - { name: id,     in: path,  required: true, schema: { type: string, format: uuid } }
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Review list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /users/me/orders/bundle:
+    post:
+      tags: [orders]
+      summary: Bundle-download multiple settled orders as a zip
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order_ids]
+              properties:
+                order_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+                  minItems: 1
+                  maxItems: 20
+      responses:
+        "200":
+          description: Zip bundle stream
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+
+  # =========================================================================
+  # PAYMENTS
+  # =========================================================================
+  /payments/create:
+    post:
+      tags: [payments]
+      summary: Initiate a payment for an order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order_id]
+              properties:
+                order_id: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /payments/dev/mark-paid:
+    post:
+      tags: [payments]
+      summary: (DEV ONLY) Simulate a paid callback — never mounted in production
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order_id]
+              properties:
+                order_id: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /payments/webhook/{channel}:
+    post:
+      tags: [payments]
+      summary: Provider callback webhook (signature-verified, no JWT)
+      security: []
+      parameters:
+        - { name: channel, in: path, required: true, schema: { type: string }, description: "e.g. stripe, mock" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: string
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  # =========================================================================
+  # DELIVERY
+  # =========================================================================
+  /orders/{id}/download:
+    post:
+      tags: [delivery]
+      summary: Request a one-time download token (accepts license)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [license_agreed]
+              properties:
+                license_agreed: { type: boolean }
+      responses:
+        "200":
+          description: Download URL with short-lived token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /files/{token}:
+    get:
+      tags: [delivery]
+      summary: Download file bytes (capability token, no JWT)
+      security: []
+      parameters:
+        - { name: token, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: File bytes (or 302 redirect to object store)
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  # =========================================================================
+  # NOTIFICATIONS
+  # =========================================================================
+  /users/me/notifications:
+    get:
+      tags: [notifications]
+      summary: List the user's notifications
+      parameters:
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Notification list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /users/me/notifications/unread-count:
+    get:
+      tags: [notifications]
+      summary: Count unread notifications
+      responses:
+        "200":
+          description: Unread count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /users/me/notifications/read-all:
+    post:
+      tags: [notifications]
+      summary: Mark all notifications as read
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /users/me/notifications/{id}/read:
+    post:
+      tags: [notifications]
+      summary: Mark one notification as read
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+
+  /users/me/notification-preferences:
+    get:
+      tags: [notifications]
+      summary: Get notification preferences
+      responses:
+        "200":
+          description: Preference map keyed by notification kind
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    put:
+      tags: [notifications]
+      summary: Update a notification preference
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind:          { type: string }
+                email_enabled: { type: boolean }
+                in_app_enabled:{ type: boolean }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  # =========================================================================
+  # WATCHLIST
+  # =========================================================================
+  /datasets/{id}/watch:
+    post:
+      tags: [watchlist]
+      summary: Watch a dataset for updates
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+    delete:
+      tags: [watchlist]
+      summary: Unwatch a dataset
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+
+  /users/me/watched:
+    get:
+      tags: [watchlist]
+      summary: List watched datasets
+      responses:
+        "200":
+          description: Watch list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  # =========================================================================
+  # Q&A
+  # =========================================================================
+  /datasets/{id}/questions:
+    get:
+      tags: [qa]
+      summary: List Q&A for a dataset (public)
+      security: []
+      parameters:
+        - { name: id,     in: path,  required: true, schema: { type: string, format: uuid } }
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Question list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    post:
+      tags: [qa]
+      summary: Ask a question about a dataset
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string }
+      responses:
+        "201": { $ref: "#/components/schemas/Envelope" }
+
+  /questions/{id}/answer:
+    post:
+      tags: [qa]
+      summary: Answer a question (seller only)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # =========================================================================
+  # WITHDRAWALS
+  # =========================================================================
+  /sellers/me/withdrawals:
+    post:
+      tags: [withdrawals]
+      summary: Request a withdrawal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_cents, channel, account_label]
+              properties:
+                amount_cents:  { type: integer }
+                channel:       { type: string, enum: [wechat, alipay, bank] }
+                account_label: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    get:
+      tags: [withdrawals]
+      summary: List own withdrawal requests
+      parameters:
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  # =========================================================================
+  # COMPLIANCE
+  # =========================================================================
+  /users/me/data-export:
+    post:
+      tags: [compliance]
+      summary: Request a PIPL data export
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+    get:
+      tags: [compliance]
+      summary: Get data export status
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /users/me/data-export/download:
+    get:
+      tags: [compliance]
+      summary: Download the completed data export zip
+      responses:
+        "200":
+          description: Export zip
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+
+  /users/me/account/deletion:
+    post:
+      tags: [compliance]
+      summary: Request account deletion (PIPL right-to-delete)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+    delete:
+      tags: [compliance]
+      summary: Cancel a pending account deletion request
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  # =========================================================================
+  # SEARCH
+  # =========================================================================
+  /search:
+    get:
+      tags: [search]
+      summary: Full-text dataset search
+      security: []
+      parameters:
+        - { name: q,      in: query, schema: { type: string } }
+        - { name: type,   in: query, schema: { type: string } }
+        - { name: domain, in: query, schema: { type: string } }
+        - { name: sort,   in: query, schema: { type: string } }
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  # =========================================================================
+  # VERIFY
+  # =========================================================================
+  /verify/{cert_id}:
+    get:
+      tags: [verify]
+      summary: Verify a certificate by ID
+      security: []
+      parameters:
+        - { name: cert_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # =========================================================================
+  # COMPUTE
+  # =========================================================================
+  /compute/algorithms:
+    get:
+      tags: [compute]
+      summary: List available algorithms for a dataset
+      parameters:
+        - { name: dataset_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Algorithm list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /compute/jobs:
+    post:
+      tags: [compute]
+      summary: Submit a compute job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dataset_id, algorithm_id]
+              properties:
+                dataset_id:      { type: string, format: uuid }
+                entitlement_id:  { type: string, format: uuid }
+                algorithm_id:    { type: string }
+                params:          { type: object }
+                idempotency_key: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /compute/jobs/{id}:
+    get:
+      tags: [compute]
+      summary: Get compute job status
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /compute/jobs/{id}/output:
+    get:
+      tags: [compute]
+      summary: Download compute job output
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Job output bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /compute/jobs/{id}/attestation:
+    get:
+      tags: [compute]
+      summary: Get TEE attestation for a job
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /compute/jobs/{id}/certificate:
+    get:
+      tags: [compute]
+      summary: Get compute job certificate
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /compute/jobs/{id}/cancel:
+    post:
+      tags: [compute]
+      summary: Cancel a compute job
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /compute/federated-jobs:
+    post:
+      tags: [compute]
+      summary: Submit a federated learning job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [algorithm_id, dataset_ids]
+              properties:
+                algorithm_id:    { type: string }
+                dataset_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+                  minItems: 2
+                params:          { type: object }
+                dp_epsilon:      { type: number }
+                min_participants: { type: integer }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /compute/federated-jobs/{id}:
+    get:
+      tags: [compute]
+      summary: Get federated job status (with sub-jobs)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Federated job with sub-jobs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+
+  /compute/federated-jobs/{id}/output:
+    get:
+      tags: [compute]
+      summary: Download federated model output
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Federated model (JSON)
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /compute/federated-jobs/{id}/certificate:
+    get:
+      tags: [compute]
+      summary: Get federated job certificate
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /users/me/compute/federated-jobs:
+    get:
+      tags: [compute]
+      summary: List own federated jobs
+      parameters:
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /users/me/compute/jobs:
+    get:
+      tags: [compute]
+      summary: List own compute jobs
+      parameters:
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /users/me/compute/entitlements:
+    get:
+      tags: [compute]
+      summary: List own compute entitlements
+      parameters:
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /datasets/{id}/compute-offer:
+    get:
+      tags: [compute]
+      summary: Get the compute offer for a dataset
+      security: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+    put:
+      tags: [compute]
+      summary: Set the compute offer for a dataset (seller)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:               { type: boolean }
+                allow_custom:          { type: boolean }
+                allowed_algorithm_ids:
+                  type: array
+                  items: { type: string }
+                price_cents:           { type: integer }
+                max_runtime_secs:      { type: integer }
+                max_output_bytes:      { type: integer }
+                max_output_files:      { type: integer }
+                dp_epsilon:            { type: number }
+                dp_epsilon_total:      { type: number }
+                return_logs:           { type: boolean }
+                review_output:         { type: boolean }
+                trust_level:           { type: string }
+                allow_federated:       { type: boolean }
+                allow_psi:             { type: boolean }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /datasets/{id}/compute/order:
+    post:
+      tags: [compute]
+      summary: Create a compute order for a dataset
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /datasets/{id}/compute/purchase:
+    post:
+      tags: [compute]
+      summary: (DEV ONLY) Purchase compute entitlement directly — never mounted in production
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quota: { type: integer }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  # =========================================================================
+  # ADMIN (ops-gated)
+  # =========================================================================
+  /admin/kyc/pending:
+    get:
+      tags: [admin]
+      summary: List pending KYC reviews
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/kyc/review:
+    post:
+      tags: [admin]
+      summary: Review a KYC submission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kyc_id, approve]
+              properties:
+                kyc_id:  { type: string, format: uuid }
+                approve: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/datasets:
+    get:
+      tags: [admin]
+      summary: List all datasets (including pending review)
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/datasets/{id}/review:
+    post:
+      tags: [admin]
+      summary: Approve or reject a dataset
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approve]
+              properties:
+                approve: { type: boolean }
+                note:    { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/datasets/{id}/delist:
+    post:
+      tags: [admin]
+      summary: Delist a dataset
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/transactions:
+    get:
+      tags: [admin]
+      summary: List all orders (ops流水 view)
+      parameters:
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/reconciliation:
+    get:
+      tags: [admin]
+      summary: Get platform financial reconciliation
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/reconciliation/timeseries:
+    get:
+      tags: [admin]
+      summary: Get daily reconciliation timeseries
+      parameters:
+        - { name: days, in: query, schema: { type: integer, minimum: 1, maximum: 90, default: 30 } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/orders/{id}/resolve:
+    post:
+      tags: [admin]
+      summary: Resolve a disputed order (refund or release)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refund]
+              properties:
+                refund: { type: boolean }
+                note:   { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/withdrawals:
+    get:
+      tags: [admin]
+      summary: List withdrawal requests
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/withdrawals/{id}/approve:
+    post:
+      tags: [admin]
+      summary: Approve a withdrawal
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/withdrawals/{id}/reject:
+    post:
+      tags: [admin]
+      summary: Reject a withdrawal (reason required)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/withdrawals/{id}/complete:
+    post:
+      tags: [admin]
+      summary: Complete a withdrawal (funds sent)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/audit-logs:
+    get:
+      tags: [admin]
+      summary: Query audit logs
+      parameters:
+        - { name: actor,         in: query, schema: { type: string } }
+        - { name: action,        in: query, schema: { type: string } }
+        - { name: resource_type, in: query, schema: { type: string } }
+        - { name: resource_id,   in: query, schema: { type: string } }
+        - { name: from,          in: query, schema: { type: string } }
+        - { name: to,            in: query, schema: { type: string } }
+        - { name: limit,         in: query, schema: { type: integer } }
+        - { name: offset,        in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/anomalies:
+    get:
+      tags: [admin]
+      summary: List detected anomalies
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/anomalies/{id}/acknowledge:
+    post:
+      tags: [admin]
+      summary: Acknowledge an anomaly
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/anomalies/{id}/resolve:
+    post:
+      tags: [admin]
+      summary: Resolve an anomaly
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/settlement-outbox:
+    get:
+      tags: [admin]
+      summary: List settlement outbox entries
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/settlement-outbox/{orderId}/retry:
+    post:
+      tags: [admin]
+      summary: Retry a failed settlement
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/account-deletions:
+    get:
+      tags: [admin]
+      summary: List account deletion requests
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/account-deletions/{id}/approve:
+    post:
+      tags: [admin]
+      summary: Approve an account deletion
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/account-deletions/{id}/reject:
+    post:
+      tags: [admin]
+      summary: Reject an account deletion request
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/account-deletions/{id}/execute:
+    post:
+      tags: [admin]
+      summary: Execute a deletion (scrubs PII, preserves financial records)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/compute/algorithms:
+    get:
+      tags: [admin]
+      summary: List registered algorithms
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+    post:
+      tags: [admin]
+      summary: Register a new algorithm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, runtime, image, image_digest, version, entrypoint, output_kind]
+              properties:
+                name:          { type: string }
+                runtime:       { type: string }
+                image:         { type: string }
+                image_digest:  { type: string }
+                version:       { type: integer }
+                source_ref:    { type: string }
+                entrypoint:    { type: string }
+                output_kind:   { type: string }
+                params_schema: { type: object }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/compute/algorithms/{id}/review:
+    post:
+      tags: [admin]
+      summary: Review an algorithm (trusted status)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:  { type: string }
+                trusted: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/compute/jobs:
+    get:
+      tags: [admin]
+      summary: List all compute jobs
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: limit,  in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/compute/jobs/{id}/release:
+    post:
+      tags: [admin]
+      summary: Release a compute job output
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/compute/jobs/{id}/reject:
+    post:
+      tags: [admin]
+      summary: Reject a compute job
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+# ===========================================================================
+# COMPONENTS
+# ===========================================================================
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: "0 = success; 2xxx = client error; 5xxx = server error"
+        message:
+          type: string
+        data:
+          type: object
+        request_id:
+          type: string
+
+    TokenPair:
+      type: object
+      properties:
+        access_token:  { type: string }
+        refresh_token: { type: string }
+
+    TokenPairWithUser:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            id:      { type: string }
+            account: { type: string }
+            role:    { type: string }
+        tokens:
+          $ref: "#/components/schemas/TokenPair"
+
+    TwoFAChallenge:
+      type: object
+      properties:
+        need_2fa:        { type: boolean }
+        challenge_token: { type: string }
+        user:            { type: object }
+
+  responses:
+    OK:
+      description: Success
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+    Forbidden:
+      description: Insufficient role / not the resource owner
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+    Conflict:
+      description: Business rule violation (e.g. bad state transition)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+    RateLimited:
+      description: Too many requests
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+    TokenPairWithUser:
+      description: Token pair + user profile
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
