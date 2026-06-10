@@ -57,11 +57,11 @@ jobs:
         env:
           DATABASE_URL: postgres://app:app@localhost:5432/app?sslmode=disable
         run: |
-          go run github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
+          go run github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1 \
             -path migrations -database "$DATABASE_URL" up
-          go run github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
+          go run github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1 \
             -path migrations -database "$DATABASE_URL" down -all
-          go run github.com/golang-migrate/migrate/v4/cmd/migrate@latest \
+          go run github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1 \
             -path migrations -database "$DATABASE_URL" up
 
   frontend:
