@@ -96,31 +96,6 @@ func (r *pgRepo) CreatePasswordResetToken(ctx context.Context, tokenHash, userID
 	return nil
 }
 
-func (r *pgRepo) GetPasswordResetToken(ctx context.Context, tokenHash string) (passwordResetTokenRow, error) {
-	var row passwordResetTokenRow
-	var usedAt sql.NullTime
-	err := r.pool.QueryRow(ctx,
-		`SELECT token_hash, user_id::text, expires_at, used_at
-		 FROM password_reset_tokens WHERE token_hash=$1`, tokenHash).
-		Scan(&row.TokenHash, &row.UserID, &row.ExpiresAt, &usedAt)
-	if err != nil {
-		return passwordResetTokenRow{}, fmt.Errorf("get reset token: %w", err)
-	}
-	if usedAt.Valid {
-		row.UsedAt = &usedAt.Time
-	}
-	return row, nil
-}
-
-func (r *pgRepo) MarkPasswordResetTokenUsed(ctx context.Context, tokenHash string) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE password_reset_tokens SET used_at=now() WHERE token_hash=$1 AND used_at IS NULL`, tokenHash)
-	if err != nil {
-		return fmt.Errorf("mark reset token used: %w", err)
-	}
-	return nil
-}
-
 func (r *pgRepo) ConsumePasswordResetToken(ctx context.Context, tokenHash string) (string, error) {
 	var userID string
 	err := r.pool.QueryRow(ctx,

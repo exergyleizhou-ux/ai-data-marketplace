@@ -419,25 +419,6 @@ func (r *fakeRepo) DisableTOTP(_ context.Context, userID string) error {
 func (r *fakeRepo) CreatePasswordResetToken(_ context.Context, tokenHash, userID string, _ time.Time) error {
 	return nil
 }
-func (r *fakeRepo) GetPasswordResetToken(_ context.Context, tokenHash string) (passwordResetTokenRow, error) {
-	if r.resetTokens == nil {
-		return passwordResetTokenRow{}, ErrUserNotFound
-	}
-	t, ok := r.resetTokens[tokenHash]
-	if !ok {
-		return passwordResetTokenRow{}, ErrUserNotFound
-	}
-	return t, nil
-}
-func (r *fakeRepo) MarkPasswordResetTokenUsed(_ context.Context, tokenHash string) error {
-	if r.resetTokens != nil {
-		t := r.resetTokens[tokenHash]
-		now := time.Now()
-		t.UsedAt = &now
-		r.resetTokens[tokenHash] = t
-	}
-	return nil
-}
 func (r *fakeRepo) ConsumePasswordResetToken(_ context.Context, tokenHash string) (string, error) {
 	if r.resetTokens == nil {
 		return "", ErrTokenInvalidOrExpired

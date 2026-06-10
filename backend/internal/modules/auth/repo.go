@@ -54,9 +54,7 @@ type Repository interface {
 
 	// Password reset
 	CreatePasswordResetToken(ctx context.Context, tokenHash, userID string, expiresAt time.Time) error
-	GetPasswordResetToken(ctx context.Context, tokenHash string) (passwordResetTokenRow, error)
 	ConsumePasswordResetToken(ctx context.Context, tokenHash string) (userID string, err error)
-	MarkPasswordResetTokenUsed(ctx context.Context, tokenHash string) error
 	UpdatePassword(ctx context.Context, userID, passwordHash string) error
 	RevokeAllRefreshTokens(ctx context.Context, userID string) error
 }
