@@ -83,16 +83,31 @@ func (s *Service) CreatePayment(ctx context.Context, buyerID, orderID string) (P
 	if o.Status != "created" {
 		return PayInfo{}, ErrOrderNotPayable
 	}
+	// Idempotent create: a retried POST /payments must return the SAME charge.
+	// Minting a new provider charge per retry made the buyer pay a txn the DB
+	// row doesn't carry — the webhook then never matches and the order sticks.
+	if txn, url, status, found, err := s.repo.PaymentForOrder(ctx, orderID); err != nil {
+		return PayInfo{}, err
+	} else if found {
+		if status != "created" {
+			return PayInfo{}, ErrOrderNotPayable
+		}
+		return PayInfo{OrderID: orderID, ChannelTxnID: txn, PayURL: url, AmountCents: o.AmountCents, Channel: s.provider.Channel()}, nil
+	}
 	res, err := s.provider.CreatePayment(orderID, o.AmountCents)
 	if err != nil {
 		return PayInfo{}, fmt.Errorf("provider create payment: %w", err)
 	}
-	if err := s.repo.EnsurePayment(ctx, orderID, s.provider.Channel(), res.ChannelTxnID, o.AmountCents); err != nil {
+	// Respond with the WINNING row — under a concurrent double-create the
+	// loser's provider charge is orphaned (harmless, never confirmable by us)
+	// and both callers see the txn the webhook will actually match.
+	winTxn, winURL, err := s.repo.EnsurePayment(ctx, orderID, s.provider.Channel(), res.ChannelTxnID, res.PayURL, o.AmountCents)
+	if err != nil {
 		return PayInfo{}, err
 	}
 	s.audit.Record(ctx, audit.Entry{ActorID: buyerID, Action: "payment.create", ResourceType: "order", ResourceID: orderID,
-		Detail: map[string]any{"channel": s.provider.Channel(), "channel_txn_id": res.ChannelTxnID}})
-	return PayInfo{OrderID: orderID, ChannelTxnID: res.ChannelTxnID, PayURL: res.PayURL, AmountCents: o.AmountCents, Channel: s.provider.Channel()}, nil
+		Detail: map[string]any{"channel": s.provider.Channel(), "channel_txn_id": winTxn}})
+	return PayInfo{OrderID: orderID, ChannelTxnID: winTxn, PayURL: winURL, AmountCents: o.AmountCents, Channel: s.provider.Channel()}, nil
 }
 
 // HandleCallback processes a provider webhook: verify signature, then mark the
