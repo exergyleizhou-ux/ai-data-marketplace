@@ -21,6 +21,41 @@ type fakeRepo struct {
 	totpEnabled   map[string]bool
 	recoveryCodes map[string][]string
 	resetTokens   map[string]passwordResetTokenRow
+	// lockout state
+	failures    map[string]int
+	lockedUntil map[string]time.Time
+}
+
+func (r *fakeRepo) RecordLoginFailure(_ context.Context, userID string, maxFailures int, lockFor time.Duration) (int, time.Time, error) {
+	if r.failures == nil {
+		r.failures = map[string]int{}
+		r.lockedUntil = map[string]time.Time{}
+	}
+	if until, ok := r.lockedUntil[userID]; ok && !until.IsZero() && until.Before(time.Now()) {
+		r.failures[userID] = 0
+		delete(r.lockedUntil, userID)
+	}
+	r.failures[userID]++
+	if r.failures[userID] >= maxFailures {
+		until := time.Now().Add(lockFor)
+		r.lockedUntil[userID] = until
+		return r.failures[userID], until, nil
+	}
+	return r.failures[userID], time.Time{}, nil
+}
+
+func (r *fakeRepo) LoginLockedUntil(_ context.Context, userID string) (time.Time, bool, error) {
+	until, ok := r.lockedUntil[userID]
+	if !ok || until.Before(time.Now()) {
+		return time.Time{}, false, nil
+	}
+	return until, true, nil
+}
+
+func (r *fakeRepo) ClearLoginFailures(_ context.Context, userID string) error {
+	delete(r.failures, userID)
+	delete(r.lockedUntil, userID)
+	return nil
 }
 
 func (r *fakeRepo) RecordAgreements(_ context.Context, userID string, ags []Agreement) error {
@@ -443,5 +478,14 @@ func (r *fakeRepo) ConsumePasswordResetToken(_ context.Context, tokenHash string
 	r.resetTokens[tokenHash] = t
 	return t.UserID, nil
 }
-func (r *fakeRepo) UpdatePassword(_ context.Context, _, _ string) error      { return nil }
+func (r *fakeRepo) UpdatePassword(_ context.Context, userID, hash string) error {
+	// Faithful to the SQL: the new hash must actually take effect.
+	for acct, uh := range r.byAccount {
+		if uh.user.ID == userID {
+			uh.hash = hash
+			r.byAccount[acct] = uh
+		}
+	}
+	return nil
+}
 func (r *fakeRepo) RevokeAllRefreshTokens(_ context.Context, _ string) error { return nil }
