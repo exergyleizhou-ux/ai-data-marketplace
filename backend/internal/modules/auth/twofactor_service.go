@@ -38,11 +38,21 @@ func (s *Service) Enroll2FA(ctx context.Context, userID string) (Enroll2FAResult
 	}
 
 	// Generate 8 recovery codes (10-char alphanumeric, bcrypt-hashed for storage).
-	codes := make([]string, 8)
-	for i := range codes {
-		codes[i] = generateRecoveryCode()
-		h, _ := bcrypt.GenerateFromPassword([]byte(codes[i]), bcrypt.MinCost)
-		_ = s.repo.AddRecoveryCode(ctx, userID, string(h))
+	codes := make([]string, 0, 8)
+	for i := 0; i < 8; i++ {
+		code := generateRecoveryCode()
+		h, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.MinCost)
+		if err != nil {
+			// Extremely rare; skip this code and generate another.
+			continue
+		}
+		if err := s.repo.AddRecoveryCode(ctx, userID, string(h)); err == nil {
+			codes = append(codes, code)
+		}
+	}
+	// Fallback: if every attempt failed (vanishingly unlikely), return an error.
+	if len(codes) == 0 {
+		return Enroll2FAResult{}, fmt.Errorf("generate recovery codes: all attempts failed")
 	}
 	return Enroll2FAResult{
 		OTPAuthURL:    key.URL(),
@@ -111,7 +121,6 @@ func (s *Service) Verify2FAChallenge(ctx context.Context, challengeToken, code s
 	return Tokens{}, User{}, ErrInvalid2FACode
 }
 
-
 // RequestPasswordReset sends a reset link via email. Does NOT reveal whether the
 // account exists (anti-enumeration).
 func (s *Service) RequestPasswordReset(ctx context.Context, account string) error {
@@ -138,19 +147,18 @@ func (s *Service) CompletePasswordReset(ctx context.Context, rawToken, newPasswo
 		return ErrPasswordTooWeak
 	}
 	tokenHash := sha256Hex(rawToken)
-	t, err := s.repo.GetPasswordResetToken(ctx, tokenHash)
-	if err != nil || t.UsedAt != nil || time.Now().After(t.ExpiresAt) {
+	userID, err := s.repo.ConsumePasswordResetToken(ctx, tokenHash)
+	if err != nil {
 		return ErrTokenInvalidOrExpired
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hash new password: %w", err)
 	}
-	if err := s.repo.UpdatePassword(ctx, t.UserID, string(hash)); err != nil {
+	if err := s.repo.UpdatePassword(ctx, userID, string(hash)); err != nil {
 		return err
 	}
-	_ = s.repo.MarkPasswordResetTokenUsed(ctx, tokenHash)
-	_ = s.repo.RevokeAllRefreshTokens(ctx, t.UserID)
+	_ = s.repo.RevokeAllRefreshTokens(ctx, userID)
 	return nil
 }
 

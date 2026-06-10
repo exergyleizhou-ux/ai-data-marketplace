@@ -438,5 +438,18 @@ func (r *fakeRepo) MarkPasswordResetTokenUsed(_ context.Context, tokenHash strin
 	}
 	return nil
 }
+func (r *fakeRepo) ConsumePasswordResetToken(_ context.Context, tokenHash string) (string, error) {
+	if r.resetTokens == nil {
+		return "", ErrTokenInvalidOrExpired
+	}
+	t, ok := r.resetTokens[tokenHash]
+	if !ok || t.UsedAt != nil || time.Now().After(t.ExpiresAt) {
+		return "", ErrTokenInvalidOrExpired
+	}
+	now := time.Now()
+	t.UsedAt = &now
+	r.resetTokens[tokenHash] = t
+	return t.UserID, nil
+}
 func (r *fakeRepo) UpdatePassword(_ context.Context, _, _ string) error      { return nil }
 func (r *fakeRepo) RevokeAllRefreshTokens(_ context.Context, _ string) error { return nil }

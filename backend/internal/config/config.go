@@ -40,6 +40,7 @@ type Config struct {
 	StripeCurrency      string // settlement currency for Stripe (test default usd)
 
 	CORSAllowOrigin string // browser origin allowed to call the API ("*" in dev)
+	AppBaseURL      string // frontend base URL for email links (e.g. https://app.example.com)
 }
 
 // Load reads configuration from the environment, applying sane local-dev
@@ -76,6 +77,7 @@ func Load() (*Config, error) {
 		StripeCurrency:      getenv("STRIPE_CURRENCY", "usd"),
 
 		CORSAllowOrigin: getenv("CORS_ALLOW_ORIGIN", "*"),
+		AppBaseURL:      getenv("APP_BASE_URL", "http://localhost:3000"),
 	}
 	// Validate that any provided PORT-style override parses, to fail fast.
 	if v := os.Getenv("HTTP_PORT"); v != "" {

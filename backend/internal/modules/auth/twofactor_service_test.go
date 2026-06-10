@@ -66,14 +66,16 @@ func TestRequestPasswordReset_DoesNotRevealUserExistence(t *testing.T) {
 }
 
 func TestCompletePasswordReset_RejectsExpiredToken(t *testing.T) {
+	rawToken := "some-raw-token"
+	tokenHash := sha256Hex(rawToken)
 	svc := &Service{
 		repo: &fakeRepo{
 			resetTokens: map[string]passwordResetTokenRow{
-				"expired": {TokenHash: "expired", UserID: "u1", ExpiresAt: time.Now().Add(-time.Hour)},
+				tokenHash: {TokenHash: tokenHash, UserID: "u1", ExpiresAt: time.Now().Add(-time.Hour)},
 			},
 		},
 	}
-	err := svc.CompletePasswordReset(context.Background(), "expired", "newpassword123")
+	err := svc.CompletePasswordReset(context.Background(), rawToken, "newpassword123")
 	if err != ErrTokenInvalidOrExpired {
 		t.Fatalf("want ErrTokenInvalidOrExpired, got %v", err)
 	}

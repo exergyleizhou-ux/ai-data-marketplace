@@ -263,6 +263,8 @@ func (s *Server) routes() {
 		notification.Register(api, notifySvc, authMW)
 		orderSvc.SetNotifier(notifySvc)     // order events → buyer/seller notifications
 		dsSvc.SetQualityNotifier(notifySvc) // quality done → seller notification
+		authSvc.SetNotifier(notifySvc)      // password reset email
+		authSvc.SetAppBaseURL(s.cfg.AppBaseURL)
 
 		// Bundle download: orderSvc needs object storage + dataset key resolver.
 		if store != nil {

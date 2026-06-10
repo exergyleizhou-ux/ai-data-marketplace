@@ -121,6 +121,18 @@ func (r *pgRepo) MarkPasswordResetTokenUsed(ctx context.Context, tokenHash strin
 	return nil
 }
 
+func (r *pgRepo) ConsumePasswordResetToken(ctx context.Context, tokenHash string) (string, error) {
+	var userID string
+	err := r.pool.QueryRow(ctx,
+		`UPDATE password_reset_tokens SET used_at=now()
+		 WHERE token_hash=$1 AND used_at IS NULL AND expires_at > now()
+		 RETURNING user_id::text`, tokenHash).Scan(&userID)
+	if err != nil {
+		return "", ErrTokenInvalidOrExpired
+	}
+	return userID, nil
+}
+
 func (r *pgRepo) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE users SET password_hash=$2 WHERE id=$1`, userID, passwordHash)

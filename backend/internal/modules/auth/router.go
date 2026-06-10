@@ -43,11 +43,15 @@ func Register(rg *gin.RouterGroup, svc *Service, tm *TokenManager, limiter ratel
 	authed.POST("/auth/2fa/verify-enrollment", h.verify2FAEnrollment)
 	authed.POST("/auth/2fa/disable", h.disable2FA)
 
-	// Public: 2FA verify (post-login + challenge)
-	pub.POST("/auth/2fa/verify", h.verify2FAChallenge)
+	// Public: 2FA verify (post-login + challenge), rate-limited.
+	pub.POST("/auth/2fa/verify",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "2fa_verify", Limit: 15, Window: time.Minute}),
+		h.verify2FAChallenge)
 
-	// Public: password reset
-	pub.POST("/auth/password-reset/request", h.requestPasswordReset)
+	// Public: password reset (anti-enumeration on request; rate-limited).
+	pub.POST("/auth/password-reset/request",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "password_reset_request", Limit: 3, Window: time.Minute}),
+		h.requestPasswordReset)
 	pub.POST("/auth/password-reset/complete", h.completePasswordReset)
 
 	// Ops-only review of KYC submissions.
