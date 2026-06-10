@@ -54,6 +54,35 @@ jobs:
           DATABASE_URL: postgres://app:app@localhost:5432/app?sslmode=disable
         run: go test -race -count=1 -timeout 120s ./...
 
+  backup-drill:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Install postgres client tools (pg_dump/pg_restore/psql)
+        run: sudo apt-get update -q && sudo apt-get install -y -q postgresql-client
+      - name: Backup → wipe → restore → verify (deploy/backup/drill.sh)
+        env:
+          DATABASE_URL: postgres://app:app@localhost:5432/app?sslmode=disable
+        run: bash deploy/backup/drill.sh
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
