@@ -1,0 +1,126 @@
+{
+  "uid": "mkt-http",
+  "title": "HTTP 服务",
+  "tags": ["marketplace", "http"],
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "Prometheus" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "QPS 按 route (top 10)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "topk(10, sum(rate(marketplace_http_requests_total[5m])) by (route))",
+          "legendFormat": "{{route}}",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "lineWidth": 2 } }
+      }
+    },
+    {
+      "id": 2,
+      "title": "错误率 %",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(marketplace_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(marketplace_http_requests_total[5m])) * 100",
+          "legendFormat": "5xx%",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green",  "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red",    "value": 5 }
+          ]},
+          "custom": { "lineWidth": 2, "fillOpacity": 30 }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "P50 / P95 / P99 延迟",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(marketplace_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "P50",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(marketplace_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "P95",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(marketplace_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "P99",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "lineWidth": 2 } }
+      }
+    },
+    {
+      "id": 4,
+      "title": "按 route 的 P95 延迟 top 10",
+      "type": "table",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "topk(10, histogram_quantile(0.95, sum by (le, route) (rate(marketplace_http_request_duration_seconds_bucket[5m]))))",
+          "format": "table",
+          "instant": true,
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Value" }, "properties": [{"id": "unit", "value": "s"}] }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "title": "按 status code 分布",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(marketplace_http_requests_total[5m])) by (status)",
+          "legendFormat": "{{status}}",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "stacking": { "mode": "normal" }, "lineWidth": 0, "fillOpacity": 70 }
+        }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

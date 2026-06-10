@@ -1,0 +1,37 @@
+# ===========================================================================
+# Prometheus 主配置 — 绿洲监控栈
+# ===========================================================================
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+  scrape_timeout: 10s
+
+# 加载告警规则
+rule_files:
+  - "/etc/prometheus/alert-rules.yml"
+
+scrape_configs:
+  # ---- 后端 ----
+  - job_name: backend
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "host.docker.internal:8080"
+        labels:
+          env: production
+
+  # ---- PostgreSQL (via postgres_exporter) ----
+  - job_name: postgres
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "postgres-exporter:9187"
+        labels:
+          env: production
+
+  # ---- Prometheus 自监控 ----
+  - job_name: prometheus
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "localhost:9090"

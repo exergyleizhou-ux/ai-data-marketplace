@@ -1,0 +1,110 @@
+{
+  "uid": "mkt-runtime",
+  "title": "运行时",
+  "tags": ["marketplace", "runtime"],
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "Prometheus" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "title": "Goroutines", "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 6 },
+      "targets": [{
+        "expr": "go_goroutines",
+        "legendFormat": "goroutines",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+      }],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "lineWidth": 2 } } }
+    },
+    {
+      "id": 2, "title": "进程 RSS 内存", "type": "timeseries",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 6 },
+      "targets": [{
+        "expr": "process_resident_memory_bytes",
+        "legendFormat": "RSS",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+      }],
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "lineWidth": 2 } } }
+    },
+    {
+      "id": 3, "title": "GC 暂停 P99", "type": "timeseries",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 6 },
+      "targets": [{
+        "expr": "histogram_quantile(0.99, rate(go_gc_duration_seconds_bucket[5m]))",
+        "legendFormat": "GC P99",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+      }],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 2 } } }
+    },
+    {
+      "id": 4, "title": "PG 活跃连接数", "type": "timeseries",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 6 },
+      "targets": [{
+        "expr": "pg_stat_activity_count",
+        "legendFormat": "connections",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2 },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 8 },
+            { "color": "red", "value": 15 }
+          ]}
+        }
+      }
+    },
+    {
+      "id": 5, "title": "PG 数据库大小", "type": "timeseries",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 6 },
+      "targets": [{
+        "expr": "pg_database_size_bytes",
+        "legendFormat": "DB size",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+      }],
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "lineWidth": 2 } } }
+    },
+    {
+      "id": 6, "title": "up 状态",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 4 },
+      "targets": [
+        {
+          "expr": "up{job=\"backend\"}",
+          "legendFormat": "backend",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        },
+        {
+          "expr": "pg_up",
+          "legendFormat": "postgres",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red", "value": null },
+            { "color": "green", "value": 1 }
+          ]},
+          "mappings": [
+            { "type": "value", "value": "0", "text": "DOWN" },
+            { "type": "value", "value": "1", "text": "UP" }
+          ]
+        }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

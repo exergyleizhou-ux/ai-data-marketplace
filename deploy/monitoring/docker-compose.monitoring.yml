@@ -1,0 +1,79 @@
+version: "3.9"
+
+# ===========================================================================
+# 绿洲数据交易平台 — 监控栈(docker-compose)
+#
+# 启动:
+#   export GF_SECURITY_ADMIN_PASSWORD=<强密码>
+#   export PG_EXPORTER_DSN="postgres://user:pass@postgres-host:5432/oasis?sslmode=require"
+#   docker compose -f deploy/monitoring/docker-compose.monitoring.yml up -d
+#
+# 停止:
+#   docker compose -f deploy/monitoring/docker-compose.monitoring.yml down -v
+#
+# 访问:
+#   Prometheus  http://localhost:9090
+#   Alertmanager http://localhost:9093
+#   Grafana      http://localhost:3000 (admin / GF_SECURITY_ADMIN_PASSWORD)
+# ===========================================================================
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.2
+    container_name: mkt-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: mkt-alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.5
+    container_name: mkt-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:?required}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning/datasources/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ./grafana/provisioning/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/provider.yml:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: mkt-postgres-exporter
+    environment:
+      - DATA_SOURCE_NAME=${PG_EXPORTER_DSN:?required}
+    ports:
+      - "9187:9187"
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:

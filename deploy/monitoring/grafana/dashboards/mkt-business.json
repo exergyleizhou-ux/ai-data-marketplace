@@ -1,0 +1,135 @@
+{
+  "uid": "mkt-business",
+  "title": "业务",
+  "tags": ["marketplace", "business"],
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "Prometheus" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "C2D 任务结果分布",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(marketplace_compute_jobs_total[5m])) by (outcome)",
+          "legendFormat": "{{outcome}}",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "stacking": { "mode": "normal" }, "fillOpacity": 70 } }
+      }
+    },
+    {
+      "id": 2,
+      "title": "C2D 任务时长 P95 按 kind",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, kind) (rate(marketplace_compute_job_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{kind}}",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 2 } } }
+    },
+    {
+      "id": 3,
+      "title": "Lease 回收次数 (30m)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 8, "w": 6, "h": 5 },
+      "targets": [
+        {
+          "expr": "increase(marketplace_compute_lease_reclaims_total[30m])",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 3 }
+          ]}
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "联邦任务状态分布",
+      "type": "timeseries",
+      "gridPos": { "x": 6, "y": 8, "w": 9, "h": 5 },
+      "targets": [
+        {
+          "expr": "sum(rate(marketplace_federated_jobs_total[5m])) by (status)",
+          "legendFormat": "{{status}}",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "stacking": { "mode": "normal" }, "fillOpacity": 70 }, "unit": "reqps" } }
+    },
+    {
+      "id": 5,
+      "title": "联邦聚合时长 P95",
+      "type": "stat",
+      "gridPos": { "x": 15, "y": 8, "w": 4, "h": 5 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(marketplace_federated_aggregation_duration_seconds_bucket[5m]))",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 6,
+      "title": "联邦参与方 dropout 率",
+      "type": "timeseries",
+      "gridPos": { "x": 19, "y": 8, "w": 5, "h": 5 },
+      "targets": [
+        {
+          "expr": "rate(marketplace_federated_participants_total{outcome=\"dropped\"}[5m]) / rate(marketplace_federated_participants_total{outcome=\"submitted\"}[5m]) * 100",
+          "legendFormat": "dropout%",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "red", "value": 30 }
+          ]}
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "质检任务产出",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 13, "w": 24, "h": 7 },
+      "targets": [
+        {
+          "expr": "sum(rate(marketplace_quality_jobs_total[5m])) by (outcome)",
+          "legendFormat": "{{outcome}}",
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "stacking": { "mode": "normal" }, "fillOpacity": 70 } } }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}
