@@ -43,6 +43,28 @@ type Repository interface {
 	RecordAgreements(ctx context.Context, userID string, ags []Agreement) error
 	// ListAgreements returns a user's consent records, most recent first.
 	ListAgreements(ctx context.Context, userID string) ([]Agreement, error)
+
+	// 2FA TOTP
+	SetTOTPSecret(ctx context.Context, userID, secret string) error
+	EnableTOTP(ctx context.Context, userID string) error
+	GetTOTPSecret(ctx context.Context, userID string) (string, error)
+	AddRecoveryCode(ctx context.Context, userID, codeHash string) error
+	ConsumeRecoveryCode(ctx context.Context, userID, plaintext string) (bool, error)
+	CountUnusedRecoveryCodes(ctx context.Context, userID string) (int, error)
+	DisableTOTP(ctx context.Context, userID string) error
+
+	// Password reset
+	CreatePasswordResetToken(ctx context.Context, tokenHash, userID string, expiresAt time.Time) error
+	ConsumePasswordResetToken(ctx context.Context, tokenHash string) (userID string, err error)
+	UpdatePassword(ctx context.Context, userID, passwordHash string) error
+	RevokeAllRefreshTokens(ctx context.Context, userID string) error
+}
+
+type passwordResetTokenRow struct {
+	TokenHash string
+	UserID    string
+	ExpiresAt time.Time
+	UsedAt    *time.Time
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }
@@ -89,11 +111,11 @@ func (r *pgRepo) GetUserByAccount(ctx context.Context, account string) (User, st
 
 func (r *pgRepo) GetUserByID(ctx context.Context, id string) (User, error) {
 	const q = `
-		SELECT id, account, account_type, role, kyc_status, status
+		SELECT id, account, account_type, role, kyc_status, status, COALESCE(totp_enabled, false)
 		FROM users WHERE id = $1`
 	var u User
 	err := r.pool.QueryRow(ctx, q, id).
-		Scan(&u.ID, &u.Account, &u.AccountType, &u.Role, &u.KYCStatus, &u.Status)
+		Scan(&u.ID, &u.Account, &u.AccountType, &u.Role, &u.KYCStatus, &u.Status, &u.TOTPEnabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrUserNotFound
 	}

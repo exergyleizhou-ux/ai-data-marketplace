@@ -14,7 +14,7 @@
 --     + crash recovery (lease + retry), mirroring the H3 settlement model.
 
 -- Registered algorithms: platform-audited trusted whitelist (+ later, custom images).
-CREATE TABLE algorithms (
+CREATE TABLE IF NOT EXISTS algorithms (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     owner_id      UUID REFERENCES users (id),           -- NULL = platform built-in
     name          TEXT NOT NULL,
@@ -33,11 +33,11 @@ CREATE TABLE algorithms (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_algorithms_status ON algorithms (status);
+CREATE INDEX IF NOT EXISTS idx_algorithms_status ON algorithms (status);
 
 -- Per-dataset sandbox sale config (coexists with the download product; a dataset
 -- may be sold both ways).
-CREATE TABLE dataset_compute_offers (
+CREATE TABLE IF NOT EXISTS dataset_compute_offers (
     dataset_id            UUID PRIMARY KEY REFERENCES datasets (id) ON DELETE CASCADE,
     enabled               BOOLEAN NOT NULL DEFAULT false,
     allow_custom          BOOLEAN NOT NULL DEFAULT false, -- allow buyer-supplied algorithms (false = whitelist only)
@@ -56,7 +56,7 @@ CREATE TABLE dataset_compute_offers (
 );
 
 -- Buyer compute entitlement (one purchase may carry N job credits).
-CREATE TABLE compute_entitlements (
+CREATE TABLE IF NOT EXISTS compute_entitlements (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     dataset_id    UUID NOT NULL REFERENCES datasets (id) ON DELETE CASCADE,
     buyer_id      UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -68,11 +68,11 @@ CREATE TABLE compute_entitlements (
     expires_at    TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_compute_entitlements_buyer ON compute_entitlements (buyer_id, dataset_id);
-CREATE INDEX idx_compute_entitlements_order ON compute_entitlements (order_id);
+CREATE INDEX IF NOT EXISTS idx_compute_entitlements_buyer ON compute_entitlements (buyer_id, dataset_id);
+CREATE INDEX IF NOT EXISTS idx_compute_entitlements_order ON compute_entitlements (order_id);
 
 -- Compute jobs (the C2D unit of work).
-CREATE TABLE compute_jobs (
+CREATE TABLE IF NOT EXISTS compute_jobs (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     dataset_id        UUID NOT NULL REFERENCES datasets (id) ON DELETE CASCADE,
     version_id        UUID REFERENCES dataset_versions (id),
@@ -99,16 +99,16 @@ CREATE TABLE compute_jobs (
     started_at        TIMESTAMPTZ,
     finished_at       TIMESTAMPTZ
 );
-CREATE INDEX idx_compute_jobs_buyer  ON compute_jobs (buyer_id, created_at DESC);
-CREATE INDEX idx_compute_jobs_status ON compute_jobs (status);
+CREATE INDEX IF NOT EXISTS idx_compute_jobs_buyer  ON compute_jobs (buyer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_compute_jobs_status ON compute_jobs (status);
 -- Idempotency: one job per (entitlement, idempotency_key).
-CREATE UNIQUE INDEX idx_compute_jobs_idem ON compute_jobs (entitlement_id, idempotency_key)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_compute_jobs_idem ON compute_jobs (entitlement_id, idempotency_key)
     WHERE idempotency_key IS NOT NULL;
 -- Stale-lease reclaim scan.
-CREATE INDEX idx_compute_jobs_lease ON compute_jobs (status, lease_until) WHERE status = 'running';
+CREATE INDEX IF NOT EXISTS idx_compute_jobs_lease ON compute_jobs (status, lease_until) WHERE status = 'running';
 
 -- Per (dataset, buyer) DP budget ledger (cumulative ε; ceiling lives in the offer).
-CREATE TABLE dp_budget_ledger (
+CREATE TABLE IF NOT EXISTS dp_budget_ledger (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     dataset_id    UUID NOT NULL REFERENCES datasets (id) ON DELETE CASCADE,
     buyer_id      UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -116,4 +116,4 @@ CREATE TABLE dp_budget_ledger (
     epsilon_spent DOUBLE PRECISION NOT NULL,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_dp_budget_ledger_scope ON dp_budget_ledger (dataset_id, buyer_id);
+CREATE INDEX IF NOT EXISTS idx_dp_budget_ledger_scope ON dp_budget_ledger (dataset_id, buyer_id);

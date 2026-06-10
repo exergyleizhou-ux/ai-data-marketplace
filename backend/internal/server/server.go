@@ -57,6 +57,50 @@ func (s *Server) Close() {
 	}
 }
 
+// startBackgroundCleaners launches periodic maintenance goroutines (token
+// expiry cleanup, consumed code purging). Registered in s.closers so Close()
+// stops them gracefully.
+func (s *Server) startBackgroundCleaners() {
+	ctx, cancel := context.WithCancel(context.Background())
+	s.closers = append(s.closers, cancel)
+
+	// Password-reset token cleanup: every hour, delete tokens expired > 7 days.
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := s.db.Exec(ctx,
+					`DELETE FROM password_reset_tokens WHERE expires_at < now() - INTERVAL '7 days'`); err != nil {
+					slog.Warn("password-reset token cleanup failed", "err", err)
+				}
+			}
+		}
+	}()
+
+	// TOTP recovery codes: purge codes consumed > 30 days ago (daily sweep).
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := s.db.Exec(ctx,
+					`DELETE FROM totp_recovery_codes WHERE used_at IS NOT NULL AND used_at < now() - INTERVAL '30 days'`); err != nil {
+					slog.Warn("totp recovery code cleanup failed", "err", err)
+				}
+			}
+		}
+	}()
+
+	slog.Info("background cleaners started", "tasks", 2)
+}
+
 // New builds the server. db may be nil in tests that exercise only routes that
 // don't touch the database.
 func New(cfg *config.Config, db *pgxpool.Pool) *Server {
@@ -70,12 +114,18 @@ func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 		middleware.CORS(cfg.CORSAllowOrigin),
 		middleware.RequestID(),
 		middleware.TraceID(),
+		middleware.RemoveServerHeader(),
+		middleware.SecurityHeaders(cfg.Env),
+		middleware.CacheControl(),
 		metrics.Middleware(),
 		middleware.Logger(),
 		middleware.Recovery(),
 	)
 
 	s := &Server{cfg: cfg, db: db, engine: engine}
+	if db != nil {
+		s.startBackgroundCleaners()
+	}
 	s.routes()
 	return s
 }
@@ -263,6 +313,8 @@ func (s *Server) routes() {
 		notification.Register(api, notifySvc, authMW)
 		orderSvc.SetNotifier(notifySvc)     // order events → buyer/seller notifications
 		dsSvc.SetQualityNotifier(notifySvc) // quality done → seller notification
+		authSvc.SetNotifier(notifySvc)      // password reset email
+		authSvc.SetAppBaseURL(s.cfg.AppBaseURL)
 
 		// Bundle download: orderSvc needs object storage + dataset key resolver.
 		if store != nil {

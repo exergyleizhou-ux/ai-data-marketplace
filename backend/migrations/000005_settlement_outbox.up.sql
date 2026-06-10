@@ -3,7 +3,7 @@
 -- blip). A background worker drains due rows under a PG advisory lock (so
 -- multiple app instances don't double-process) and retries with backoff; the
 -- settlements unique key remains the final double-split guard.
-CREATE TABLE settlement_outbox (
+CREATE TABLE IF NOT EXISTS settlement_outbox (
     order_id        UUID PRIMARY KEY REFERENCES orders (id),
     status          TEXT NOT NULL DEFAULT 'pending'
                          CHECK (status IN ('pending', 'done', 'failed')),
@@ -15,6 +15,6 @@ CREATE TABLE settlement_outbox (
 );
 
 -- Hot path: "which pending jobs are due now?" — partial index on due rows.
-CREATE INDEX idx_settlement_outbox_due
+CREATE INDEX IF NOT EXISTS idx_settlement_outbox_due
     ON settlement_outbox (next_attempt_at)
     WHERE status = 'pending';

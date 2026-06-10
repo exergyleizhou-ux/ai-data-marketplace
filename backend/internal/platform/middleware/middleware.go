@@ -40,6 +40,7 @@ func Logger() gin.HandlerFunc {
 			"latency_ms", time.Since(start).Milliseconds(),
 			"client_ip", c.ClientIP(),
 			"request_id", httpx.RequestID(c),
+			"trace_id", c.GetString("trace_id"),
 		)
 	}
 }

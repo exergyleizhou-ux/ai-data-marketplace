@@ -1,12 +1,12 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { api, tokenStore, type User } from "./api";
+import { api, tokenStore, type User, type LoginResult } from "./api";
 
 type AuthState = {
   user: User | null;
   loading: boolean;
-  login: (account: string, password: string) => Promise<void>;
+  login: (account: string, password: string) => Promise<LoginResult>;
   register: (
     account: string,
     accountType: string,
@@ -44,8 +44,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (account: string, password: string) => {
     const res = await api.login(account, password);
-    tokenStore.set(res.tokens);
-    setUser(res.user);
+    if (res.tokens) {
+      tokenStore.set(res.tokens);
+      if (res.user) setUser(res.user);
+    }
+    return res;
   }, []);
 
   const register = useCallback(

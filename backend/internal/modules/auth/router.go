@@ -38,6 +38,25 @@ func Register(rg *gin.RouterGroup, svc *Service, tm *TokenManager, limiter ratel
 	authed.GET("/users/me/agreements", h.listAgreements)
 	authed.POST("/users/me/agreements", h.recordAgreements)
 
+	// 2FA TOTP
+	authed.POST("/auth/2fa/enroll", h.enroll2FA)
+	authed.POST("/auth/2fa/verify-enrollment", h.verify2FAEnrollment)
+	authed.POST("/auth/2fa/disable", h.disable2FA)
+	authed.GET("/auth/2fa/recovery-status", h.recoveryCodeStatus)
+
+	// Public: 2FA verify (post-login + challenge), rate-limited.
+	pub.POST("/2fa/verify",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "2fa_verify", Limit: 15, Window: time.Minute}),
+		h.verify2FAChallenge)
+
+	// Public: password reset (anti-enumeration on request; rate-limited).
+	pub.POST("/password-reset/request",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "password_reset_request", Limit: 3, Window: time.Minute}),
+		h.requestPasswordReset)
+	pub.POST("/password-reset/complete",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "password_reset_complete", Limit: 5, Window: time.Minute}),
+		h.completePasswordReset)
+
 	// Ops-only review of KYC submissions.
 	admin := rg.Group("/admin")
 	admin.Use(Middleware(tm), RequireRole(roleOps, roleAdmin))

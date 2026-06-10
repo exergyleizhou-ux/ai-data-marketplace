@@ -13,11 +13,13 @@ import (
 // Service holds the auth business logic. It is HTTP-agnostic: it returns the
 // sentinel errors from model.go, which handlers translate to httpx codes.
 type Service struct {
-	repo      Repository
-	tokens    *TokenManager
-	verifier  KYCVerifier
-	piiSecret string
-	denylist  Denylist
+	repo       Repository
+	tokens     *TokenManager
+	verifier   KYCVerifier
+	piiSecret  string
+	denylist   Denylist
+	notifier   Notifier
+	appBaseURL string
 }
 
 // Option configures optional Service dependencies.
@@ -37,6 +39,20 @@ func WithKYC(verifier KYCVerifier, piiSecret string) Option {
 func WithDenylist(dl Denylist) Option {
 	return func(s *Service) { s.denylist = dl }
 }
+
+// Notifier is the notification interface used for password reset emails.
+type Notifier interface {
+	NotifyUser(ctx context.Context, userID, kind, title, body, resourceType, resourceID string) error
+}
+
+// SetNotifier wires the notification emitter.
+func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// TokenManager returns the underlying token issuer/verifier (used by router and tests).
+func (s *Service) TokenManager() *TokenManager { return s.tokens }
+
+// SetAppBaseURL sets the base URL for email links.
+func (s *Service) SetAppBaseURL(url string) { s.appBaseURL = url }
 
 func NewService(repo Repository, tokens *TokenManager, opts ...Option) *Service {
 	s := &Service{repo: repo, tokens: tokens, verifier: ManualVerifier{}, denylist: noopDenylist{}}
@@ -92,21 +108,37 @@ func (s *Service) ListAgreements(ctx context.Context, userID string) ([]Agreemen
 	return s.repo.ListAgreements(ctx, userID)
 }
 
-// Login verifies credentials and returns a token pair.
-func (s *Service) Login(ctx context.Context, account, password string) (AuthResult, error) {
+// Login verifies credentials and returns a token pair, or a 2FA challenge if
+// TOTP is enabled for this account.
+func (s *Service) Login(ctx context.Context, account, password string) (LoginResult, error) {
 	account = strings.TrimSpace(account)
 	user, hash, err := s.repo.GetUserByAccount(ctx, account)
 	if err != nil {
-		// Do not distinguish "no such account" from "wrong password".
-		return AuthResult{}, ErrInvalidCredentials
+		return LoginResult{}, ErrInvalidCredentials
 	}
 	if user.Status == statusFrozen {
-		return AuthResult{}, ErrUserFrozen
+		return LoginResult{}, ErrUserFrozen
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
-		return AuthResult{}, ErrInvalidCredentials
+		return LoginResult{}, ErrInvalidCredentials
 	}
-	return s.issue(user)
+	// GetByAccount doesn't return totp_enabled. Reload.
+	u2, err := s.repo.GetUserByID(ctx, user.ID)
+	if err != nil {
+		u2 = user
+	}
+	if u2.TOTPEnabled {
+		challenge, err := s.tokens.Issue2FAChallenge(user.ID)
+		if err != nil {
+			return LoginResult{}, fmt.Errorf("issue challenge: %w", err)
+		}
+		return LoginResult{Need2FA: true, ChallengeToken: challenge, User: &u2}, nil
+	}
+	tokens, err := s.tokens.Issue(user.ID, user.Role)
+	if err != nil {
+		return LoginResult{}, fmt.Errorf("issue tokens: %w", err)
+	}
+	return LoginResult{User: &u2, Tokens: &tokens}, nil
 }
 
 // Refresh exchanges a valid refresh token for a new token pair, re-checking

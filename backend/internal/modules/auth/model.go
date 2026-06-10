@@ -12,6 +12,23 @@ type User struct {
 	Role        string `json:"role"`
 	KYCStatus   string `json:"kyc_status"`
 	Status      string `json:"status"`
+	TOTPEnabled bool   `json:"totp_enabled,omitempty"`
+	TOTPSecret  string `json:"-"` // never serialised
+}
+
+// Enroll2FAResult is returned when a user starts 2FA enrollment.
+type Enroll2FAResult struct {
+	OTPAuthURL    string   `json:"otpauth_url"`
+	Secret        string   `json:"secret"`
+	RecoveryCodes []string `json:"recovery_codes"` // only returned once
+}
+
+// LoginResult is the response from Login.
+type LoginResult struct {
+	User           *User   `json:"user,omitempty"`
+	Tokens         *Tokens `json:"tokens,omitempty"`
+	Need2FA        bool    `json:"need_2fa,omitempty"`
+	ChallengeToken string  `json:"challenge_token,omitempty"`
 }
 
 // KYCRecord is a real-name verification submission (实名认证). The raw ID number
@@ -40,16 +57,19 @@ type Agreement struct {
 // Sentinel errors returned by the repository and service layers. Handlers map
 // these onto httpx error codes; lower layers stay HTTP-agnostic.
 var (
-	ErrAccountExists      = errors.New("account already exists")
-	ErrUserNotFound       = errors.New("user not found")
-	ErrInvalidCredentials = errors.New("invalid account or password")
-	ErrUserFrozen         = errors.New("user is frozen")
-	ErrInvalidToken       = errors.New("invalid or expired token")
-	ErrValidation         = errors.New("validation failed")
-	ErrKYCNotFound        = errors.New("no kyc record")
-	// ErrPayoutAccountNotFound means the user has no active payout account for
-	// the requested channel yet (the caller should create + persist one).
+	ErrAccountExists         = errors.New("account already exists")
+	ErrUserNotFound          = errors.New("user not found")
+	ErrInvalidCredentials    = errors.New("invalid account or password")
+	ErrUserFrozen            = errors.New("user is frozen")
+	ErrInvalidToken          = errors.New("invalid or expired token")
+	ErrValidation            = errors.New("validation failed")
+	ErrKYCNotFound           = errors.New("no kyc record")
 	ErrPayoutAccountNotFound = errors.New("no payout account")
+	ErrAlready2FAEnabled     = errors.New("2fa already enabled")
+	ErrNot2FAEnrolled        = errors.New("2fa not enrolled")
+	ErrInvalid2FACode        = errors.New("invalid 2fa code or recovery code")
+	ErrTokenInvalidOrExpired = errors.New("password reset token is invalid or expired")
+	ErrPasswordTooWeak       = errors.New("password must be at least 8 characters")
 )
 
 const (

@@ -16,6 +16,11 @@ type fakeRepo struct {
 	agrees    map[string][]Agreement
 	seq       int
 	kycSeq    int
+	// 2FA + password reset stubs
+	totpSecrets   map[string]string
+	totpEnabled   map[string]bool
+	recoveryCodes map[string][]string
+	resetTokens   map[string]passwordResetTokenRow
 }
 
 func (r *fakeRepo) RecordAgreements(_ context.Context, userID string, ags []Agreement) error {
@@ -380,3 +385,63 @@ func TestTokenTypeIsolation(t *testing.T) {
 		t.Fatalf("garbage must fail, got %v", err)
 	}
 }
+func (r *fakeRepo) SetTOTPSecret(_ context.Context, userID, secret string) error {
+	if r.totpSecrets == nil {
+		r.totpSecrets = map[string]string{}
+	}
+	r.totpSecrets[userID] = secret
+	return nil
+}
+func (r *fakeRepo) EnableTOTP(_ context.Context, userID string) error {
+	if r.totpEnabled == nil {
+		r.totpEnabled = map[string]bool{}
+	}
+	r.totpEnabled[userID] = true
+	if u, ok := r.byID[userID]; ok {
+		u.TOTPEnabled = true
+		r.byID[userID] = u
+	}
+	return nil
+}
+func (r *fakeRepo) GetTOTPSecret(_ context.Context, userID string) (string, error) {
+	if r.totpSecrets == nil {
+		return "", nil
+	}
+	return r.totpSecrets[userID], nil
+}
+func (r *fakeRepo) AddRecoveryCode(_ context.Context, userID, codeHash string) error { return nil }
+func (r *fakeRepo) ConsumeRecoveryCode(_ context.Context, _, _ string) (bool, error) {
+	return false, nil
+}
+func (r *fakeRepo) DisableTOTP(_ context.Context, userID string) error {
+	delete(r.totpSecrets, userID)
+	if r.totpEnabled != nil {
+		delete(r.totpEnabled, userID)
+	}
+	if u, ok := r.byID[userID]; ok {
+		u.TOTPEnabled = false
+		r.byID[userID] = u
+	}
+	return nil
+}
+func (r *fakeRepo) CountUnusedRecoveryCodes(_ context.Context, userID string) (int, error) {
+	return 8, nil // stub
+}
+func (r *fakeRepo) CreatePasswordResetToken(_ context.Context, tokenHash, userID string, _ time.Time) error {
+	return nil
+}
+func (r *fakeRepo) ConsumePasswordResetToken(_ context.Context, tokenHash string) (string, error) {
+	if r.resetTokens == nil {
+		return "", ErrTokenInvalidOrExpired
+	}
+	t, ok := r.resetTokens[tokenHash]
+	if !ok || t.UsedAt != nil || time.Now().After(t.ExpiresAt) {
+		return "", ErrTokenInvalidOrExpired
+	}
+	now := time.Now()
+	t.UsedAt = &now
+	r.resetTokens[tokenHash] = t
+	return t.UserID, nil
+}
+func (r *fakeRepo) UpdatePassword(_ context.Context, _, _ string) error      { return nil }
+func (r *fakeRepo) RevokeAllRefreshTokens(_ context.Context, _ string) error { return nil }

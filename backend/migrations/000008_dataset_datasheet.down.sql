@@ -1,1 +1,1 @@
-ALTER TABLE datasets DROP COLUMN datasheet;
+ALTER TABLE datasets DROP COLUMN IF EXISTS datasheet;

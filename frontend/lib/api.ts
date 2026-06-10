@@ -17,8 +17,22 @@ export type User = {
   role: string;
   kyc_status: string;
   status: string;
+  totp_enabled?: boolean;
 };
 export type AuthResult = { user: User; tokens: Tokens };
+
+export type LoginResult = {
+  user?: User;
+  tokens?: Tokens;
+  need_2fa?: boolean;
+  challenge_token?: string;
+};
+
+export type Enroll2FAResult = {
+  otpauth_url: string;
+  secret: string;
+  recovery_codes: string[];
+};
 
 export type SourceDeclaration = {
   source: string;
@@ -440,7 +454,20 @@ export const api = {
   recordAgreements: (agreements: { doc: string; version: string }[]) =>
     request<{ recorded: number }>("/users/me/agreements", { body: { agreements } }),
   login: (account: string, password: string) =>
-    request<AuthResult>("/auth/login", { body: { account, password }, auth: false }),
+    request<LoginResult>("/auth/login", { body: { account, password }, auth: false }),
+  verify2FA: (challengeToken: string, code: string) =>
+    request<{ user: User; tokens: Tokens }>("/auth/2fa/verify", { body: { challenge_token: challengeToken, code }, auth: false }),
+  enroll2FA: () => request<Enroll2FAResult>("/auth/2fa/enroll"),
+  verify2FAEnrollment: (code: string) =>
+    request<{ ok: boolean }>("/auth/2fa/verify-enrollment", { body: { code } }),
+  disable2FA: (code: string) =>
+    request<{ ok: boolean }>("/auth/2fa/disable", { body: { code } }),
+  recoveryCodeStatus: () =>
+    request<{ remaining: number }>("/auth/2fa/recovery-status"),
+  requestPasswordReset: (account: string) =>
+    request<{ ok: boolean }>("/auth/password-reset/request", { body: { account }, auth: false }),
+  completePasswordReset: (token: string, newPassword: string) =>
+    request<{ ok: boolean }>("/auth/password-reset/complete", { body: { token, new_password: newPassword }, auth: false }),
   me: () => request<User>("/users/me"),
   updateRole: (role: string) => request<User>("/users/me", { method: "PUT", body: { role } }),
   getKYC: () => request<KYC>("/users/me/kyc"),
