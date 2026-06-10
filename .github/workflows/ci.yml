@@ -52,7 +52,10 @@ jobs:
       - name: Test (race-detector, no-cache, real-DB integration)
         env:
           DATABASE_URL: postgres://app:app@localhost:5432/app?sslmode=disable
-        run: go test -race -count=1 -timeout 120s ./...
+        # -p 1: packages share ONE postgres service DB — parallel packages
+        # corrupt each other's row counts (e.g. reconciliation aggregates).
+        # Matches the documented local verify recipe in CLAUDE.md.
+        run: go test -race -p 1 -count=1 -timeout 240s ./...
 
   frontend:
     runs-on: ubuntu-latest
