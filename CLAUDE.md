@@ -149,6 +149,13 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
   catches missing `authMW` on ops-only modules: `auditlog` and `anomaly` had
   `RequireRole` but not `Middleware`, making them always return 403 — discovered
   by the audit and fixed alongside.  PR-Y.
+- **Handler integration tests go in the server package to avoid import cycles**:
+  module → handler_test → server → module is a cycle.  The correct approach is
+  `internal/server/handler_integration_test.go`: start the full gin engine with
+  `server.New(cfg, pool)`, register a user via the real HTTP API, and verify
+  auth gates / IDOR / anti-enumeration at the HTTP level.  For tests that need
+  a published dataset, seed it via SQL rather than trying to drive the full
+  review→publish lifecycle through the API.  PR-Z.
 
 ## C2D / privacy compute (信任阶梯 L0→L3)
 
