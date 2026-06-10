@@ -13,9 +13,14 @@ import (
 // Repository owns the payment and settlement tables. All money-moving writes are
 // idempotent (docs §6.6): duplicate webhooks and retried settlements are no-ops.
 type Repository interface {
-	// EnsurePayment creates the payment row for an order, or returns the
-	// existing one (order_id is unique) — so create is idempotent per order.
-	EnsurePayment(ctx context.Context, orderID, channel, channelTxnID string, amountCents int64) error
+	// EnsurePayment creates the payment row for an order, or keeps the
+	// existing one (order_id is unique). It returns the WINNING row's
+	// channel_txn_id and pay_url — under a concurrent double-create the
+	// caller must respond with the stored row (the one webhooks will match),
+	// never the losing provider charge.
+	EnsurePayment(ctx context.Context, orderID, channel, channelTxnID, payURL string, amountCents int64) (winTxnID, winPayURL string, err error)
+	// PaymentForOrder returns the existing payment for an order, if any.
+	PaymentForOrder(ctx context.Context, orderID string) (channelTxnID, payURL, status string, found bool, err error)
 	// MarkPaidByChannelTxn flips created->paid (escrow frozen) exactly once.
 	// newlyPaid is false if the callback was already processed.
 	MarkPaidByChannelTxn(ctx context.Context, channelTxnID string) (orderID string, newlyPaid bool, err error)
@@ -50,16 +55,35 @@ func isUnique(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolation
 }
 
-func (r *pgRepo) EnsurePayment(ctx context.Context, orderID, channel, channelTxnID string, amountCents int64) error {
+func (r *pgRepo) EnsurePayment(ctx context.Context, orderID, channel, channelTxnID, payURL string, amountCents int64) (string, string, error) {
 	const q = `
-		INSERT INTO payments (order_id, channel, channel_txn_id, amount_cents, status, idempotency_key)
-		VALUES ($1,$2,$3,$4,'created',$5)
+		INSERT INTO payments (order_id, channel, channel_txn_id, amount_cents, status, idempotency_key, pay_url)
+		VALUES ($1,$2,$3,$4,'created',$5,$6)
 		ON CONFLICT (order_id) DO NOTHING`
-	_, err := r.pool.Exec(ctx, q, orderID, channel, channelTxnID, amountCents, "pay:"+orderID)
-	if err != nil {
-		return fmt.Errorf("ensure payment: %w", err)
+	if _, err := r.pool.Exec(ctx, q, orderID, channel, channelTxnID, amountCents, "pay:"+orderID, payURL); err != nil {
+		return "", "", fmt.Errorf("ensure payment: %w", err)
 	}
-	return nil
+	// Read back the winning row: on conflict the FIRST insert won, and its
+	// channel_txn_id is the only one the provider webhook will match.
+	const sel = `SELECT channel_txn_id, COALESCE(pay_url,'') FROM payments WHERE order_id=$1`
+	var winTxn, winURL string
+	if err := r.pool.QueryRow(ctx, sel, orderID).Scan(&winTxn, &winURL); err != nil {
+		return "", "", fmt.Errorf("ensure payment readback: %w", err)
+	}
+	return winTxn, winURL, nil
+}
+
+func (r *pgRepo) PaymentForOrder(ctx context.Context, orderID string) (string, string, string, bool, error) {
+	const q = `SELECT channel_txn_id, COALESCE(pay_url,''), status FROM payments WHERE order_id=$1`
+	var txn, url, status string
+	err := r.pool.QueryRow(ctx, q, orderID).Scan(&txn, &url, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", "", false, nil
+	}
+	if err != nil {
+		return "", "", "", false, fmt.Errorf("payment for order: %w", err)
+	}
+	return txn, url, status, true, nil
 }
 
 func (r *pgRepo) MarkPaidByChannelTxn(ctx context.Context, channelTxnID string) (string, bool, error) {

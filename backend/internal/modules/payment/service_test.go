@@ -7,7 +7,8 @@ import (
 )
 
 type fakeRepo struct {
-	paid         map[string]bool // channelTxn -> already paid
+	payURLs      map[string]string // orderID -> stored pay url
+	paid         map[string]bool   // channelTxn -> already paid
 	txnToOrder   map[string]string
 	settleStatus map[string]string // orderID -> settlement status (pending/success/reverted)
 	splitTxn     map[string]string // orderID -> split txn id (settled successfully)
@@ -42,9 +43,32 @@ func (r *fakeRepo) MarkRefunded(_ context.Context, orderID string) error {
 	return nil
 }
 
-func (r *fakeRepo) EnsurePayment(_ context.Context, orderID, _, channelTxnID string, _ int64) error {
+func (r *fakeRepo) EnsurePayment(_ context.Context, orderID, _, channelTxnID, payURL string, _ int64) (string, string, error) {
+	// Mirror the SQL semantics: first insert wins, later calls get the winner.
+	for txn, oid := range r.txnToOrder {
+		if oid == orderID {
+			return txn, r.payURLs[oid], nil
+		}
+	}
 	r.txnToOrder[channelTxnID] = orderID
-	return nil
+	if r.payURLs == nil {
+		r.payURLs = map[string]string{}
+	}
+	r.payURLs[orderID] = payURL
+	return channelTxnID, payURL, nil
+}
+
+func (r *fakeRepo) PaymentForOrder(_ context.Context, orderID string) (string, string, string, bool, error) {
+	for txn, oid := range r.txnToOrder {
+		if oid == orderID {
+			status := "created"
+			if r.paid[txn] {
+				status = "paid"
+			}
+			return txn, r.payURLs[oid], status, true, nil
+		}
+	}
+	return "", "", "", false, nil
 }
 func (r *fakeRepo) MarkPaidByChannelTxn(_ context.Context, channelTxnID string) (string, bool, error) {
 	orderID, ok := r.txnToOrder[channelTxnID]
