@@ -94,7 +94,7 @@ func TestE2E_FullPurchaseJourney(t *testing.T) {
 	var payRes struct {
 		Status string `json:"status"`
 	}
-	e.post("/api/v1/payments", payReq{
+	e.post("/api/v1/payments/create", payReq{
 		OrderID: orderID,
 		Channel: "mock",
 	}, buyerTok).ok(t, &payRes)
