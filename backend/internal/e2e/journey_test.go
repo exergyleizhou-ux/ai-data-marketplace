@@ -19,26 +19,17 @@ func TestE2E_FullPurchaseJourney(t *testing.T) {
 
 	e.seedQuery(t, `UPDATE users SET kyc_status='verified' WHERE id=$1`, sellerID)
 
-	// Seller creates a dataset.
+	// Seller creates a dataset.  Use raw JSON to eliminate marshaling ambiguity.
 	var dsRes struct {
 		ID    string `json:"id"`
 		Title string `json:"title"`
 	}
-	// Seller creates a dataset.
-	type createReq struct {
-		Title               string `json:"title"`
-		Description         string `json:"description"`
-		DataType            string `json:"data_type"`
-		SuggestedPriceCents int64  `json:"suggested_price_cents"`
-		LicenseType         string `json:"license_type"`
+	body := `{"title":"E2E Test Dataset","description":"A test dataset","data_type":"text","license_type":"commercial"}`
+	resp := e.post("/api/v1/datasets", jsonBody(body), sellerTok)
+	if resp.status != 200 {
+		t.Fatalf("dataset create: got %d, body=%s", resp.status, resp.body())
 	}
-	e.post("/api/v1/datasets", createReq{
-		Title:               "E2E Test Dataset",
-		Description:         "A test dataset for E2E purchase journey",
-		DataType:            "text",
-		SuggestedPriceCents: 199,
-		LicenseType:         "commercial",
-	}, sellerTok).ok(t, &dsRes)
+	resp.ok(t, &dsRes)
 	if dsRes.ID == "" {
 		t.Fatal("dataset id must not be empty")
 	}

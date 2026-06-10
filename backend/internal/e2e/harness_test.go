@@ -225,6 +225,12 @@ func (e *e2eEnv) registerAndLogin(account, password string) (accessToken, userID
 	return ar.Tokens.AccessToken, ar.User.ID
 }
 
+// jsonBody wraps a JSON string as an io.Reader so it can be used as body
+// argument to e.post without json.Marshal touching it.
+type jsonBody string
+
+func (j jsonBody) MarshalJSON() ([]byte, error) { return []byte(j), nil }
+
 // uniqueAccount returns a test-unique email address.
 func uniqueAccount(prefix string) string {
 	return fmt.Sprintf("%s_%d@e2e.test", prefix, time.Now().UnixNano())
