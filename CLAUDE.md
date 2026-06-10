@@ -136,6 +136,12 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
   payment→delivery→settlement contract.  A proper E2E asserts the *terminal* state
   (`settled` / `confirmed`) and the cross-module side effects (notification rows,
   ledger entries, etc.).  PR-W follow-up.
+- **OpenAPI anti-drift test must enumerate real gin routes, not hardcoded lists**:
+  `TestOpenAPI_CoversAllRegisteredRoutes` starts the real gin engine, calls
+  `engine.Routes()`, normalises `:id` → `{id}`, and asserts every real route
+  appears in `openapi.yaml` (and vice versa).  When adding a new module, this
+  test fails until you add the corresponding spec entries — it keeps docs
+  from rotting.  PR-X.
 
 ## C2D / privacy compute (信任阶梯 L0→L3)
 
