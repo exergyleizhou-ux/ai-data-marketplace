@@ -24,12 +24,20 @@ func TestE2E_FullPurchaseJourney(t *testing.T) {
 		ID    string `json:"id"`
 		Title string `json:"title"`
 	}
-	e.post("/api/v1/datasets", map[string]interface{}{
-		"title":                 "E2E Test Dataset",
-		"description":           "A test dataset for E2E purchase journey",
-		"data_type":             "text",
-		"suggested_price_cents": 199,
-		"license_type":          "commercial",
+	// Seller creates a dataset.
+	type createReq struct {
+		Title               string `json:"title"`
+		Description         string `json:"description"`
+		DataType            string `json:"data_type"`
+		SuggestedPriceCents int64  `json:"suggested_price_cents"`
+		LicenseType         string `json:"license_type"`
+	}
+	e.post("/api/v1/datasets", createReq{
+		Title:               "E2E Test Dataset",
+		Description:         "A test dataset for E2E purchase journey",
+		DataType:            "text",
+		SuggestedPriceCents: 199,
+		LicenseType:         "commercial",
 	}, sellerTok).ok(t, &dsRes)
 	if dsRes.ID == "" {
 		t.Fatal("dataset id must not be empty")
@@ -349,11 +357,10 @@ func TestE2E_ComputeJobJourney(t *testing.T) {
 	}, sellerTok).ok(t, &dsRes)
 	datasetID := dsRes.ID
 
-	// Seed algorithm.
+	// Seed algorithm with proper UUID.
 	e.seedQuery(t, `
 		INSERT INTO algorithms (id, name, image_digest, status)
-		VALUES ('algo-logreg', 'Logistic Regression', 'sha256:abc123', 'active')
-		ON CONFLICT DO NOTHING
+		VALUES (gen_random_uuid(), 'Logistic Regression', 'sha256:abc123', 'active')
 	`)
 
 	e.seedQuery(t, `UPDATE datasets SET status='published' WHERE id=$1`, datasetID)
@@ -369,8 +376,7 @@ func TestE2E_ComputeJobJourney(t *testing.T) {
 	t.Logf("entitlement status: %d", resp2.status)
 
 	resp3 := e.post("/api/v1/compute/jobs", map[string]string{
-		"dataset_id":   datasetID,
-		"algorithm_id": "algo-logreg",
+		"dataset_id": datasetID,
 	}, buyerTok)
 	if resp3.status >= 500 {
 		t.Fatalf("compute job endpoint must not 500, got %d: %s", resp3.status, resp3.body())
