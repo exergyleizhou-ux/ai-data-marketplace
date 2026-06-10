@@ -25,6 +25,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/compute"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/dataset"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/delivery"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/docs"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/notification"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/order"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/payment"
@@ -467,6 +468,9 @@ func (s *Server) routes() {
 		computeSvc.SetOrderCreator(computeOrderAdapter{o: orderSvc})
 		orderSvc.SetComputeGranter(orderComputeGranterAdapter{c: computeSvc})
 	}
+
+	// API documentation (public, no auth).
+	docs.Register(s.engine)
 }
 
 // computeOrderAdapter bridges order.Service to compute.OrderCreator, translating
