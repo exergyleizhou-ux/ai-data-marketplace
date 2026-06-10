@@ -1,10 +1,21 @@
 package e2e
 
 import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"net/url"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pquerna/otp/totp"
+
+	"github.com/lei/ai-data-marketplace/backend/migrations"
 )
 
 // ---------------------------------------------------------------------------
@@ -257,14 +268,102 @@ func TestE2E_WithdrawalApprovalFlow(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestE2E_MigrationRoundtrip(t *testing.T) {
-	// The up-migration path is tested by every E2E test (harness calls
-	// db.RunMigrations).  A full down→up roundtrip requires a completely
-	// empty database (no FK chains on tables with existing data), which is
-	// incompatible with parallel E2E tests sharing the same PG instance.
+	// Verify every migration's down step is reversible by running
+	// Up → Down → Up against a freshly created database, so production
+	// `migrate down`-style rollbacks don't blow up in an incident.
 	//
-	// Workaround for CI: add a dedicated CI job that runs migration down→up
-	// in a separate PG service container.  Alternatively, use
-	// golang-migrate Go API against an ephemeral PG in a single-test suite
-	// (run with -p 1 and a unique DATABASE_URL).
-	t.Skip("full down→up roundtrip needs empty DB; up path verified by RunMigrations in harness")
+	// We must not touch the shared E2E database (other tests have rows in
+	// it).  Strategy: parse DATABASE_URL, connect to the postgres maintenance
+	// database, CREATE DATABASE <unique>, run the cycle there, DROP DATABASE.
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping migration roundtrip")
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("parse DATABASE_URL: %v", err)
+	}
+
+	// Maintenance DSN points at the standard "postgres" database so we can
+	// CREATE/DROP the target without holding a connection on it.
+	mu := *u
+	mu.Path = "/postgres"
+	mctl, err := sql.Open("pgx", mu.String())
+	if err != nil {
+		t.Fatalf("open maintenance: %v", err)
+	}
+	defer mctl.Close()
+	if err := mctl.Ping(); err != nil {
+		t.Fatalf("ping maintenance: %v", err)
+	}
+
+	// Build a unique database name (PG identifiers max 63 bytes; we use < 30).
+	dbName := fmt.Sprintf("e2e_mig_%d", time.Now().UnixNano()%1_000_000_000)
+	if _, err := mctl.Exec("CREATE DATABASE " + dbName); err != nil {
+		t.Fatalf("create %s: %v", dbName, err)
+	}
+	t.Cleanup(func() {
+		// Kick any lingering backends so DROP DATABASE succeeds even if a
+		// migrate driver lagged on its FD close.
+		_, _ = mctl.Exec(
+			"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=$1",
+			dbName)
+		if _, err := mctl.Exec("DROP DATABASE IF EXISTS " + dbName); err != nil {
+			t.Logf("drop %s: %v", dbName, err)
+		}
+	})
+
+	// Roundtrip DSN: same auth/host, but target the temp database.
+	ru := *u
+	ru.Path = "/" + dbName
+	tempDSN := ru.String()
+
+	src, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		t.Fatalf("open embedded migrations: %v", err)
+	}
+
+	// Helper: build a fresh migrator (golang-migrate's instance is tied to its
+	// own DB connection — close + reopen between Up/Down/Up keeps the API simple).
+	newMigrator := func() *migrate.Migrate {
+		t.Helper()
+		// pgxScheme rewrites postgres:// → pgx5:// to match the registered driver.
+		mig, err := migrate.NewWithSourceInstance("iofs", src, pgxMigrateScheme(tempDSN))
+		if err != nil {
+			t.Fatalf("init migrator: %v", err)
+		}
+		return mig
+	}
+
+	// 1. Up (all migrations apply on a fresh DB).
+	m1 := newMigrator()
+	if err := m1.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("first Up: %v", err)
+	}
+	_, _ = m1.Close()
+
+	// 2. Down (every migration has a working down step).
+	m2 := newMigrator()
+	if err := m2.Down(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("Down: %v", err)
+	}
+	_, _ = m2.Close()
+
+	// 3. Up again (migrations re-apply on the now-empty schema).
+	m3 := newMigrator()
+	if err := m3.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("second Up: %v", err)
+	}
+	_, _ = m3.Close()
+}
+
+// pgxMigrateScheme mirrors backend/internal/platform/db/migrate.go (unexported there).
+// We duplicate one line rather than open the platform/db package up.
+func pgxMigrateScheme(dsn string) string {
+	const old = "postgres://"
+	const newp = "pgx5://"
+	if strings.HasPrefix(dsn, old) {
+		return newp + dsn[len(old):]
+	}
+	return dsn
 }

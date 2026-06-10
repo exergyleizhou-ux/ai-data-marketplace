@@ -130,6 +130,29 @@ func (e *e2eEnv) get(path string, bearer string) *e2eResp {
 	return e.do("GET", path, nil, bearer)
 }
 
+// postWebhook sends an unauthenticated POST carrying a raw byte payload + the
+// X-Signature header expected by the mock payment provider's webhook handler.
+// Useful for driving payment.HandleCallback end-to-end from E2E tests.
+//
+// The caller is responsible for computing the signature (see payment.Sign with
+// the harness PaymentMockSecret = "dev-pay-secret").
+func (e *e2eEnv) postWebhook(t *testing.T, path string, payload []byte, signature string) *e2eResp {
+	t.Helper()
+	req, err := http.NewRequest("POST", e.ts.URL+path, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new webhook request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Signature", signature)
+	resp, err := e.client.Do(req)
+	if err != nil {
+		t.Fatalf("do webhook request: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return &e2eResp{status: resp.StatusCode, raw: raw}
+}
+
 func (e *e2eEnv) do(method, path string, body any, bearer string) *e2eResp {
 	e.t.Helper()
 	var r io.Reader
