@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/tracing"
 )
 
 // NewPool opens a pgx connection pool and verifies connectivity with a ping.
@@ -21,6 +23,9 @@ func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	}
 	cfg.MaxConns = 10
 	cfg.MaxConnLifetime = time.Hour
+	// Per-query OTel spans; no-op (and effectively free) unless tracing.Init
+	// installed a real provider at startup.
+	cfg.ConnConfig.Tracer = tracing.NewPgxTracer()
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
