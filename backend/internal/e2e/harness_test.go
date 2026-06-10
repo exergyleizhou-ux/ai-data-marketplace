@@ -23,7 +23,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
-	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/db"
 	"github.com/lei/ai-data-marketplace/backend/internal/server"
 )
@@ -225,12 +224,6 @@ func (e *e2eEnv) registerAndLogin(account, password string) (accessToken, userID
 	return ar.Tokens.AccessToken, ar.User.ID
 }
 
-// jsonBody wraps a JSON string as an io.Reader so it can be used as body
-// argument to e.post without json.Marshal touching it.
-type jsonBody string
-
-func (j jsonBody) MarshalJSON() ([]byte, error) { return []byte(j), nil }
-
 // uniqueAccount returns a test-unique email address.
 func uniqueAccount(prefix string) string {
 	return fmt.Sprintf("%s_%d@e2e.test", prefix, time.Now().UnixNano())
@@ -249,6 +242,5 @@ func (e *e2eEnv) seedQuery(t *testing.T, query string, args ...any) {
 	}
 }
 
-// Ensure auth types are available (avoids "imported and not used" linter complaints).
-var _ = auth.LoginResult{}
+// Ensure types are available (avoids unused import lint).
 var _ = server.New
