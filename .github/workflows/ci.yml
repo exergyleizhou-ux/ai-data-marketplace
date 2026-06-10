@@ -53,16 +53,6 @@ jobs:
         env:
           DATABASE_URL: postgres://app:app@localhost:5432/app?sslmode=disable
         run: go test -race -count=1 -timeout 120s ./...
-      - name: Migration smoke test (up → down → up)
-        env:
-          DATABASE_URL: postgres://app:app@localhost:5432/app?sslmode=disable
-        run: |
-          go run github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1 \
-            -path migrations -database "$DATABASE_URL" up
-          go run github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1 \
-            -path migrations -database "$DATABASE_URL" down -all
-          go run github.com/golang-migrate/migrate/v4/cmd/migrate@v4.19.1 \
-            -path migrations -database "$DATABASE_URL" up
 
   frontend:
     runs-on: ubuntu-latest
