@@ -11,11 +11,11 @@ import (
 type handler struct{ svc *Service }
 
 // Register mounts audit-log routes. Requires ops role (gate injected by caller).
-func Register(rg *gin.RouterGroup, svc *Service, opsGate gin.HandlerFunc) {
+func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc) {
 	h := &handler{svc: svc}
 
 	admin := rg.Group("/admin/audit-logs")
-	admin.Use(opsGate)
+	admin.Use(authMW, opsGate)
 	admin.GET("", h.list)
 }
 

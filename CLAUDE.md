@@ -142,6 +142,13 @@ tests call this path). Frontend `node_modules` isn't shared across branches (pac
   appears in `openapi.yaml` (and vice versa).  When adding a new module, this
   test fails until you add the corresponding spec entries — it keeps docs
   from rotting.  PR-X.
+- **Security invariant tests must use real gin route enumeration, not hardcoded lists**:
+  `TestAllAdminRoutesRequireOpsRole` and `TestAllUserScopedRoutesRejectAnonymous`
+  iterate `engine.Routes()` to find all `/admin/` and `/users/me/*` paths.  Adding
+  a new admin route without the ops gate will fail these tests.  The same pattern
+  catches missing `authMW` on ops-only modules: `auditlog` and `anomaly` had
+  `RequireRole` but not `Middleware`, making them always return 403 — discovered
+  by the audit and fixed alongside.  PR-Y.
 
 ## C2D / privacy compute (信任阶梯 L0→L3)
 

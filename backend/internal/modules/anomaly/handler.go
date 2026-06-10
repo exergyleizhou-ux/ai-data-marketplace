@@ -10,10 +10,10 @@ import (
 
 type handler struct{ svc *Service }
 
-func Register(rg *gin.RouterGroup, svc *Service, opsGate gin.HandlerFunc) {
+func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc) {
 	h := &handler{svc: svc}
 	admin := rg.Group("/admin/anomalies")
-	admin.Use(opsGate)
+	admin.Use(authMW, opsGate)
 	admin.GET("", h.list)
 	admin.POST("/:id/acknowledge", h.acknowledge)
 	admin.POST("/:id/resolve", h.resolve)

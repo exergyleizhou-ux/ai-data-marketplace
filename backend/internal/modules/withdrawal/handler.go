@@ -3,20 +3,25 @@ package withdrawal
 import (
 	"errors"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
 )
 
 type handler struct{ svc *Service }
 
-func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc) {
+func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc, limiter ratelimit.Limiter) {
 	h := &handler{svc: svc}
 
 	authed := rg.Group("")
 	authed.Use(authMW)
-	authed.POST("/sellers/me/withdrawals", h.request)
+	authed.POST("/sellers/me/withdrawals",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "withdrawal_request", Limit: 5, Window: time.Minute}),
+		h.request)
 	authed.GET("/sellers/me/withdrawals", h.listMy)
 
 	admin := rg.Group("/admin/withdrawals")

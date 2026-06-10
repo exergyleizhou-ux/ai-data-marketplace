@@ -1,13 +1,20 @@
 package compute
 
-import "github.com/gin-gonic/gin"
+import (
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
+)
 
 // Register mounts the compute (C2D) routes. authMW protects buyer/seller
 // actions; opsGate guards the algorithm registry + job queue. devEnabled mounts
 // the dev-only direct entitlement grant (no real payment gateway yet — real
 // compute purchase via order+payment is a follow-up), mirroring payment's
 // dev mark-paid gating.
-func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc, devEnabled bool) {
+func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc, limiter ratelimit.Limiter, devEnabled bool) {
 	h := &handler{svc: svc, devEnabled: devEnabled}
 
 	// Public read: a dataset's offer (buyers see price / trust level).
@@ -22,7 +29,9 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	buyer := rg.Group("")
 	buyer.Use(authMW)
 	buyer.GET("/compute/algorithms", h.listAlgorithms)
-	buyer.POST("/compute/jobs", h.submitJob)
+	buyer.POST("/compute/jobs",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "compute_job_submit", Limit: 20, Window: time.Minute}),
+		h.submitJob)
 	buyer.GET("/compute/jobs/:id", h.getJob)
 	buyer.GET("/compute/jobs/:id/output", h.downloadOutput)
 	buyer.GET("/compute/jobs/:id/attestation", h.jobAttestation) // L2 remote-attestation (P3)
@@ -30,7 +39,9 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	buyer.POST("/compute/jobs/:id/cancel", h.cancelJob)
 	// Federated learning (P4-a): one job across N datasets; sub-jobs run in each
 	// dataset's sandbox, only the aggregated joint model is buyer-visible.
-	buyer.POST("/compute/federated-jobs", h.submitFederated)
+	buyer.POST("/compute/federated-jobs",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "compute_federated_submit", Limit: 10, Window: time.Minute}),
+		h.submitFederated)
 	buyer.GET("/compute/federated-jobs/:id", h.getFederated)
 	buyer.GET("/compute/federated-jobs/:id/output", h.federatedOutput)
 	buyer.GET("/compute/federated-jobs/:id/certificate", h.federatedCertificate) // 联合结果存证
@@ -38,7 +49,9 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	buyer.GET("/users/me/compute/jobs", h.listMyJobs)
 	buyer.GET("/users/me/compute/entitlements", h.listMyEntitlements)
 	// Real purchase: create a compute order, then pay it via the payment flow.
-	buyer.POST("/datasets/:id/compute/order", h.createComputeOrder)
+	buyer.POST("/datasets/:id/compute/order",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "compute_order", Limit: 10, Window: time.Minute}),
+		h.createComputeOrder)
 
 	if devEnabled {
 		// Dev-only: grant a compute entitlement without a real gateway so the
