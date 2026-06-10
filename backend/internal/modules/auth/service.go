@@ -48,6 +48,9 @@ type Notifier interface {
 // SetNotifier wires the notification emitter.
 func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
 
+// TokenManager returns the underlying token issuer/verifier (used by router and tests).
+func (s *Service) TokenManager() *TokenManager { return s.tokens }
+
 // SetAppBaseURL sets the base URL for email links.
 func (s *Service) SetAppBaseURL(url string) { s.appBaseURL = url }
 

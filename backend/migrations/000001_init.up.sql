@@ -7,7 +7,7 @@ BEGIN;
 -- ---------------------------------------------------------------------------
 -- users / identity
 -- ---------------------------------------------------------------------------
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     account       TEXT NOT NULL UNIQUE,
     account_type  TEXT NOT NULL CHECK (account_type IN ('phone', 'email')),
@@ -22,7 +22,7 @@ CREATE TABLE users (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE kyc_records (
+CREATE TABLE IF NOT EXISTS kyc_records (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     type            TEXT NOT NULL CHECK (type IN ('personal', 'company')),
@@ -37,10 +37,10 @@ CREATE TABLE kyc_records (
     reviewed_at     TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_kyc_records_user ON kyc_records (user_id);
+CREATE INDEX IF NOT EXISTS idx_kyc_records_user ON kyc_records (user_id);
 
 -- Split-settlement receiving account (compliance-critical, see docs §2.1).
-CREATE TABLE payout_accounts (
+CREATE TABLE IF NOT EXISTS payout_accounts (
     id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id                  UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     channel                  TEXT NOT NULL CHECK (channel IN ('wechat', 'alipay')),
@@ -51,13 +51,13 @@ CREATE TABLE payout_accounts (
                                   CHECK (status IN ('active', 'disabled')),
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_payout_accounts_user ON payout_accounts (user_id);
+CREATE INDEX IF NOT EXISTS idx_payout_accounts_user ON payout_accounts (user_id);
 
 -- ---------------------------------------------------------------------------
 -- datasets (datasets <-> dataset_versions is circular: current_version_id FK
 -- is added after dataset_versions exists)
 -- ---------------------------------------------------------------------------
-CREATE TABLE datasets (
+CREATE TABLE IF NOT EXISTS datasets (
     id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     seller_id             UUID NOT NULL REFERENCES users (id),
     title                 TEXT NOT NULL,
@@ -79,10 +79,10 @@ CREATE TABLE datasets (
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_datasets_seller ON datasets (seller_id);
-CREATE INDEX idx_datasets_status ON datasets (status);
+CREATE INDEX IF NOT EXISTS idx_datasets_seller ON datasets (seller_id);
+CREATE INDEX IF NOT EXISTS idx_datasets_status ON datasets (status);
 
-CREATE TABLE dataset_versions (
+CREATE TABLE IF NOT EXISTS dataset_versions (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     dataset_id     UUID NOT NULL REFERENCES datasets (id) ON DELETE CASCADE,
     version_no     INTEGER NOT NULL,
@@ -98,7 +98,7 @@ ALTER TABLE datasets
     ADD CONSTRAINT fk_datasets_current_version
     FOREIGN KEY (current_version_id) REFERENCES dataset_versions (id);
 
-CREATE TABLE dataset_files (
+CREATE TABLE IF NOT EXISTS dataset_files (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     dataset_id   UUID NOT NULL REFERENCES datasets (id) ON DELETE CASCADE,
     version_id   UUID NOT NULL REFERENCES dataset_versions (id) ON DELETE CASCADE,
@@ -108,9 +108,9 @@ CREATE TABLE dataset_files (
     content_type TEXT,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_dataset_files_version ON dataset_files (version_id);
+CREATE INDEX IF NOT EXISTS idx_dataset_files_version ON dataset_files (version_id);
 
-CREATE TABLE quality_checks (
+CREATE TABLE IF NOT EXISTS quality_checks (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     dataset_id UUID NOT NULL REFERENCES datasets (id) ON DELETE CASCADE,
     version_id UUID NOT NULL REFERENCES dataset_versions (id) ON DELETE CASCADE,
@@ -119,12 +119,12 @@ CREATE TABLE quality_checks (
     report     JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_quality_checks_version ON quality_checks (version_id);
+CREATE INDEX IF NOT EXISTS idx_quality_checks_version ON quality_checks (version_id);
 
 -- ---------------------------------------------------------------------------
 -- orders & money (state machine: docs §5.4)
 -- ---------------------------------------------------------------------------
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
     id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     buyer_id           UUID NOT NULL REFERENCES users (id),
     seller_id          UUID NOT NULL REFERENCES users (id),
@@ -141,15 +141,15 @@ CREATE TABLE orders (
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_orders_buyer ON orders (buyer_id);
-CREATE INDEX idx_orders_seller ON orders (seller_id);
-CREATE INDEX idx_orders_status ON orders (status);
+CREATE INDEX IF NOT EXISTS idx_orders_buyer ON orders (buyer_id);
+CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders (seller_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
 -- One active order per (buyer, dataset) — prevent duplicate purchases.
-CREATE UNIQUE INDEX uniq_orders_active_per_buyer_dataset
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_orders_active_per_buyer_dataset
     ON orders (buyer_id, dataset_id)
     WHERE status IN ('created', 'paid', 'delivered', 'confirmed', 'disputed');
 
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id        UUID NOT NULL UNIQUE REFERENCES orders (id),
     channel         TEXT NOT NULL CHECK (channel IN ('wechat', 'alipay', 'stripe')),
@@ -163,10 +163,10 @@ CREATE TABLE payments (
     raw_callback    JSONB,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX uniq_payments_channel_txn
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_payments_channel_txn
     ON payments (channel_txn_id) WHERE channel_txn_id IS NOT NULL;
 
-CREATE TABLE deliveries (
+CREATE TABLE IF NOT EXISTS deliveries (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id            UUID NOT NULL UNIQUE REFERENCES orders (id),
     download_token_hash TEXT,
@@ -179,7 +179,7 @@ CREATE TABLE deliveries (
 );
 
 -- Split-settlement ledger (分账结算).
-CREATE TABLE settlements (
+CREATE TABLE IF NOT EXISTS settlements (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id            UUID NOT NULL UNIQUE REFERENCES orders (id),
     split_txn_id        TEXT,             -- channel split id; unique once present
@@ -191,10 +191,10 @@ CREATE TABLE settlements (
     executed_at         TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX uniq_settlements_split_txn
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_settlements_split_txn
     ON settlements (split_txn_id) WHERE split_txn_id IS NOT NULL;
 
-CREATE TABLE disputes (
+CREATE TABLE IF NOT EXISTS disputes (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id        UUID NOT NULL REFERENCES orders (id),
     raised_by       UUID NOT NULL REFERENCES users (id),
@@ -206,9 +206,9 @@ CREATE TABLE disputes (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     resolved_at     TIMESTAMPTZ
 );
-CREATE INDEX idx_disputes_order ON disputes (order_id);
+CREATE INDEX IF NOT EXISTS idx_disputes_order ON disputes (order_id);
 
-CREATE TABLE reviews (
+CREATE TABLE IF NOT EXISTS reviews (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id   UUID NOT NULL UNIQUE REFERENCES orders (id),
     dataset_id UUID NOT NULL REFERENCES datasets (id),
@@ -218,12 +218,12 @@ CREATE TABLE reviews (
     issue_flag BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_reviews_dataset ON reviews (dataset_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_dataset ON reviews (dataset_id);
 
 -- ---------------------------------------------------------------------------
 -- audit log — append-only (compliance). Updates/deletes are blocked by trigger.
 -- ---------------------------------------------------------------------------
-CREATE TABLE audit_logs (
+CREATE TABLE IF NOT EXISTS audit_logs (
     id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     actor_id      UUID,
     actor_role    TEXT,
@@ -235,9 +235,9 @@ CREATE TABLE audit_logs (
     detail        JSONB,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_audit_logs_resource ON audit_logs (resource_type, resource_id);
-CREATE INDEX idx_audit_logs_actor ON audit_logs (actor_id);
-CREATE INDEX idx_audit_logs_created ON audit_logs (created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs (resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs (actor_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs (created_at);
 
 CREATE FUNCTION audit_logs_block_mutation() RETURNS trigger AS $$
 BEGIN

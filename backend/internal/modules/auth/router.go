@@ -45,15 +45,15 @@ func Register(rg *gin.RouterGroup, svc *Service, tm *TokenManager, limiter ratel
 	authed.GET("/auth/2fa/recovery-status", h.recoveryCodeStatus)
 
 	// Public: 2FA verify (post-login + challenge), rate-limited.
-	pub.POST("/auth/2fa/verify",
+	pub.POST("/2fa/verify",
 		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "2fa_verify", Limit: 15, Window: time.Minute}),
 		h.verify2FAChallenge)
 
 	// Public: password reset (anti-enumeration on request; rate-limited).
-	pub.POST("/auth/password-reset/request",
+	pub.POST("/password-reset/request",
 		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "password_reset_request", Limit: 3, Window: time.Minute}),
 		h.requestPasswordReset)
-	pub.POST("/auth/password-reset/complete",
+	pub.POST("/password-reset/complete",
 		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "password_reset_complete", Limit: 5, Window: time.Minute}),
 		h.completePasswordReset)
 

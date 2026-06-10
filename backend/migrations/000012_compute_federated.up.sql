@@ -7,7 +7,7 @@
 -- New columns are nullable or defaulted (safe online add); the partial index is
 -- scoped to federated sub-jobs only.
 
-CREATE TABLE compute_federated_jobs (
+CREATE TABLE IF NOT EXISTS compute_federated_jobs (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     buyer_id         UUID NOT NULL REFERENCES users (id),
     algorithm_id     UUID REFERENCES algorithms (id),       -- e.g. fed-logreg
@@ -26,8 +26,8 @@ CREATE TABLE compute_federated_jobs (
 );
 
 -- Sub-jobs reuse compute_jobs; this nullable FK links them to their federated parent.
-ALTER TABLE compute_jobs ADD COLUMN federated_job_id UUID REFERENCES compute_federated_jobs (id);
-CREATE INDEX idx_compute_jobs_federated ON compute_jobs (federated_job_id) WHERE federated_job_id IS NOT NULL;
+ALTER TABLE compute_jobs ADD COLUMN IF NOT EXISTS federated_job_id UUID REFERENCES compute_federated_jobs (id);
+CREATE INDEX IF NOT EXISTS idx_compute_jobs_federated ON compute_jobs (federated_job_id) WHERE federated_job_id IS NOT NULL;
 
 -- Sellers opt a dataset into federated use.
-ALTER TABLE dataset_compute_offers ADD COLUMN allow_federated BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE dataset_compute_offers ADD COLUMN IF NOT EXISTS allow_federated BOOLEAN NOT NULL DEFAULT false;
