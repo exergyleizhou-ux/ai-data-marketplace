@@ -38,6 +38,7 @@ var (
 	ErrNotFound     = New(1002, http.StatusNotFound, "resource not found")
 	ErrConflict     = New(1003, http.StatusConflict, "resource conflict")
 	ErrRateLimited  = New(1004, http.StatusTooManyRequests, "rate limited")
+	ErrBodyTooLarge = New(1005, http.StatusRequestEntityTooLarge, "request body too large")
 	ErrUnauthorized = New(2000, http.StatusUnauthorized, "unauthorized")
 	ErrForbidden    = New(2001, http.StatusForbidden, "forbidden")
 )

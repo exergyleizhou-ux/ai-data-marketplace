@@ -119,6 +119,12 @@ func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 		otelgin.Middleware("marketplace-backend"),
 		middleware.RequestID(),
 		middleware.TraceID(),
+		// 1 MiB default body cap (JSON API); the chunked upload-part route
+		// gets 32 MiB (suggested part size is 8 MiB). Previously PutPart
+		// streamed with NO cap at all.
+		middleware.BodyLimit(1<<20, middleware.BodyLimitRule{
+			Route: "/api/v1/datasets/:id/upload/part", Max: 32 << 20,
+		}),
 		middleware.RemoveServerHeader(),
 		middleware.SecurityHeaders(cfg.Env),
 		middleware.CacheControl(),
