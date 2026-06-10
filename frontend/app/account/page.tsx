@@ -102,6 +102,8 @@ function AccountInner() {
         </div>
       </Card>
 
+      <TwoFactorCard />
+
       <Card>
         <h2 className="mb-1 text-lg font-semibold">{t("实名认证", "Real-name verification")}</h2>
         <p className="mb-4 text-sm text-neutral-500">
@@ -385,4 +387,90 @@ function NotificationPreferencesCard() {
         <label className="ml-3 text-xs">{t("站内", "In-app")}<input type="checkbox" checked={inApp} disabled={busy===kind} onChange={() => toggle(kind, email, !inApp)} /></label>
       </div>);
     })}</div></Card>);
+}
+
+function TwoFactorCard() {
+  const { user, refresh } = useAuth();
+  const { t } = useT();
+  const enrolled = user?.totp_enabled ?? false;
+  const [step, setStep] = useState<"enroll" | "verify">("enroll");
+  const [secret, setSecret] = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function enroll() {
+    setErr(""); setMsg(""); setBusy(true);
+    try {
+      const r = await api.enroll2FA();
+      setSecret(r.secret);
+      setRecoveryCodes(r.recovery_codes);
+      setStep("verify");
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function verifyEnroll() {
+    setErr(""); setBusy(true);
+    try {
+      await api.verify2FAEnrollment(code);
+      setMsg(t("2FA 已启用", "2FA enabled"));
+      setStep("enroll");
+      await refresh();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function disable() {
+    if (!window.confirm(t("确认禁用 2FA?", "Disable 2FA?"))) return;
+    setErr(""); setBusy(true);
+    try {
+      await api.disable2FA(code);
+      setMsg(t("2FA 已禁用", "2FA disabled"));
+      await refresh();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <Card>
+      <h2 className="mb-2 font-semibold">{t("两步验证 (2FA)", "Two-factor auth (2FA)")}</h2>
+      {err && <Alert>{err}</Alert>}
+      {msg && <Alert kind="success">{msg}</Alert>}
+
+      {enrolled ? (
+        <div className="space-y-2">
+          <p className="text-sm text-green-700">{t("已启用", "Enabled")}</p>
+          <Field label={t("TOTP 验证码", "TOTP code")}>
+            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" />
+          </Field>
+          <Button variant="danger" disabled={busy} onClick={disable}>{t("禁用 2FA", "Disable 2FA")}</Button>
+        </div>
+      ) : step === "enroll" ? (
+        <Button disabled={busy} onClick={enroll}>{t("启用 2FA", "Enable 2FA")}</Button>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-neutral-600">
+            {t("请用 Authenticator App 扫描或手动输入：", "Scan with Authenticator app or enter manually:")}
+          </p>
+          <code className="block rounded bg-neutral-100 p-2 text-xs break-all">{secret}</code>
+          {recoveryCodes.length > 0 && (
+            <div className="rounded border border-amber-200 bg-amber-50 p-2">
+              <div className="text-xs font-medium text-amber-800 mb-1">{t("备份恢复码（请保存）：", "Recovery codes (save these):")}</div>
+              <pre className="text-xs text-amber-700">{recoveryCodes.join("\n")}</pre>
+            </div>
+          )}
+          <Field label={t("TOTP 验证码", "TOTP code")}>
+            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" />
+          </Field>
+          <div className="flex gap-2">
+            <Button disabled={busy} onClick={verifyEnroll}>{t("验证启用", "Verify & Enable")}</Button>
+            <Button variant="secondary" onClick={() => { setStep("enroll"); setErr(""); }}>{t("取消", "Cancel")}</Button>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
 }

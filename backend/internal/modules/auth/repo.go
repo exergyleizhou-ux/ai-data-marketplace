@@ -43,6 +43,28 @@ type Repository interface {
 	RecordAgreements(ctx context.Context, userID string, ags []Agreement) error
 	// ListAgreements returns a user's consent records, most recent first.
 	ListAgreements(ctx context.Context, userID string) ([]Agreement, error)
+
+	// 2FA TOTP
+	SetTOTPSecret(ctx context.Context, userID, secret string) error
+	EnableTOTP(ctx context.Context, userID string) error
+	GetTOTPSecret(ctx context.Context, userID string) (string, error)
+	AddRecoveryCode(ctx context.Context, userID, codeHash string) error
+	ConsumeRecoveryCode(ctx context.Context, userID, plaintext string) (bool, error)
+	DisableTOTP(ctx context.Context, userID string) error
+
+	// Password reset
+	CreatePasswordResetToken(ctx context.Context, tokenHash, userID string, expiresAt time.Time) error
+	GetPasswordResetToken(ctx context.Context, tokenHash string) (passwordResetTokenRow, error)
+	MarkPasswordResetTokenUsed(ctx context.Context, tokenHash string) error
+	UpdatePassword(ctx context.Context, userID, passwordHash string) error
+	RevokeAllRefreshTokens(ctx context.Context, userID string) error
+}
+
+type passwordResetTokenRow struct {
+	TokenHash string
+	UserID    string
+	ExpiresAt time.Time
+	UsedAt    *time.Time
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }

@@ -235,8 +235,14 @@ func fail(c *gin.Context, err error) {
 		httpx.Fail(c, httpx.ErrUnauthorized.WithMessage(err.Error()))
 	case errors.Is(err, ErrUserFrozen):
 		httpx.Fail(c, httpx.ErrForbidden.WithMessage("user is frozen"))
-	case errors.Is(err, ErrUserNotFound), errors.Is(err, ErrKYCNotFound):
+	case errors.Is(err, ErrUserNotFound), errors.Is(err, ErrKYCNotFound), errors.Is(err, ErrNot2FAEnrolled):
 		httpx.Fail(c, httpx.ErrNotFound)
+	case errors.Is(err, ErrAlready2FAEnabled):
+		httpx.Fail(c, httpx.ErrConflict.WithMessage("2fa is already enabled"))
+	case errors.Is(err, ErrInvalid2FACode), errors.Is(err, ErrTokenInvalidOrExpired):
+		httpx.Fail(c, httpx.ErrUnauthorized.WithMessage(err.Error()))
+	case errors.Is(err, ErrPasswordTooWeak):
+		httpx.Fail(c, httpx.ErrInvalidParam.WithMessage(err.Error()))
 	default:
 		httpx.Fail(c, httpx.ErrInternal)
 	}

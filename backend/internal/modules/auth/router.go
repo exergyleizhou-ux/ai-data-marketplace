@@ -38,6 +38,18 @@ func Register(rg *gin.RouterGroup, svc *Service, tm *TokenManager, limiter ratel
 	authed.GET("/users/me/agreements", h.listAgreements)
 	authed.POST("/users/me/agreements", h.recordAgreements)
 
+	// 2FA TOTP
+	authed.POST("/auth/2fa/enroll", h.enroll2FA)
+	authed.POST("/auth/2fa/verify-enrollment", h.verify2FAEnrollment)
+	authed.POST("/auth/2fa/disable", h.disable2FA)
+
+	// Public: 2FA verify (post-login + challenge)
+	pub.POST("/auth/2fa/verify", h.verify2FAChallenge)
+
+	// Public: password reset
+	pub.POST("/auth/password-reset/request", h.requestPasswordReset)
+	pub.POST("/auth/password-reset/complete", h.completePasswordReset)
+
 	// Ops-only review of KYC submissions.
 	admin := rg.Group("/admin")
 	admin.Use(Middleware(tm), RequireRole(roleOps, roleAdmin))

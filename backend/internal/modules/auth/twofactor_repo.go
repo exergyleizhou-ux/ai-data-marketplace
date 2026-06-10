@@ -1,0 +1,136 @@
+package auth
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+
+	"golang.org/x/crypto/bcrypt"
+)
+
+// --- 2FA TOTP ---
+
+func (r *pgRepo) SetTOTPSecret(ctx context.Context, userID, secret string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE users SET totp_secret=$2 WHERE id=$1`, userID, secret)
+	if err != nil {
+		return fmt.Errorf("set totp secret: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepo) EnableTOTP(ctx context.Context, userID string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE users SET totp_enabled=true WHERE id=$1`, userID)
+	if err != nil {
+		return fmt.Errorf("enable totp: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepo) GetTOTPSecret(ctx context.Context, userID string) (string, error) {
+	var secret sql.NullString
+	err := r.pool.QueryRow(ctx, `SELECT totp_secret FROM users WHERE id=$1`, userID).Scan(&secret)
+	if err != nil {
+		return "", fmt.Errorf("get totp secret: %w", err)
+	}
+	return secret.String, nil
+}
+
+func (r *pgRepo) AddRecoveryCode(ctx context.Context, userID, codeHash string) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO totp_recovery_codes (user_id, code_hash) VALUES ($1,$2)
+		 ON CONFLICT (user_id, code_hash) DO NOTHING`, userID, codeHash)
+	if err != nil {
+		return fmt.Errorf("add recovery code: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepo) ConsumeRecoveryCode(ctx context.Context, userID, plaintext string) (bool, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT code_hash FROM totp_recovery_codes WHERE user_id=$1 AND used_at IS NULL`, userID)
+	if err != nil {
+		return false, fmt.Errorf("fetch recovery codes: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var codeHash string
+		if err := rows.Scan(&codeHash); err != nil {
+			return false, err
+		}
+		if bcrypt.CompareHashAndPassword([]byte(codeHash), []byte(plaintext)) == nil {
+			// Mark this specific code used.
+			_, _ = r.pool.Exec(ctx,
+				`UPDATE totp_recovery_codes SET used_at=now()
+				 WHERE user_id=$1 AND code_hash=$2 AND used_at IS NULL`,
+				userID, codeHash)
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
+func (r *pgRepo) DisableTOTP(ctx context.Context, userID string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users SET totp_enabled=false, totp_secret=NULL WHERE id=$1;
+		 DELETE FROM totp_recovery_codes WHERE user_id=$1`, userID)
+	if err != nil {
+		return fmt.Errorf("disable totp: %w", err)
+	}
+	return nil
+}
+
+// --- Password reset ---
+
+func (r *pgRepo) CreatePasswordResetToken(ctx context.Context, tokenHash, userID string, expiresAt time.Time) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO password_reset_tokens (token_hash, user_id, expires_at)
+		 VALUES ($1,$2,$3)`, tokenHash, userID, expiresAt)
+	if err != nil {
+		return fmt.Errorf("create reset token: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepo) GetPasswordResetToken(ctx context.Context, tokenHash string) (passwordResetTokenRow, error) {
+	var row passwordResetTokenRow
+	var usedAt sql.NullTime
+	err := r.pool.QueryRow(ctx,
+		`SELECT token_hash, user_id::text, expires_at, used_at
+		 FROM password_reset_tokens WHERE token_hash=$1`, tokenHash).
+		Scan(&row.TokenHash, &row.UserID, &row.ExpiresAt, &usedAt)
+	if err != nil {
+		return passwordResetTokenRow{}, fmt.Errorf("get reset token: %w", err)
+	}
+	if usedAt.Valid {
+		row.UsedAt = &usedAt.Time
+	}
+	return row, nil
+}
+
+func (r *pgRepo) MarkPasswordResetTokenUsed(ctx context.Context, tokenHash string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE password_reset_tokens SET used_at=now() WHERE token_hash=$1 AND used_at IS NULL`, tokenHash)
+	if err != nil {
+		return fmt.Errorf("mark reset token used: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepo) UpdatePassword(ctx context.Context, userID, passwordHash string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users SET password_hash=$2 WHERE id=$1`, userID, passwordHash)
+	if err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	return nil
+}
+
+func (r *pgRepo) RevokeAllRefreshTokens(ctx context.Context, userID string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE refresh_tokens SET revoked=true WHERE user_id=$1`, userID)
+	if err != nil {
+		return fmt.Errorf("revoke refresh tokens: %w", err)
+	}
+	return nil
+}

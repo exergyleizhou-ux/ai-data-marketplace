@@ -1,12 +1,12 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { api, tokenStore, type User } from "./api";
+import { api, tokenStore, type User, type LoginResult } from "./api";
 
 type AuthState = {
   user: User | null;
   loading: boolean;
-  login: (account: string, password: string) => Promise<void>;
+  login: (account: string, password: string) => Promise<LoginResult>;
   register: (
     account: string,
     accountType: string,
