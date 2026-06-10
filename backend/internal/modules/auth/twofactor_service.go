@@ -111,27 +111,6 @@ func (s *Service) Verify2FAChallenge(ctx context.Context, challengeToken, code s
 	return Tokens{}, User{}, ErrInvalid2FACode
 }
 
-// consumeRecovery matches a plaintext recovery code against stored bcrypt hashes.
-func consumeRecovery(ctx context.Context, repo Repository, userID, plaintext string) bool {
-	// We don't have a "list all hashes" method, so use the ConsumeRecoveryCode
-	// which does `WHERE code_hash=$1 AND used_at IS NULL`.  But we need bcrypt match
-	// first.  Simplification for the MVP: store the plaintext too in a temp lookup
-	// (not ideal, but we're in the spec's spirit). Actually the spec says recovery
-	// codes are bcrypt hashed.  The practical approach is: we generate the codes,
-	// give them to the user, and the user enters the code.  We iterate stored codes
-	// and bcrypt.CompareHashAndPassword.
-	//
-	// Since the spec says primary key is (user_id, code_hash), we'd need a scan.
-	// For now, we accept that recovery codes work through a simple mechanism:
-	// the user enters the code, and we try `bcrypt.GenerateFromPassword` produces
-	// different hash every time (salt), so comparison requires storing hashes
-	// and iterating.
-	//
-	// The simplest correct implementation:
-	return false // recovery code iteration not implemented at SQL level — TOTP is primary
-}
-
-// ---------- Password reset ----------
 
 // RequestPasswordReset sends a reset link via email. Does NOT reveal whether the
 // account exists (anti-enumeration).
@@ -163,7 +142,10 @@ func (s *Service) CompletePasswordReset(ctx context.Context, rawToken, newPasswo
 	if err != nil || t.UsedAt != nil || time.Now().After(t.ExpiresAt) {
 		return ErrTokenInvalidOrExpired
 	}
-	hash, _ := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash new password: %w", err)
+	}
 	if err := s.repo.UpdatePassword(ctx, t.UserID, string(hash)); err != nil {
 		return err
 	}

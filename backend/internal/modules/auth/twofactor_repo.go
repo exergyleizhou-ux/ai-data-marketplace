@@ -59,11 +59,15 @@ func (r *pgRepo) ConsumeRecoveryCode(ctx context.Context, userID, plaintext stri
 			return false, err
 		}
 		if bcrypt.CompareHashAndPassword([]byte(codeHash), []byte(plaintext)) == nil {
-			// Mark this specific code used.
-			_, _ = r.pool.Exec(ctx,
+			// Atomically mark used.  UPDATE ... AND used_at IS NULL prevents TOCTOU.
+			tag, _ := r.pool.Exec(ctx,
 				`UPDATE totp_recovery_codes SET used_at=now()
 				 WHERE user_id=$1 AND code_hash=$2 AND used_at IS NULL`,
 				userID, codeHash)
+			if tag.RowsAffected() == 0 {
+				// Another concurrent request consumed this code first.
+				return false, nil
+			}
 			return true, nil
 		}
 	}

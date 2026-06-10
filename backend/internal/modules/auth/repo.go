@@ -111,11 +111,11 @@ func (r *pgRepo) GetUserByAccount(ctx context.Context, account string) (User, st
 
 func (r *pgRepo) GetUserByID(ctx context.Context, id string) (User, error) {
 	const q = `
-		SELECT id, account, account_type, role, kyc_status, status
+		SELECT id, account, account_type, role, kyc_status, status, COALESCE(totp_enabled, false)
 		FROM users WHERE id = $1`
 	var u User
 	err := r.pool.QueryRow(ctx, q, id).
-		Scan(&u.ID, &u.Account, &u.AccountType, &u.Role, &u.KYCStatus, &u.Status)
+		Scan(&u.ID, &u.Account, &u.AccountType, &u.Role, &u.KYCStatus, &u.Status, &u.TOTPEnabled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrUserNotFound
 	}

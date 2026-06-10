@@ -17,6 +17,7 @@ export type User = {
   role: string;
   kyc_status: string;
   status: string;
+  totp_enabled?: boolean;
 };
 export type AuthResult = { user: User; tokens: Tokens };
 

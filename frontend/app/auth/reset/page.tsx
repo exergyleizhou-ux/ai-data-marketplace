@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
@@ -8,12 +8,26 @@ import { Alert, Button, Card, Field, Input } from "@/components/ui";
 
 export default function ResetPasswordPage() {
   const { t } = useT();
+  const [queryToken, setQueryToken] = useState("");
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    setQueryToken(p.get("t") ?? "");
+  }, []);
+
   const [step, setStep] = useState<"request" | "complete" | "done">("request");
   const [account, setAccount] = useState("");
   const [token, setToken] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (queryToken) {
+      setToken(queryToken);
+      setStep("complete");
+    }
+  }, [queryToken]);
 
   async function request(e: React.FormEvent) {
     e.preventDefault();
