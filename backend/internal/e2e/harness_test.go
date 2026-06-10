@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,6 +103,26 @@ func newE2E(t *testing.T) *e2eEnv {
 // post sends a POST to the running server.  bearer may be empty.
 func (e *e2eEnv) post(path string, body any, bearer string) *e2eResp {
 	return e.do("POST", path, body, bearer)
+}
+
+// postRaw sends a POST with a pre-serialized JSON body string.
+func (e *e2eEnv) postRaw(t *testing.T, path string, jsonBody string, bearer string) *e2eResp {
+	e.t = t
+	req, err := http.NewRequest("POST", e.ts.URL+path, strings.NewReader(jsonBody))
+	if err != nil {
+		e.t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := e.client.Do(req)
+	if err != nil {
+		e.t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return &e2eResp{status: resp.StatusCode, raw: raw}
 }
 
 // get sends a GET.
