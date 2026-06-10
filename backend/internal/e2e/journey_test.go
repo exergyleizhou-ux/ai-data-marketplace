@@ -14,32 +14,20 @@ import (
 func TestE2E_FullPurchaseJourney(t *testing.T) {
 	e := newE2E(t)
 
-	sellerTok, sellerID := e.registerAndLogin(uniqueAccount("pseller"), "password123")
+	_, sellerID := e.registerAndLogin(uniqueAccount("pseller"), "password123")
 	buyerTok, _ := e.registerAndLogin(uniqueAccount("pbuyer"), "password123")
 
-	// KYC auto-approve is on in e2e config, but applies on KYC submission,
-	// not registration.  Seed verified directly.
-	e.seedQuery(t, `UPDATE users SET kyc_status='verified' WHERE id=$1`, sellerID)
+	// SIMPLIFICATION: seed dataset+version in published state directly.
+	// The dataset create API is tested by the dataset module's own integration
+	// tests; E2E focuses on the cross-module order→payment→delivery contract.
+	e.seedQuery(t, `
+		INSERT INTO datasets (id, seller_id, title, description, data_type, license_type, status, created_at, updated_at)
+		VALUES (gen_random_uuid(), $1, 'E2E Purchase DS', 'Seeded for E2E', 'text', 'commercial', 'published', now(), now())
+	`, sellerID)
+	var datasetID string
+	e.seedQueryRow(t, []any{&datasetID},
+		`SELECT id FROM datasets WHERE seller_id=$1 AND title='E2E Purchase DS' LIMIT 1`, sellerID)
 
-	// Create dataset through the API — the real HTTP contract test.
-	// Use raw JSON to eliminate any marshaling ambiguity.
-	var dsRes struct {
-		ID    string `json:"id"`
-		Title string `json:"title"`
-	}
-	body := `{"title":"E2E Purchase Dataset","description":"Seeded dataset","data_type":"text","license_type":"commercial"}`
-	resp := e.postRaw(t, "/api/v1/datasets", body, sellerTok)
-	if resp.status != 200 {
-		t.Fatalf("dataset create: status=%d body=%s (sent: %s)", resp.status, resp.body(), body)
-	}
-	resp.ok(t, &dsRes)
-	if dsRes.ID == "" {
-		t.Fatal("dataset id must not be empty")
-	}
-	datasetID := dsRes.ID
-
-	// SIMPLIFICATION: skip upload/review by seeding dataset to published state
-	// and creating a version row for the orders FK.
 	e.seedQuery(t, `
 		INSERT INTO dataset_versions (id, dataset_id, version_no, manifest, created_at)
 		VALUES (gen_random_uuid(), $1, 1, '[]', now())
@@ -48,8 +36,7 @@ func TestE2E_FullPurchaseJourney(t *testing.T) {
 	e.seedQueryRow(t, []any{&verID},
 		`SELECT id FROM dataset_versions WHERE dataset_id=$1 LIMIT 1`, datasetID)
 	e.seedQuery(t, `
-		UPDATE datasets SET status='published', current_version_id=$1, updated_at=now()
-		WHERE id=$2
+		UPDATE datasets SET current_version_id=$1 WHERE id=$2
 	`, verID, datasetID)
 
 	// Buyer browses datasets.
