@@ -50,6 +50,7 @@ type Repository interface {
 	GetTOTPSecret(ctx context.Context, userID string) (string, error)
 	AddRecoveryCode(ctx context.Context, userID, codeHash string) error
 	ConsumeRecoveryCode(ctx context.Context, userID, plaintext string) (bool, error)
+	CountUnusedRecoveryCodes(ctx context.Context, userID string) (int, error)
 	DisableTOTP(ctx context.Context, userID string) error
 
 	// Password reset

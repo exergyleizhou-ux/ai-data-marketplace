@@ -400,6 +400,13 @@ function TwoFactorCard() {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [remaining, setRemaining] = useState(0);
+
+  useEffect(() => {
+    if (enrolled) {
+      api.recoveryCodeStatus().then(r => setRemaining(r.remaining)).catch(() => {});
+    }
+  }, [enrolled]);
 
   async function enroll() {
     setErr(""); setMsg(""); setBusy(true);
@@ -443,6 +450,12 @@ function TwoFactorCard() {
       {enrolled ? (
         <div className="space-y-2">
           <p className="text-sm text-green-700">{t("已启用", "Enabled")}</p>
+          {remaining >= 0 && (
+            <p className="text-xs text-neutral-500">
+              {t(`剩余恢复码：${remaining} 个`, `Recovery codes remaining: ${remaining}`)}
+              {remaining < 3 && <span className="text-amber-600 ml-1">{t("（建议重新生成）", "(consider regenerating)")}</span>}
+            </p>
+          )}
           <Field label={t("TOTP 验证码", "TOTP code")}>
             <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" />
           </Field>

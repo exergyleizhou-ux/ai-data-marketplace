@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pquerna/otp/totp"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -84,4 +86,105 @@ func TestCompletePasswordReset_RejectsExpiredToken(t *testing.T) {
 func hashPassword(pw string) string {
 	h, _ := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.MinCost)
 	return string(h)
+}
+
+// Test2FALoginFlow is a full integration test of the 2FA TOTP flow:
+// 1. Register user → enroll 2FA → verify enrollment → totp_enabled=true
+// 2. Login → need_2fa + challenge_token (no real tokens)
+// 3. Verify2FAChallenge with valid TOTP code → real access+refresh tokens
+// 4. Wrong password → ErrInvalidCredentials
+// 5. Wrong TOTP code → ErrInvalid2FACode
+// 6. RecoveryCodeStatus returns correct unused count
+func Test2FALoginFlow(t *testing.T) {
+	svc, repo := newTestService()
+	ctx := context.Background()
+
+	// Register a user.
+	res, err := svc.Register(ctx, "2fa@test.com", accountTypeEmail, "password123")
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	userID := res.User.ID
+	repo.byID[userID] = res.User
+
+	// 1. Enroll 2FA.
+	enrollRes, err := svc.Enroll2FA(ctx, userID)
+	if err != nil {
+		t.Fatalf("enroll: %v", err)
+	}
+	if len(enrollRes.RecoveryCodes) != 8 {
+		t.Fatalf("expected 8 recovery codes, got %d", len(enrollRes.RecoveryCodes))
+	}
+	if enrollRes.Secret == "" {
+		t.Fatal("secret must not be empty")
+	}
+
+	// 2. Verify enrollment with a real TOTP code.
+	code, err := totp.GenerateCode(enrollRes.Secret, time.Now())
+	if err != nil {
+		t.Fatalf("generate totp code: %v", err)
+	}
+	if err := svc.Verify2FAEnrollment(ctx, userID, code); err != nil {
+		t.Fatalf("verify enrollment: %v", err)
+	}
+
+	// 3. Login → need_2fa.
+	loginRes, err := svc.Login(ctx, "2fa@test.com", "password123")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if !loginRes.Need2FA || loginRes.ChallengeToken == "" {
+		t.Fatalf("expected need_2fa=true with challenge, got need_2fa=%v token=%q",
+			loginRes.Need2FA, loginRes.ChallengeToken)
+	}
+	if loginRes.Tokens != nil {
+		t.Fatal("tokens must be nil when 2FA is enabled")
+	}
+
+	// 4. Verify 2FA challenge → real tokens issued.
+	code2, err := totp.GenerateCode(enrollRes.Secret, time.Now())
+	if err != nil {
+		t.Fatalf("generate totp code: %v", err)
+	}
+	tokens, u, err := svc.Verify2FAChallenge(ctx, loginRes.ChallengeToken, code2)
+	if err != nil {
+		t.Fatalf("verify 2fa challenge: %v", err)
+	}
+	if tokens.AccessToken == "" || tokens.RefreshToken == "" {
+		t.Fatal("expected real access+refresh tokens after 2FA")
+	}
+	if u.ID != userID {
+		t.Fatalf("expected uid=%s, got %s", userID, u.ID)
+	}
+
+	// Tokens are valid JWT with correct type.
+	claims, err := svc.tokens.Parse(tokens.AccessToken, tokenTypeAccess)
+	if err != nil {
+		t.Fatalf("parse access token: %v", err)
+	}
+	if claims.UserID != userID {
+		t.Fatalf("token uid=%s, want %s", claims.UserID, userID)
+	}
+
+	// 5. Wrong password → rejected.
+	_, err = svc.Login(ctx, "2fa@test.com", "wrong")
+	if err != ErrInvalidCredentials {
+		t.Fatalf("expected ErrInvalidCredentials for wrong password, got %v", err)
+	}
+
+	// 6. Wrong TOTP code → rejected.
+	loginRes2, _ := svc.Login(ctx, "2fa@test.com", "password123")
+	_, _, err = svc.Verify2FAChallenge(ctx, loginRes2.ChallengeToken, "000000")
+	if err != ErrInvalid2FACode {
+		t.Fatalf("expected ErrInvalid2FACode for wrong code, got %v", err)
+	}
+
+	// 7. Recovery code status.
+	n, err := svc.RecoveryCodeStatus(ctx, userID)
+	if err != nil {
+		t.Fatalf("recovery code status: %v", err)
+	}
+	if n != 8 {
+		t.Fatalf("expected 8 unused recovery codes, got %d", n)
+	}
 }

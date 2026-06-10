@@ -47,6 +47,15 @@ func (h *handler) disable2FA(c *gin.Context) {
 	httpx.OK(c, gin.H{"ok": true})
 }
 
+func (h *handler) recoveryCodeStatus(c *gin.Context) {
+	n, err := h.svc.RecoveryCodeStatus(c.Request.Context(), httpx.UserID(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"remaining": n})
+}
+
 type twoFAChallengeReq struct {
 	ChallengeToken string `json:"challenge_token"`
 	Code           string `json:"code"`

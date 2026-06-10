@@ -80,6 +80,11 @@ func (s *Service) Verify2FAEnrollment(ctx context.Context, userID, code string) 
 	return s.repo.EnableTOTP(ctx, userID)
 }
 
+// RecoveryCodeStatus returns the count of unused recovery codes.
+func (s *Service) RecoveryCodeStatus(ctx context.Context, userID string) (int, error) {
+	return s.repo.CountUnusedRecoveryCodes(ctx, userID)
+}
+
 // Disable2FA removes TOTP and recovery codes. Requires a valid TOTP code.
 func (s *Service) Disable2FA(ctx context.Context, userID, code string) error {
 	secret, err := s.repo.GetTOTPSecret(ctx, userID)

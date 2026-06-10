@@ -397,6 +397,10 @@ func (r *fakeRepo) EnableTOTP(_ context.Context, userID string) error {
 		r.totpEnabled = map[string]bool{}
 	}
 	r.totpEnabled[userID] = true
+	if u, ok := r.byID[userID]; ok {
+		u.TOTPEnabled = true
+		r.byID[userID] = u
+	}
 	return nil
 }
 func (r *fakeRepo) GetTOTPSecret(_ context.Context, userID string) (string, error) {
@@ -407,14 +411,21 @@ func (r *fakeRepo) GetTOTPSecret(_ context.Context, userID string) (string, erro
 }
 func (r *fakeRepo) AddRecoveryCode(_ context.Context, userID, codeHash string) error { return nil }
 func (r *fakeRepo) ConsumeRecoveryCode(_ context.Context, _, _ string) (bool, error) {
-	return true, nil
+	return false, nil
 }
 func (r *fakeRepo) DisableTOTP(_ context.Context, userID string) error {
 	delete(r.totpSecrets, userID)
 	if r.totpEnabled != nil {
 		delete(r.totpEnabled, userID)
 	}
+	if u, ok := r.byID[userID]; ok {
+		u.TOTPEnabled = false
+		r.byID[userID] = u
+	}
 	return nil
+}
+func (r *fakeRepo) CountUnusedRecoveryCodes(_ context.Context, userID string) (int, error) {
+	return 8, nil // stub
 }
 func (r *fakeRepo) CreatePasswordResetToken(_ context.Context, tokenHash, userID string, _ time.Time) error {
 	return nil

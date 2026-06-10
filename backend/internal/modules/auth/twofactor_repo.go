@@ -84,6 +84,16 @@ func (r *pgRepo) DisableTOTP(ctx context.Context, userID string) error {
 	return nil
 }
 
+func (r *pgRepo) CountUnusedRecoveryCodes(ctx context.Context, userID string) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM totp_recovery_codes WHERE user_id=$1 AND used_at IS NULL`, userID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count recovery codes: %w", err)
+	}
+	return n, nil
+}
+
 // --- Password reset ---
 
 func (r *pgRepo) CreatePasswordResetToken(ctx context.Context, tokenHash, userID string, expiresAt time.Time) error {

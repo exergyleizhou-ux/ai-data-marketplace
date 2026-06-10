@@ -462,6 +462,8 @@ export const api = {
     request<{ ok: boolean }>("/auth/2fa/verify-enrollment", { body: { code } }),
   disable2FA: (code: string) =>
     request<{ ok: boolean }>("/auth/2fa/disable", { body: { code } }),
+  recoveryCodeStatus: () =>
+    request<{ remaining: number }>("/auth/2fa/recovery-status"),
   requestPasswordReset: (account: string) =>
     request<{ ok: boolean }>("/auth/password-reset/request", { body: { account }, auth: false }),
   completePasswordReset: (token: string, newPassword: string) =>
