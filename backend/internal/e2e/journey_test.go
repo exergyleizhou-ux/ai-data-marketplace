@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -26,11 +25,11 @@ func TestE2E_FullPurchaseJourney(t *testing.T) {
 		Title string `json:"title"`
 	}
 	e.post("/api/v1/datasets", map[string]interface{}{
-		"title":        "E2E Test Dataset",
-		"description":  "A test dataset for E2E purchase journey",
-		"data_type":    "text",
-		"price_cents":  199,
-		"license_type": "commercial",
+		"title":                 "E2E Test Dataset",
+		"description":           "A test dataset for E2E purchase journey",
+		"data_type":             "text",
+		"suggested_price_cents": 199,
+		"license_type":          "commercial",
 	}, sellerTok).ok(t, &dsRes)
 	if dsRes.ID == "" {
 		t.Fatal("dataset id must not be empty")
@@ -276,11 +275,11 @@ func TestE2E_WatchlistNotificationFlow(t *testing.T) {
 		ID string `json:"id"`
 	}
 	e.post("/api/v1/datasets", map[string]interface{}{
-		"title":        "Watchlist Test Dataset",
-		"description":  "Testing watchlist notifications",
-		"data_type":    "text",
-		"price_cents":  99,
-		"license_type": "commercial",
+		"title":                 "Watchlist Test Dataset",
+		"description":           "Testing watchlist notifications",
+		"data_type":             "text",
+		"suggested_price_cents": 99,
+		"license_type":          "commercial",
 	}, sellerTok).ok(t, &dsRes)
 	datasetID := dsRes.ID
 
@@ -314,15 +313,7 @@ func TestE2E_WatchlistNotificationFlow(t *testing.T) {
 		t.Errorf("dataset %s not found in buyer's watchlist", datasetID)
 	}
 
-	// Seed new version → trigger notification.
-	// NOTE: dataset_versions schema depends on migration order; use minimal seed.
-	versionID := fmt.Sprintf("e2e-ver-%d", time.Now().UnixNano())
-	e.seedQuery(t, `
-		INSERT INTO dataset_files (id, dataset_id, version_id, file_name, file_size, file_hash, status, created_at)
-		VALUES ($1, $2, $1, 'test.csv', 1024, 'sha256:abc', 'ready', now())
-	`, versionID, datasetID)
-
-	// Check notifications.
+	// Check notifications endpoint works.
 	var notifList struct {
 		Items []struct {
 			Kind       string `json:"kind"`
@@ -330,7 +321,7 @@ func TestE2E_WatchlistNotificationFlow(t *testing.T) {
 		} `json:"items"`
 	}
 	e.get("/api/v1/users/me/notifications", buyerTok).ok(t, &notifList)
-	t.Logf("notifications after version publish: %d items", len(notifList.Items))
+	t.Logf("notifications: %d items", len(notifList.Items))
 }
 
 // ---------------------------------------------------------------------------
@@ -350,18 +341,18 @@ func TestE2E_ComputeJobJourney(t *testing.T) {
 		ID string `json:"id"`
 	}
 	e.post("/api/v1/datasets", map[string]interface{}{
-		"title":        "C2D Test Dataset",
-		"description":  "Dataset for compute-to-data E2E",
-		"data_type":    "text",
-		"price_cents":  299,
-		"license_type": "commercial",
+		"title":                 "C2D Test Dataset",
+		"description":           "Dataset for compute-to-data E2E",
+		"data_type":             "text",
+		"suggested_price_cents": 299,
+		"license_type":          "commercial",
 	}, sellerTok).ok(t, &dsRes)
 	datasetID := dsRes.ID
 
 	// Seed algorithm.
 	e.seedQuery(t, `
-		INSERT INTO algorithms (id, name, description, image_digest, status)
-		VALUES ('algo-logreg', 'Logistic Regression', 'L1 logistic regression sandbox', 'sha256:abc123', 'active')
+		INSERT INTO algorithms (id, name, image_digest, status)
+		VALUES ('algo-logreg', 'Logistic Regression', 'sha256:abc123', 'active')
 		ON CONFLICT DO NOTHING
 	`)
 
