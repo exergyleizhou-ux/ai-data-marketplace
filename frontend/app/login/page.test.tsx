@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LocaleProvider } from "@/lib/i18n";
+import { AuthProvider } from "@/lib/auth";
 import LoginPage from "./page";
 
 // Router + API are the page's two side-effect boundaries; stub both.
@@ -11,12 +12,16 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 const login = vi.fn();
 const verify2FA = vi.fn();
 const tokenSet = vi.fn();
+const me = vi.fn();
 vi.mock("@/lib/api", () => ({
   api: {
     login: (...a: unknown[]) => login(...a),
     verify2FA: (...a: unknown[]) => verify2FA(...a),
+    me: (...a: unknown[]) => me(...a),
   },
-  tokenStore: { set: (...a: unknown[]) => tokenSet(...a) },
+  // AuthProvider checks tokenStore.access on mount — undefined here makes its
+  // initial refresh() a no-op so the test never touches api.me().
+  tokenStore: { set: (...a: unknown[]) => tokenSet(...a), access: undefined },
 }));
 
 const tokens = { access_token: "AT", refresh_token: "RT", expires_in: 900 };
@@ -26,7 +31,9 @@ function renderLogin() {
   localStorage.setItem("vo_lang", "zh");
   return render(
     <LocaleProvider>
-      <LoginPage />
+      <AuthProvider>
+        <LoginPage />
+      </AuthProvider>
     </LocaleProvider>,
   );
 }

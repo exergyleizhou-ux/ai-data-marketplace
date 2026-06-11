@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { api, tokenStore, type User, type LoginResult } from "./api";
+import { api, tokenStore, type LoginResult, type Tokens, type User } from "./api";
 
 type AuthState = {
   user: User | null;
@@ -13,6 +13,10 @@ type AuthState = {
     password: string,
     agreements?: { doc: string; version: string }[],
   ) => Promise<void>;
+  // setSession is the post-auth side-door: any flow that authenticates outside
+  // the standard login() path (2FA verify, future SSO) must call it so the
+  // nav re-renders synchronously instead of waiting for a page reload.
+  setSession: (user: User, tokens: Tokens) => void;
   logout: () => void;
   refresh: () => Promise<void>;
 };
@@ -60,13 +64,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const setSession = useCallback((u: User, tokens: Tokens) => {
+    tokenStore.set(tokens);
+    setUser(u);
+  }, []);
+
   const logout = useCallback(() => {
     tokenStore.clear();
     setUser(null);
   }, []);
 
   return (
-    <Ctx.Provider value={{ user, loading, login, register, logout, refresh }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ user, loading, login, register, setSession, logout, refresh }}>
+      {children}
+    </Ctx.Provider>
   );
 }
 
