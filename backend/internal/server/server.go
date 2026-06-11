@@ -26,6 +26,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/dataset"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/delivery"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/docs"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/moderation"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/notification"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/order"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/payment"
@@ -351,6 +352,10 @@ func (s *Server) routes() {
 		qaRepo := qa.NewRepository(s.db)
 		qaSvc := qa.NewService(qaRepo, qaDatasetAdapter{ds: dsSvc}, notifySvc)
 		qa.Register(api, qaSvc, authMW, lim)
+
+		// Content moderation: users report abusive questions/reviews, ops resolve.
+		moderation.Register(api, moderation.NewService(moderation.NewRepository(s.db)),
+			authMW, auth.RequireRole("ops", "admin"), lim)
 
 		// Withdrawal: seller requests + ops approves (book-keeping only, P module).
 		withdrawRepo := withdrawal.NewRepository(s.db)
