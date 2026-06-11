@@ -1,0 +1,135 @@
+# ===========================================================================
+# Prometheus 告警规则 — 绿洲数据交易平台
+# 使用方式:promtool check rules alert-rules.yml
+# ===========================================================================
+
+groups:
+
+# ---------------------------------------------------------------------------
+# availability — critical (立即响应)
+# ---------------------------------------------------------------------------
+- name: availability
+  rules:
+    - alert: BackendDown
+      expr: up{job="backend"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "后端服务 {{ $labels.instance }} 已停止"
+        description: "实例 {{ $labels.instance }} 的 up 指标为 0,持续 1 分钟。立即检查 Pod 状态和日志。"
+
+    - alert: PostgresDown
+      expr: pg_up == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "PostgreSQL 实例不可达"
+        description: "pg_up == 0,持续 1 分钟。检查 PG 进程、连接数耗尽或实例崩溃。"
+
+    - alert: High5xxRate
+      expr: |
+        (
+          sum(rate(marketplace_http_requests_total{status=~"5.."}[5m]))
+          /
+          sum(rate(marketplace_http_requests_total[5m]))
+        ) > 0.05
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "5xx 错误率 {{ $value | humanizePercentage }}"
+        description: "5 分钟内 5xx 占比 {{ $value | humanizePercentage }},超过 5% 阈值。检查后端日志中异常堆栈。"
+
+# ---------------------------------------------------------------------------
+# latency — warning (影响体验但服务仍可达)
+# ---------------------------------------------------------------------------
+- name: latency
+  rules:
+    - alert: P99LatencyHigh
+      expr: |
+        histogram_quantile(0.99,
+          sum by (le) (rate(marketplace_http_request_duration_seconds_bucket[5m]))
+        ) > 2
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "HTTP P99 延迟 {{ $value | humanizeDuration }}"
+        description: "P99 延迟 {{ $value | humanizeDuration }},超过 2s 持续 10 分钟。检查慢路由、PG 慢查询和外部依赖超时。"
+
+    - alert: P50LatencyHigh
+      expr: |
+        histogram_quantile(0.50,
+          sum by (le) (rate(marketplace_http_request_duration_seconds_bucket[5m]))
+        ) > 0.5
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "HTTP P50 延迟 {{ $value | humanizeDuration }}"
+        description: "P50 延迟 {{ $value | humanizeDuration }},超过 500ms 持续 10 分钟。中位数升高通常意味着数据库或下游服务瓶颈。"
+
+# ---------------------------------------------------------------------------
+# business — warning (业务指标异常,非立即故障)
+# ---------------------------------------------------------------------------
+- name: business
+  rules:
+    - alert: ComputeJobFailureSpike
+      expr: |
+        (
+          rate(marketplace_compute_jobs_total{outcome="failed"}[15m])
+          /
+          rate(marketplace_compute_jobs_total[15m])
+        ) > 0.20
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "C2D 任务失败率 {{ $value | humanizePercentage }}"
+        description: "近 15 分钟 compute 任务失败率 {{ $value | humanizePercentage }},超过 20%。检查 runner 日志、镜像 digest 和沙箱资源。"
+
+    - alert: LeaseReclaimSpike
+      expr: |
+        increase(marketplace_compute_lease_reclaims_total[30m]) > 3
+      for: 0m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Compute lease 回收激增 (30m 内 {{ $value }})"
+        description: "30 分钟内 lease 回收次数 {{ $value }},超过 3 次。runner 可能反复崩溃或重启,检查 Docker daemon 状态和 runner 日志。"
+
+    - alert: FederatedDropoutHigh
+      expr: |
+        rate(marketplace_federated_participants_total{outcome="dropped"}[30m])
+        /
+        rate(marketplace_federated_participants_total{outcome="submitted"}[30m])
+        > 0.30
+      for: 30m
+      labels:
+        severity: warning
+      annotations:
+        summary: "联邦学习参与方 dropout 率 {{ $value | humanizePercentage }}"
+        description: "dropout/submitted 比 {{ $value | humanizePercentage }},超过 30%。检查各参与者节点连通性和超时配置。"
+
+    - alert: QualityJobStuck
+      expr: |
+        rate(marketplace_quality_jobs_total[30m]) == 0
+        and
+        rate(marketplace_http_requests_total{route=~".*upload.*"}[30m]) > 0
+      for: 30m
+      labels:
+        severity: warning
+      annotations:
+        summary: "质检任务疑似停滞"
+        description: "30 分钟内有数据集上传流量但 quality_jobs_total 增长率为 0。检查质检 sidecar 是否存活 (QUALITY_SIDECAR_URL)。"
+
+    - alert: HighGoroutines
+      expr: go_goroutines > 5000
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "goroutine 数 {{ $value }} 过高"
+        description: "goroutine 数 {{ $value }} 超过 5000,可能有 goroutine 泄漏。检查最近的变更和长时间运行的连接。"
