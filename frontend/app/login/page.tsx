@@ -3,13 +3,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, tokenStore } from "@/lib/api";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { Alert, Button, Card, Field, Input } from "@/components/ui";
 
 export default function LoginPage() {
   const { t } = useT();
   const router = useRouter();
+  const { login, setSession } = useAuth();
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
@@ -24,12 +26,13 @@ export default function LoginPage() {
     e.preventDefault();
     setErr(""); setBusy(true);
     try {
-      const res = await api.login(account, password);
+      // Route through AuthProvider.login so the nav re-renders synchronously —
+      // bypassing it (api.login + tokenStore.set) leaves user=null until reload.
+      const res = await login(account, password);
       if (res.need_2fa && res.challenge_token) {
         setNeed2FA(true);
         setChallenge(res.challenge_token);
       } else if (res.tokens && res.user) {
-        tokenStore.set(res.tokens);
         router.push("/datasets");
       }
     } catch (e) { setErr((e as Error).message); }
@@ -41,7 +44,8 @@ export default function LoginPage() {
     setErr(""); setBusy(true);
     try {
       const res = await api.verify2FA(challenge, code);
-      tokenStore.set(res.tokens);
+      // Same reason: route through the context, not a bare tokenStore.set.
+      setSession(res.user, res.tokens);
       router.push("/datasets");
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }

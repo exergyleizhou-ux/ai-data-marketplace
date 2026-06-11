@@ -41,9 +41,8 @@ test("register, persist session, logout, and log back in", async ({ page }) => {
   await page.getByRole("button", { name: "登录" }).click();
 
   await page.waitForURL("**/datasets");
-  // The login page sets tokens + navigates but doesn't push into AuthProvider
-  // state (unlike register), so the nav only reflects the session after a
-  // reload — which also confirms the persisted token yields a valid session.
-  await page.reload();
+  // No reload here — the AuthProvider must reflect the session synchronously
+  // (this assertion proves the previously-needed page.reload() workaround is
+  // gone for good).
   await expect(page.getByRole("button", { name: "退出" })).toBeVisible();
 });
