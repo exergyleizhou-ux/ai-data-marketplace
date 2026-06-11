@@ -68,9 +68,10 @@ type Service struct {
 	runner       Runner
 	store        storage.Storage
 	data         DataKeyResolver
-	attester     Attester        // optional; verifies stored L2 attestation reports (design P3)
-	aggregator   Aggregator      // federated aggregation (P4-a); defaults to FedAvgAggregator
-	orchestrator MPCOrchestrator // PSI/MPC orchestration (Direction D); defaults to mockMPC
+	attester     Attester             // optional; verifies stored L2 attestation reports (design P3)
+	allowlist    MeasurementAllowlist // optional; auto-sync KBS release policy on algorithm approval (W1-6)
+	aggregator   Aggregator           // federated aggregation (P4-a); defaults to FedAvgAggregator
+	orchestrator MPCOrchestrator      // PSI/MPC orchestration (Direction D); defaults to mockMPC
 	runnerID     string
 	leaseSecs    int
 	maxAttempts  int
@@ -109,6 +110,14 @@ func WithAggregator(a Aggregator) Option { return func(s *Service) { s.aggregato
 
 // WithOrchestrator overrides the PSI/MPC orchestrator (default in-process mockMPC).
 func WithOrchestrator(o MPCOrchestrator) Option { return func(s *Service) { s.orchestrator = o } }
+
+// WithMeasurementAllowlist wires a KBS-side allowlist that auto-tracks the set
+// of currently-trusted algorithm image digests, so KBS release policy stays in
+// sync with ops Review decisions. A remote KBS that owns its own policy need
+// not be wired here. See ReviewAlgorithm.
+func WithMeasurementAllowlist(a MeasurementAllowlist) Option {
+	return func(s *Service) { s.allowlist = a }
+}
 
 // --- seller: offer configuration ---
 
@@ -247,6 +256,17 @@ func (s *Service) ReviewAlgorithm(ctx context.Context, opsID, id, status string,
 	out, err := s.repo.ReviewAlgorithm(ctx, id, status, trusted)
 	if err != nil {
 		return Algorithm{}, err
+	}
+	// Keep KBS release policy in lockstep with ops decisions (W1-6): a
+	// newly-trusted algorithm's image digest goes into the allowlist; an
+	// un-trusted or no-longer-approved one comes out. A real KBS owns its
+	// own policy out-of-band, so this is opt-in via WithMeasurementAllowlist.
+	if s.allowlist != nil && out.ImageDigest != "" {
+		if trusted && out.Status == AlgoApproved {
+			s.allowlist.RegisterMeasurement(out.ImageDigest)
+		} else {
+			s.allowlist.UnregisterMeasurement(out.ImageDigest)
+		}
 	}
 	s.audit.Record(ctx, audit.Entry{ActorID: opsID, Action: "compute.algorithm.review",
 		ResourceType: "algorithm", ResourceID: id, Detail: map[string]any{"status": status, "trusted": trusted}})

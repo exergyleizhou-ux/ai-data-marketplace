@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"sync"
 )
 
 // --- attestation-based key release (KBS) — design P3 §4 / Direction B §4 ---
@@ -40,10 +41,22 @@ type KeyBroker interface {
 	ReleaseDataKey(ctx context.Context, report []byte, datasetID string) ([]byte, error)
 }
 
+// MeasurementAllowlist is the dynamic-policy half of a KeyBroker: it lets the
+// algorithm approval pipeline (ops Review → trusted=true) automatically expand
+// the KBS release policy so a newly-approved trusted algorithm's measurement
+// is honored without a manual KBS reconfigure. A real (remote/cloud) KBS owns
+// its own policy out-of-band and need NOT implement this — the wiring tests
+// with a type assertion (see compute.Service.maybeRegisterTrustedAlgo).
+type MeasurementAllowlist interface {
+	RegisterMeasurement(measurement string)
+	UnregisterMeasurement(measurement string)
+}
+
 // mockKBS is a non-hardware KeyBroker: it verifies a MockAttester report, enforces
 // a measurement allowlist, and derives a deterministic stand-in data key.
 type mockKBS struct {
 	verifier Attester
+	mu       sync.RWMutex
 	allowed  map[string]struct{} // measurement allowlist; empty ⇒ accept any verified measurement (dev mode)
 }
 
@@ -74,14 +87,38 @@ func (k *mockKBS) ReleaseDataKey(ctx context.Context, report []byte, datasetID s
 	if a.Measurement == "" {
 		return nil, fmt.Errorf("%w: empty measurement", ErrMeasurementNotAllowed)
 	}
-	if len(k.allowed) > 0 {
-		if _, ok := k.allowed[a.Measurement]; !ok {
-			return nil, fmt.Errorf("%w: %s", ErrMeasurementNotAllowed, a.Measurement)
-		}
+	k.mu.RLock()
+	allowSize := len(k.allowed)
+	_, present := k.allowed[a.Measurement]
+	k.mu.RUnlock()
+	if allowSize > 0 && !present {
+		return nil, fmt.Errorf("%w: %s", ErrMeasurementNotAllowed, a.Measurement)
 	}
 	// Derive the dataset's data key. A real KBS returns the seller's wrapped DEK
 	// (decryptable only inside the enclave); here we derive a deterministic stand-in
 	// so the same dataset always yields the same key and different datasets differ.
 	sum := sha256.Sum256([]byte("vo-mock-kbs-dek|" + datasetID))
 	return sum[:], nil
+}
+
+// RegisterMeasurement adds a digest to the release policy. Safe for concurrent
+// calls. The algorithm approval pipeline calls this when ops mark an algorithm
+// trusted=true so KBS release stays in sync without a manual reconfigure.
+func (k *mockKBS) RegisterMeasurement(measurement string) {
+	if measurement == "" {
+		return
+	}
+	k.mu.Lock()
+	if k.allowed == nil {
+		k.allowed = map[string]struct{}{}
+	}
+	k.allowed[measurement] = struct{}{}
+	k.mu.Unlock()
+}
+
+// UnregisterMeasurement removes a digest from the release policy (un-approval).
+func (k *mockKBS) UnregisterMeasurement(measurement string) {
+	k.mu.Lock()
+	delete(k.allowed, measurement)
+	k.mu.Unlock()
 }

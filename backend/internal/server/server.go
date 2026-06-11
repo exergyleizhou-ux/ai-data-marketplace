@@ -459,6 +459,13 @@ func (s *Server) routes() {
 			}
 			runner = compute.NewTEERunnerWithKBS(compute.NewDockerRunner(res), att, kbs)
 			computeOpts = append(computeOpts, compute.WithAttester(att))
+			// If the KBS owns its policy dynamically (mockKBS), wire the algorithm
+			// approval pipeline to it so trusted=true on review auto-extends the
+			// release allowlist (W1-6). A real remote KBS won't satisfy this; its
+			// policy is configured out-of-band.
+			if al, ok := kbs.(compute.MeasurementAllowlist); ok {
+				computeOpts = append(computeOpts, compute.WithMeasurementAllowlist(al))
+			}
 			slog.Info("compute runner", "kind", "tee", "runtime", res.Runtime, "attester", attKind, "kbs", kbsKind)
 		}
 		if store != nil {
