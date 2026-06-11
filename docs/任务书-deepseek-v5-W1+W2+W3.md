@@ -119,23 +119,35 @@
 
 **目标**:admin 9 个 tab 全是结构/订单/资金运营,没有内容举报通道。Q&A 和 review 出现滥用时 ops 无处下手。
 
+> **后端已由 Claude 实现并合并**(moderation 模块,migration 000026)。统一为
+> 一个 content_reports 队列(不是分 qa/reviews 两个),按真实路由对接:
+
 ```
 作为前端工程师,在 ~/ai-data-marketplace/frontend/app/admin/page.tsx 增加第 10 个 tab "内容审核 / Content Moderation"。
 
-后端假设(写给 Claude 后端补):
-- GET  /api/v1/admin/qa/flagged?limit=20&offset=0 → 列出 status='flagged' 的 questions
-- GET  /api/v1/admin/reviews/flagged?limit=20&offset=0 → 列出 status='flagged' 的 reviews
-- POST /api/v1/admin/qa/{id}/resolve {action: "hide"|"restore"}
-- POST /api/v1/admin/reviews/{id}/resolve {action: "hide"|"restore"}
-- (后端实现 Claude 接管,你只做 UI + api 客户端绑定)
+后端真实接口(已实现,务必按此对接):
+- GET  /api/v1/admin/reports?status=open&limit=50&offset=0 → {items: Report[]}
+- POST /api/v1/admin/reports/{id}/resolve {action: "hide"|"dismiss"}
+  - hide = 隐藏被举报内容(问题置 status=hidden / 评论 hidden=true)并关闭举报
+  - dismiss = 保留内容,仅关闭举报
+- Report 字段:{ id, reporter_id, target_type:"question"|"review", target_id,
+  reason, status:"open"|"resolved", resolution?:"hide"|"dismiss",
+  created_at, resolved_at?, resolved_by? }
+- 注:没有 "restore"(取消隐藏)接口;不要造。用户举报入口
+  POST /questions/{id}/report 和 /reviews/{id}/report 是用户侧,本 tab 不需要。
 
 产出:
-1. 在 frontend/lib/api.ts 加 4 个 api 函数 typed 签名(adminListFlaggedQuestions/adminListFlaggedReviews/adminResolveQuestion/adminResolveReview),即使后端尚未实现也要让 tsc 过
-2. 在 frontend/app/admin/page.tsx 加 <ContentModerationTab/> 内嵌组件:两栏(问题/评论),每栏展示 list + 操作按钮(隐藏/恢复 + 备注 textarea),i18n 双语
-3. 操作成功后 Alert 反馈,失败后 inline error
+1. 在 frontend/lib/api.ts 加 2 个 typed 函数:
+   adminListReports(status?, limit?, offset?) → {items: Report[]}
+   adminResolveReport(id, action:"hide"|"dismiss") → Report
+   并加 Report 类型定义
+2. 在 frontend/app/admin/page.tsx 加 <ContentModerationTab/> 内嵌组件:
+   单一举报队列列表(显示 target_type 徽章 / reason / 时间 / status),
+   每条 open 举报给 [隐藏内容] 和 [忽略举报] 两个按钮;status filter(open/all)
+3. 操作成功后 Alert 反馈,失败后 inline error;i18n 双语(useT)
 4. 该 tab 加进 ADMIN_TABS 数组的最后一项
 
-【硬性要求】tsc / lint / build / test 全过;UI 与既有 9 个 tab 风格一致(同 Field/Input/Button)
+【硬性要求】tsc / lint / build / test 全过;UI 与既有 9 个 tab 风格一致(同 Field/Input/Button/Badge);不引入 U+201C/U+201D 全角引号
 ```
 
 ---

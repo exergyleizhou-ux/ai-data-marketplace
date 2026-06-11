@@ -1613,6 +1613,65 @@ paths:
       responses:
         "200": { $ref: "#/components/schemas/Envelope" }
 
+  /questions/{id}/report:
+    post:
+      tags: [moderation]
+      summary: Report a question as abusive
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /reviews/{id}/report:
+    post:
+      tags: [moderation]
+      summary: Report a review as abusive
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/reports:
+    get:
+      tags: [admin]
+      summary: List content reports
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: limit,  in: query, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /admin/reports/{id}/resolve:
+    post:
+      tags: [admin]
+      summary: Resolve a content report (hide or dismiss)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action: { type: string, enum: [hide, dismiss] }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
   /admin/settlement-outbox:
     get:
       tags: [admin]

@@ -1,0 +1,4 @@
+BEGIN;
+DROP TABLE IF EXISTS content_reports;
+ALTER TABLE reviews DROP COLUMN IF EXISTS hidden;
+COMMIT;

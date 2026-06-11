@@ -209,7 +209,7 @@ func (r *pgRepo) CreateReview(ctx context.Context, rv Review) (Review, error) {
 func (r *pgRepo) ListReviewsByDataset(ctx context.Context, datasetID string, limit, offset int) ([]Review, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, order_id, dataset_id, buyer_id, score, COALESCE(comment,''), issue_flag, created_at::text
-		 FROM reviews WHERE dataset_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		 FROM reviews WHERE dataset_id=$1 AND NOT hidden ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
 		datasetID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list reviews: %w", err)
