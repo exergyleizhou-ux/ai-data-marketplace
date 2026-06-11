@@ -445,6 +445,14 @@ func (s *Server) routes() {
 				att = compute.NewTDXAttester()
 				attKind = "tdx"
 			}
+			// Production guard: refuse to boot with MockAttester in production —
+			// it uses a hardcoded dev HMAC key (compute/runner_tee.go) and provides
+			// no real confidentiality. Operator must explicitly set TEE_ATTESTER=tdx
+			// (or remove COMPUTE_RUNNER=tee to revert to L1) before serving L2.
+			if s.cfg.Env == "production" && attKind == "mock" {
+				slog.Error("compute: refusing to start TEE runner with MockAttester in production; set TEE_ATTESTER=tdx or disable COMPUTE_RUNNER=tee")
+				os.Exit(1)
+			}
 			// Attestation-based key release (KBS): gates data access on a verified
 			// attestation before the algorithm runs (design P3 §4 / Direction B). With
 			// KBS_URL set, release goes through a real KBS over HTTP (the KBS verifies
