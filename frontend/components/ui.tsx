@@ -82,6 +82,9 @@ const STATUS_COLORS: Record<string, string> = {
   none: "bg-neutral-100 text-neutral-600",
   pending: "bg-amber-50 text-amber-700",
   verified: "bg-green-50 text-green-700",
+  // withdrawals (rejected already mapped under datasets)
+  approved: "bg-blue-50 text-blue-700",
+  completed: "bg-green-50 text-green-700",
 };
 
 export function Badge({ children }: { children: string }) {
