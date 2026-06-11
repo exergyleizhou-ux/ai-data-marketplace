@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
@@ -159,6 +160,15 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 	offer, err := s.repo.GetOffer(ctx, job.DatasetID)
 	if err != nil {
 		s.failJob(ctx, jobID, "offer_unavailable")
+		return
+	}
+	// Trust-level enforcement: an L2 offer must run on a TEE runner. The runner
+	// is global (server.go), so a misdeploy (e.g. COMPUTE_RUNNER=mock|docker
+	// while a seller publishes an L2 offer) would otherwise silently release
+	// output with no attestation — exactly what L2 promises NOT to do.
+	// Fail closed; the test asserts terminal=failed with this exact code.
+	if offer.TrustLevel == TrustL2 && !strings.HasPrefix(s.runner.Kind(), "tee:") {
+		s.failJob(ctx, jobID, "trust_l2_runner_mismatch")
 		return
 	}
 	dataKey := ""
