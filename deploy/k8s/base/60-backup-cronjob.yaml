@@ -46,6 +46,23 @@ spec:
                   value: /backups
                 - name: RETENTION_DAYS
                   value: "14"
+                # Off-site replication (optional): create marketplace-secrets
+                # keys restic-repo / restic-password (+ repo backend creds, e.g.
+                # AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY) to enable. The
+                # postgres:16 image has no restic — for off-site, use an image
+                # bundling restic or add an install init step.
+                - name: BACKUP_RESTIC_REPO
+                  valueFrom:
+                    secretKeyRef:
+                      name: marketplace-secrets
+                      key: restic-repo
+                      optional: true
+                - name: BACKUP_RESTIC_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: marketplace-secrets
+                      key: restic-password
+                      optional: true
               volumeMounts:
                 - name: backups
                   mountPath: /backups
