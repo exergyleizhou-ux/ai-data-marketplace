@@ -1,0 +1,16 @@
+{{ define "feishu.title" }}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}🔥{{ else }}✅{{ end }}] {{ .GroupLabels.alertname }}
+{{ end }}
+
+{{ define "feishu.text" }}
+**{{ .CommonAnnotations.summary }}**
+
+{{ range .Alerts }}
+- 实例: {{ .Labels.instance }}
+- 级别: {{ .Labels.severity }}
+- 详情: {{ .Annotations.description }}
+- 时间: {{ .StartsAt.Local.Format "2006-01-02 15:04:05" }}
+{{ end }}
+
+> Alertmanager: {{ .ExternalURL }}
+{{ end }}

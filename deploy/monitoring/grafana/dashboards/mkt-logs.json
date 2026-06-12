@@ -1,0 +1,38 @@
+{
+  "uid": "mkt-logs",
+  "title": "日志",
+  "tags": ["marketplace", "logs"],
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [{ "name": "DS_LOKI", "type": "datasource", "query": "loki", "current": { "text": "Loki", "value": "Loki" } }]
+  },
+  "panels": [
+    {
+      "id": 1, "title": "ERROR 计数 (5m)", "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{
+        "expr": "sum(count_over_time({container_name=~\"backend\"} | json | level=~\"error|ERROR\" [5m]))",
+        "datasource": { "type": "loki", "uid": "${DS_LOKI}" }
+      }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{"color":"green","value":null},{"color":"red","value":1}] }}}
+    },
+    {
+      "id": 2, "title": "ERROR 日志流", "type": "logs",
+      "gridPos": { "x": 6, "y": 0, "w": 18, "h": 12 },
+      "targets": [{
+        "expr": "{container_name=~\"backend\"} | json | level=~\"error|ERROR\"",
+        "datasource": { "type": "loki", "uid": "${DS_LOKI}" }
+      }],
+      "options": { "showTime": true, "showLabels": true, "wrapLogMessage": true }
+    },
+    {
+      "id": 3, "title": "全量日志 (tail)", "type": "logs",
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 12 },
+      "targets": [{
+        "expr": "{container_name=~\"backend|frontend\"} | json",
+        "datasource": { "type": "loki", "uid": "${DS_LOKI}" }
+      }]
+    }
+  ],
+  "schemaVersion": 39, "version": 1
+}
