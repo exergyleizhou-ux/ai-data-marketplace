@@ -10,6 +10,7 @@ import { useState } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { Alert, Button } from "@/components/ui";
+import { useT } from "@/lib/i18n";
 
 const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 
@@ -34,9 +35,17 @@ export function StripeCheckout({
   /** Confirm succeeded client-side; resolve once the order is observed paid. */
   onPaid: () => Promise<void>;
 }) {
+  const { t } = useT();
   const stripe = getStripe();
   if (!stripe) {
-    return <Alert>未配置 Stripe 公钥（NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY），无法发起真实支付。</Alert>;
+    return (
+      <Alert>
+        {t(
+          "未配置 Stripe 公钥(NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY),无法发起真实支付。",
+          "Stripe publishable key (NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) is not configured; real payment is unavailable.",
+        )}
+      </Alert>
+    );
   }
   return (
     <Elements stripe={stripe} options={{ clientSecret, appearance: { theme: "stripe" } }}>
@@ -46,6 +55,7 @@ export function StripeCheckout({
 }
 
 function CheckoutForm({ amountLabel, onPaid }: { amountLabel: string; onPaid: () => Promise<void> }) {
+  const { t } = useT();
   const stripe = useStripe();
   const elements = useElements();
   const [ready, setReady] = useState(false);
@@ -66,7 +76,7 @@ function CheckoutForm({ amountLabel, onPaid }: { amountLabel: string; onPaid: ()
         redirect: "if_required",
       });
       if (error) {
-        setErr(error.message ?? "支付失败，请重试。");
+        setErr(error.message ?? t("支付失败,请重试。", "Payment failed, please try again."));
         return;
       }
       const status = paymentIntent?.status;
@@ -74,7 +84,7 @@ function CheckoutForm({ amountLabel, onPaid }: { amountLabel: string; onPaid: ()
         // Funds captured at Stripe; wait for the webhook to flip the order.
         await onPaid();
       } else {
-        setErr(`支付未完成（状态：${status ?? "unknown"}）。`);
+        setErr(t(`支付未完成(状态:${status ?? "unknown"})。`, `Payment incomplete (status: ${status ?? "unknown"}).`));
       }
     } catch (e) {
       setErr((e as Error).message);
@@ -87,11 +97,14 @@ function CheckoutForm({ amountLabel, onPaid }: { amountLabel: string; onPaid: ()
     <form onSubmit={submit} className="space-y-3">
       <PaymentElement onReady={() => setReady(true)} />
       {err && <Alert>{err}</Alert>}
-      <Button type="submit" className="w-full" disabled={!stripe || !ready || busy}>
-        {busy ? "支付处理中…" : `支付 ${amountLabel}`}
+      <Button type="submit" className="w-full" aria-busy={busy} disabled={!stripe || !ready || busy}>
+        {busy ? t("支付处理中…", "Processing payment…") : t(`支付 ${amountLabel}`, `Pay ${amountLabel}`)}
       </Button>
       <p className="text-xs text-neutral-400">
-        测试卡号 4242 4242 4242 4242，任意未来有效期 / CVC / 邮编。资金冻结在持牌方，确认收货后分账。
+        {t(
+          "测试卡号 4242 4242 4242 4242,任意未来有效期 / CVC / 邮编。资金冻结在持牌方,确认收货后分账。",
+          "Test card 4242 4242 4242 4242, any future expiry / CVC / ZIP. Funds are held by the licensed custodian and split after receipt confirmation.",
+        )}
       </p>
     </form>
   );

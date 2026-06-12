@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 import { Spinner } from "./ui";
 
 // Protected gates a page behind login. Optionally requires a verified KYC
@@ -15,24 +16,29 @@ export function Protected({
   requireKYC?: boolean;
   requireOps?: boolean;
 }) {
+  const { t } = useT();
   const { user, loading } = useAuth();
-  if (loading) return <Spinner />;
+  if (loading) return <Spinner label={t("加载中…", "Loading…")} />;
   if (!user)
     return (
-      <Prompt title="请先登录">
+      <Prompt title={t("请先登录", "Please sign in first")}>
         <Link href="/login" className="font-medium text-neutral-900 underline">
-          去登录
+          {t("去登录", "Sign in")}
         </Link>
       </Prompt>
     );
   if (requireOps && user.role !== "ops" && user.role !== "admin")
-    return <Prompt title="需要运营权限">当前账号无权访问运营后台。</Prompt>;
+    return (
+      <Prompt title={t("需要运营权限", "Operator access required")}>
+        {t("当前账号无权访问运营后台。", "This account has no admin access.")}
+      </Prompt>
+    );
   if (requireKYC && user.kyc_status !== "verified")
     return (
-      <Prompt title="需要完成实名认证">
-        买卖数据前必须通过实名认证。{" "}
+      <Prompt title={t("需要完成实名认证", "KYC verification required")}>
+        {t("买卖数据前必须通过实名认证。", "KYC is required to buy or sell data.")}{" "}
         <Link href="/account" className="font-medium text-neutral-900 underline">
-          去实名
+          {t("去实名", "Submit KYC")}
         </Link>
       </Prompt>
     );
