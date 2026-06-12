@@ -317,6 +317,14 @@ export type Withdrawal = {
   processed_at?: string; processed_by?: string;
 };
 
+export type Report = {
+  id: string; reporter_id: string;
+  target_type: "question" | "review"; target_id: string;
+  reason: string; status: "open" | "resolved";
+  resolution?: "hide" | "dismiss";
+  created_at: string; resolved_at?: string; resolved_by?: string;
+};
+
 export type Anomaly = {
   id: string; kind: string; actor_id?: string;
   resource_pattern: string; sample_audit_ids: number[];
@@ -640,6 +648,12 @@ export const api = {
     request<Withdrawal>(`/admin/withdrawals/${id}/reject`, { body: { reason } }),
   adminCompleteWithdrawal: (id: string, note?: string) =>
     request<Withdrawal>(`/admin/withdrawals/${id}/complete`, { body: { note } }),
+
+  // content moderation (ops) — unified report queue (questions + reviews)
+  adminListReports: (status?: string, limit?: number, offset?: number) =>
+    request<{ items: Report[] }>("/admin/reports", { query: { status, limit, offset } }),
+  adminResolveReport: (id: string, action: "hide" | "dismiss") =>
+    request<Report>(`/admin/reports/${id}/resolve`, { body: { action } }),
 
   // anomaly detection (ops)
   adminListAnomalies: (status?: string, limit?: number, offset?: number) =>
