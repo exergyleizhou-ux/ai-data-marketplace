@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { API_ORIGIN, api, yuan, type Order } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -11,8 +11,8 @@ import { StripeCheckout, stripeConfigured } from "@/components/StripeCheckout";
 
 type PayInfo = { pay_url: string; channel_txn_id: string; amount_cents: number; channel: string };
 
-export default function OrderDetailPage({ params }: { params: { id: string } }) {
-  const { id } = params;
+export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   return (
     <Protected>
       <OrderInner id={id} />

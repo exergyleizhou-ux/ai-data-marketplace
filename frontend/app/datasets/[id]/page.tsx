@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   api,
@@ -21,8 +21,8 @@ import { DatasheetView } from "@/components/Datasheet";
 import { SchemaTable, hasSchema } from "@/components/SchemaTable";
 import { ComputeBuyer } from "@/components/Compute";
 
-export default function DatasetDetailPage({ params }: { params: { id: string } }) {
-  const { id } = params;
+export default function DatasetDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const router = useRouter();
   const { user } = useAuth();
   const { t } = useT();
