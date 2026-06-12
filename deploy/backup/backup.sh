@@ -38,3 +38,20 @@ fi
 # Integrity check: a listable TOC proves the dump is structurally sound.
 pg_restore --list "$OUT" >/dev/null
 echo "backup: integrity check passed (pg_restore --list)"
+
+# Off-site replication via restic (optional). A PVC in the same cluster is not
+# a DR plan — set BACKUP_RESTIC_REPO + BACKUP_RESTIC_PASSWORD (and the repo's
+# backend creds, e.g. AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY for S3/MinIO/OSS)
+# to push the dump off-cluster. Unset => skipped (local-only, back-compatible).
+if [ -n "${BACKUP_RESTIC_REPO:-}" ] && [ -n "${BACKUP_RESTIC_PASSWORD:-}" ]; then
+  export RESTIC_REPOSITORY="$BACKUP_RESTIC_REPO"
+  export RESTIC_PASSWORD="$BACKUP_RESTIC_PASSWORD"
+  echo "backup: restic -> $RESTIC_REPOSITORY"
+  # init is idempotent-ish: ignore "already initialized".
+  restic snapshots >/dev/null 2>&1 || restic init
+  restic backup "$OUT" --tag oasis,daily --host "$(hostname)"
+  restic forget --tag oasis --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
+  echo "backup: restic off-site replication complete"
+else
+  echo "backup: restic not configured (BACKUP_RESTIC_REPO unset) — local-only"
+fi

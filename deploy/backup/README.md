@@ -43,3 +43,24 @@ DATABASE_URL=postgres://...throwaway ./drill.sh
   (restic/rclone/云快照任选),否则集群级故障会同时带走库和备份。
 - `users.password_hash`/PII 在 dump 里是明文(库里什么样就什么样)——
   dump 文件按生产数据同级别管控(加密存储、最小访问)。
+
+## 异地备份(restic,可选)
+
+本地 `pg_dump` 落 PVC 只是第一站;集群级故障会同时带走库和备份。设置以下
+环境变量即开启 restic 推送到对象存储(S3 / MinIO / 阿里云 OSS / B2 / restic-server):
+
+```bash
+export BACKUP_RESTIC_REPO="s3:https://s3.amazonaws.com/my-oasis-backups"
+export BACKUP_RESTIC_PASSWORD="<repo 加密口令>"
+export AWS_ACCESS_KEY_ID=...        # 对象存储后端凭证(各家不同)
+export AWS_SECRET_ACCESS_KEY=...
+./backup.sh
+```
+
+未设这两个变量时 `backup.sh` 跳过 restic、行为与之前完全一致(CI 的
+`backup-drill` 不设它们,所以演练仍只跑本地路径)。保留策略:`restic forget
+--keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune`。
+
+k8s:`60-backup-cronjob.yaml` 已挂 `restic-repo` / `restic-password`
+(`optional: true` 的 secretKeyRef);**注意 postgres:16 镜像不含 restic**,
+启用异地备份需换成打包了 restic 的镜像或加 install 初始化步骤。
