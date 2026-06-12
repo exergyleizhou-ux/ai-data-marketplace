@@ -43,9 +43,15 @@ func Register(rg *gin.RouterGroup, svc *Service, tm *TokenManager, limiter ratel
 	authed.POST("/users/me/agreements", h.recordAgreements)
 
 	// 2FA TOTP
-	authed.POST("/auth/2fa/enroll", h.enroll2FA)
-	authed.POST("/auth/2fa/verify-enrollment", h.verify2FAEnrollment)
-	authed.POST("/auth/2fa/disable", h.disable2FA)
+	authed.POST("/auth/2fa/enroll",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "2fa_enroll", Limit: 5, Window: time.Minute}),
+		h.enroll2FA)
+	authed.POST("/auth/2fa/verify-enrollment",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "2fa_verify_enroll", Limit: 10, Window: time.Minute}),
+		h.verify2FAEnrollment)
+	authed.POST("/auth/2fa/disable",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "2fa_disable", Limit: 5, Window: time.Minute}),
+		h.disable2FA)
 	authed.GET("/auth/2fa/recovery-status", h.recoveryCodeStatus)
 
 	// Public: 2FA verify (post-login + challenge), rate-limited.

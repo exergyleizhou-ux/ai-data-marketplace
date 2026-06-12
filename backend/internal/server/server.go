@@ -311,7 +311,7 @@ func (s *Server) routes() {
 		}
 		notifySvc := notification.NewServiceWithChannels(notifyRepo, prefsRepo, emailSender, emailLogRepo,
 			notificationUserLookup{pool: s.db})
-		notification.Register(api, notifySvc, authMW)
+		notification.Register(api, notifySvc, authMW, lim)
 		orderSvc.SetNotifier(notifySvc)     // order events → buyer/seller notifications
 		dsSvc.SetQualityNotifier(notifySvc) // quality done → seller notification
 		authSvc.SetNotifier(notifySvc)      // password reset email
@@ -367,7 +367,7 @@ func (s *Server) routes() {
 			complianceSourceAdapter{pool: s.db}, notifySvc, store)
 		compExportSvc.StartScanner(context.Background())
 		compDeletionSvc := compliance.NewDeletionService(compliance.NewDeletionRepository(s.db), notifySvc)
-		compliance.Register(api, compExportSvc, compDeletionSvc, authMW, auth.RequireRole("ops", "admin"))
+		compliance.Register(api, compExportSvc, compDeletionSvc, authMW, auth.RequireRole("ops", "admin"), lim)
 		// compute certs: registered in compute module via the same interface
 		// (wired below after computeSvc is constructed)
 

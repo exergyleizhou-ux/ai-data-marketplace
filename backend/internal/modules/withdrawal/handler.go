@@ -27,9 +27,15 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	admin := rg.Group("/admin/withdrawals")
 	admin.Use(authMW, opsGate)
 	admin.GET("", h.adminList)
-	admin.POST("/:id/approve", h.approve)
-	admin.POST("/:id/reject", h.reject)
-	admin.POST("/:id/complete", h.complete)
+	admin.POST("/:id/approve",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "withdrawal_approve", Limit: 10, Window: time.Minute}),
+		h.approve)
+	admin.POST("/:id/reject",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "withdrawal_reject", Limit: 10, Window: time.Minute}),
+		h.reject)
+	admin.POST("/:id/complete",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "withdrawal_complete", Limit: 10, Window: time.Minute}),
+		h.complete)
 }
 
 type withdrawalReq struct {
