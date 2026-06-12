@@ -62,13 +62,26 @@ export function Nav() {
           <LangToggle />
           {loading ? null : user ? (
             <>
-              <Link href="/notifications" className="relative text-neutral-500 hover:text-neutral-900" title={t("通知", "Notifications")}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <Link
+                href="/notifications"
+                className="relative text-neutral-500 hover:text-neutral-900"
+                title={t("通知", "Notifications")}
+                aria-label={
+                  unread > 0
+                    ? t(`通知,${unread} 条未读`, `Notifications, ${unread} unread`)
+                    : t("通知", "Notifications")
+                }
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                   <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                 </svg>
                 {unread > 0 && (
-                  <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    className="absolute -right-1.5 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white"
+                  >
                     {unread > 99 ? "99+" : unread}
                   </span>
                 )}

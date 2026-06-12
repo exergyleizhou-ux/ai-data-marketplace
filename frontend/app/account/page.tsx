@@ -301,6 +301,7 @@ function DataRightsCard() {
   const { t } = useT();
   const [exportJob, setExportJob] = useState<DataExportJob | null>(null);
   const [expErr, setExpErr] = useState("");
+  const [dMsg, setDMsg] = useState("");
   const [dReason, setDReason] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -317,11 +318,11 @@ function DataRightsCard() {
 
   async function requestDeletion() {
     if (!dReason.trim()) return;
-    setBusy(true); setExpErr("");
+    setBusy(true); setExpErr(""); setDMsg("");
     try {
       await api.requestAccountDeletion(dReason.trim());
       setDReason("");
-      alert("已提交注销申请，7 天冷静期内可撤销");
+      setDMsg(t("已提交注销申请,7 天冷静期内可撤销。", "Deletion requested. You may revoke within the 7-day cooling-off period."));
     } catch (e) { setExpErr((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -332,6 +333,7 @@ function DataRightsCard() {
         {t("数据权利 (PIPL)", "Data rights (PIPL)")} <span className="font-normal text-neutral-400">/ PIPL Art. 45/47</span>
       </h2>
       {expErr && <Alert>{expErr}</Alert>}
+      {dMsg && <Alert kind="success">{dMsg}</Alert>}
       <div className="mb-3">
         <div className="text-sm font-medium">{t("下载我的数据", "Download my data")}</div>
         <p className="text-xs text-neutral-500 mb-1">{t("下载您所有个人数据 (PIPL 第45条)", "Download all your data (PIPL Article 45)")}</p>

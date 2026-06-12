@@ -102,7 +102,13 @@ export function Alert({ kind = "error", children }: { kind?: "error" | "success"
 }
 
 export function Spinner({ label = "加载中…" }: { label?: string }) {
-  return <div className="py-10 text-center text-sm text-neutral-400">{label}</div>;
+  // role=status + aria-busy so screen readers announce the loading state.
+  // Callers pass a localized label (Spinner stays provider-agnostic).
+  return (
+    <div role="status" aria-busy="true" aria-label={label} className="py-10 text-center text-sm text-neutral-400">
+      {label}
+    </div>
+  );
 }
 
 export function Empty({ children }: { children: ReactNode }) {
