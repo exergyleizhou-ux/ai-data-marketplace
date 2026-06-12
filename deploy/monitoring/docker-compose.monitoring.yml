@@ -43,6 +43,10 @@ services:
       - "--storage.path=/alertmanager"
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager/templates:/etc/alertmanager/templates:ro
+      # Mount real Feishu webhook URLs here (one URL per file, no newline):
+      # default_url, feishu_critical_url, feishu_warning_url. See *.example.
+      - ./alertmanager/secrets:/etc/alertmanager/secrets:ro
       - alertmanager_data:/alertmanager
     ports:
       - "9093:9093"
@@ -73,7 +77,32 @@ services:
       - "9187:9187"
     restart: unless-stopped
 
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: mkt-loki
+    command: ["-config.file=/etc/loki/config.yml"]
+    volumes:
+      - ./loki/config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: mkt-promtail
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./promtail/config.yml:/etc/promtail/config.yml:ro
+      # docker_sd_configs discovers + reads backend/frontend container logs
+      # through the daemon socket (read-only).
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
+
 volumes:
   prometheus_data:
   alertmanager_data:
   grafana_data:
+  loki_data:

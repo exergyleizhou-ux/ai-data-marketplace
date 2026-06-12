@@ -1,63 +1,47 @@
-# ===========================================================================
-# Alertmanager 配置 — 绿洲数据交易平台
-# 使用方式:amtool check-config alertmanager.yml
-# ===========================================================================
-
 global:
   resolve_timeout: 5m
 
-# ---- 路由树 ----
+templates:
+  - "/etc/alertmanager/templates/*.tmpl"
+
 route:
   receiver: default
   group_by: ["alertname", "severity"]
   group_wait: 10s
   group_interval: 10s
   repeat_interval: 12h
-
   routes:
-    # critical 告警:1h 重复,尽快升级
     - match:
         severity: critical
-      receiver: critical-webhook
+      receiver: feishu-critical
       repeat_interval: 1h
-
-    # warning 告警:4h 重复,避免噪声
     - match:
         severity: warning
-      receiver: warning-webhook
+      receiver: feishu-warning
       repeat_interval: 4h
 
-# ---- 接收器 ----
-# 替换说明:
-#   - 钉钉:网关服务(如 dingtalk-alertmanager-webhook)把 webhook 转钉钉机器人消息
-#   - 飞书:飞书 outoing webhook + PrometheusAlert 服务转发
-#   - 邮件:发件量低可直接用 smtp_to receiver 拼接(需要 SMTP_AUTH_USER 等环境变量)
 receivers:
   - name: default
     webhook_configs:
-      - url: "http://CHANGE_ME:5001/alerts"
-        send_resolved: true  # 恢复也通知
-
-  - name: critical-webhook
-    webhook_configs:
-      - url: "http://CHANGE_ME:5001/alerts?severity=critical"
+      - url_file: /etc/alertmanager/secrets/default_url
         send_resolved: true
 
-  - name: warning-webhook
+  - name: feishu-critical
     webhook_configs:
-      - url: "http://CHANGE_ME:5001/alerts?severity=warning"
+      - url_file: /etc/alertmanager/secrets/feishu_critical_url
         send_resolved: true
 
-# ---- 抑制规则 ----
+  - name: feishu-warning
+    webhook_configs:
+      - url_file: /etc/alertmanager/secrets/feishu_warning_url
+        send_resolved: true
+
 inhibit_rules:
-  # BackendDown 时抑制同实例的 latency/5xx 告警(根源相同)
   - source_match:
       alertname: BackendDown
     target_match_re:
       alertname: "P99LatencyHigh|P50LatencyHigh|High5xxRate"
     equal: ["instance"]
-
-  # PostgresDown 时抑制依赖它的 High5xxRate
   - source_match:
       alertname: PostgresDown
     target_match:

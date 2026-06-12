@@ -68,3 +68,4 @@ temp/
 # =========================
 *.bak
 *.swp
+deploy/monitoring/alertmanager/secrets/*_url
