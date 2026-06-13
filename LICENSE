@@ -1,0 +1,36 @@
+Copyright (c) 2026 Verdant Oasis (绿洲) — exergyleizhou-ux. All rights reserved.
+
+SOURCE-AVAILABLE, ALL RIGHTS RESERVED
+
+This source code is made publicly viewable for transparency and review (for
+example, so users of the platform can audit that it does what it claims and
+contains no hidden data-exfiltration paths). Public visibility does NOT grant
+any license to use, copy, modify, distribute, sublicense, or create derivative
+works from this code, in whole or in part.
+
+You MAY:
+  - View and read the source code.
+  - Reference it for security review, academic study, or interoperability
+    research.
+
+You MAY NOT, without prior written permission from the copyright holder:
+  - Use this code (or any substantial part of it) to operate a service.
+  - Copy, fork-for-reuse, modify, redistribute, or relicense it.
+  - Remove or alter this notice.
+
+No trademark rights are granted. "Verdant Oasis" / "绿洲" and associated marks
+remain the property of their owner.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+----------------------------------------------------------------------------
+NOTE: This is a conservative default chosen because the repository was made
+public without a specified licensing posture. If you intend a different stance
+(e.g. a permissive open-source license such as MIT/Apache-2.0, or a
+source-available license such as BSL/PolyForm), replace this file accordingly —
+and have counsel review it before relying on it commercially.
