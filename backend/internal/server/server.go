@@ -258,18 +258,42 @@ func (s *Server) objectStorage() storage.Storage {
 	}
 }
 
+// metricsAuth wraps a handler with optional bearer-token protection for the
+// /metrics endpoint. When METRICS_TOKEN is empty (dev default), metrics are
+// openly served. In production, set METRICS_TOKEN to a random secret and
+// configure your scraper (Prometheus/Grafana) with the same token.
+func (s *Server) metricsAuth(next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if s.cfg.MetricsToken == "" {
+			next(c)
+			return
+		}
+		tok := c.GetHeader("Authorization")
+		if tok == "" {
+			tok = c.GetHeader("X-Metrics-Token")
+		} else {
+			tok = strings.TrimPrefix(tok, "Bearer ")
+		}
+		if tok != s.cfg.MetricsToken {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		next(c)
+	}
+}
+
 func (s *Server) routes() {
 	// Liveness / readiness — used by Docker Compose healthchecks and CI.
 	s.engine.GET("/healthz", s.handleHealthz)
 	s.engine.GET("/readyz", s.handleReadyz)
-	// Prometheus scrape endpoint (HTTP + Go/process metrics).
-	s.engine.GET("/metrics", gin.WrapH(metrics.Handler()))
+	// Prometheus scrape endpoint — requires METRICS_TOKEN if configured.
+	s.engine.GET("/metrics", s.metricsAuth(gin.WrapH(metrics.Handler())))
 
 	// Versioned API surface. Module routers register under this group in
 	// later PRs, e.g. auth.Register(api), dataset.Register(api), ...
 	api := s.engine.Group("/api/v1")
 	api.GET("/ping", func(c *gin.Context) {
-		httpx.OK(c, gin.H{"pong": true, "env": s.cfg.Env})
+		httpx.OK(c, gin.H{"pong": true})
 	})
 
 	// --- module wiring (modular monolith) ---

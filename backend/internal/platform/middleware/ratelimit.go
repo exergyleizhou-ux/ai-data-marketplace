@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -30,7 +31,12 @@ func RateLimit(limiter ratelimit.Limiter, cfg RateLimitConfig) gin.HandlerFunc {
 		key := "rl:" + cfg.Name + ":" + keyFunc(c)
 		res, err := limiter.Allow(c.Request.Context(), key, cfg.Limit, cfg.Window)
 		if err != nil {
-			c.Next() // fail open
+			// Limiter backend unreachable — fail closed. server.go already
+			// provides an in-memory fallback that never errors; reaching here
+			// means both Redis and in-memory are unavailable.
+			slog.Error("rate limiter failed; denying request", "name", cfg.Name, "err", err)
+			httpx.Fail(c, httpx.ErrRateLimited)
+			c.Abort()
 			return
 		}
 		if !res.Allowed {
