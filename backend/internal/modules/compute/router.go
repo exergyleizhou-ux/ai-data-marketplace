@@ -36,7 +36,9 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	buyer.GET("/compute/jobs/:id/output", h.downloadOutput)
 	buyer.GET("/compute/jobs/:id/attestation", h.jobAttestation) // L2 remote-attestation (P3)
 	buyer.GET("/compute/jobs/:id/certificate", h.jobCertificate) // 计算结果存证 (provenance certificate)
-	buyer.POST("/compute/jobs/:id/cancel", h.cancelJob)
+	buyer.POST("/compute/jobs/:id/cancel",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "compute_job_cancel", Limit: 20, Window: time.Minute}),
+		h.cancelJob)
 	// Federated learning (P4-a): one job across N datasets; sub-jobs run in each
 	// dataset's sandbox, only the aggregated joint model is buyer-visible.
 	buyer.POST("/compute/federated-jobs",

@@ -360,7 +360,7 @@ func (s *Server) routes() {
 		}
 		anomalySvc := anomaly.NewService(anomalyRepo, s.db, anomalyAlerter)
 		anomalySvc.StartScanner(context.Background())
-		anomaly.Register(api, anomalySvc, authMW, auth.RequireRole("ops", "admin"))
+		anomaly.Register(api, anomalySvc, authMW, auth.RequireRole("ops", "admin"), lim)
 
 		// PIPL Compliance: data export + account deletion (PR-S).
 		compExportSvc := compliance.NewExportService(compliance.NewExportRepository(s.db),
