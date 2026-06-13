@@ -177,7 +177,8 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (AuthResult,
 	}
 	if claims.ID != "" {
 		if revoked, err := s.denylist.IsRevoked(ctx, claims.ID); err != nil {
-			slog.Warn("denylist check failed; allowing refresh", "err", err)
+			slog.Error("denylist check failed; denying refresh", "err", err)
+			return AuthResult{}, ErrInvalidToken
 		} else if revoked {
 			return AuthResult{}, ErrInvalidToken
 		}
