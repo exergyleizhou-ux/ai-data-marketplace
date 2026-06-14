@@ -59,7 +59,7 @@ func Load() (*Config, error) {
 		// No default JWT secret — in dev a random secret is generated on every
 		// start (tokens invalidate across restarts). For persistent tokens in
 		// dev, set JWT_SECRET explicitly. Production MUST set JWT_SECRET.
-		JWTSecret: getenv("JWT_SECRET", ""),
+		JWTSecret:     getenv("JWT_SECRET", ""),
 		JWTAccessTTL:  15 * time.Minute,
 		JWTRefreshTTL: 30 * 24 * time.Hour,
 
