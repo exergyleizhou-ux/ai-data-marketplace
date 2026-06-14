@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"log/slog"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -222,6 +223,28 @@ func (h *handler) adminReviewKYC(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, rec)
+}
+
+// revealIDNo returns a KYC submission's decrypted ID number for lawful retrieval.
+// Ops/admin-gated at the router; every successful reveal is audit-logged.
+func (h *handler) revealIDNo(c *gin.Context) {
+	kycID := c.Param("id")
+	idNo, err := h.svc.RevealIDNo(c.Request.Context(), kycID)
+	if err != nil {
+		if errors.Is(err, ErrIDNoNotEncrypted) {
+			httpx.Fail(c, httpx.ErrNotFound)
+			return
+		}
+		fail(c, err)
+		return
+	}
+	// Lawful-retrieval audit trail: who revealed whose ID number, when.
+	slog.Warn("pii_id_no_revealed",
+		"kyc_id", kycID,
+		"actor_id", httpx.UserID(c),
+		"request_id", httpx.RequestID(c),
+	)
+	httpx.OK(c, gin.H{"id_no": idNo})
 }
 
 // fail maps auth sentinel errors onto the uniform httpx error envelope.

@@ -53,7 +53,17 @@ func (s *Service) SubmitKYC(ctx context.Context, userID, kycType, realName, comp
 		CompanyName:  companyName,
 		MaterialURLs: materialURLs,
 	}
-	saved, err := s.repo.SubmitKYC(ctx, rec, s.hashIDNo(idNo))
+	// Store the ID number two ways: a blind index (HMAC) for dedup/equality, and
+	// reversible AES-GCM ciphertext for lawful retrieval. Raw value never stored.
+	var idNoCiphertext []byte
+	if idNo != "" {
+		ct, err := encryptIDNo(s.piiSecret, idNo, userID)
+		if err != nil {
+			return KYCRecord{}, fmt.Errorf("encrypt id_no: %w", err)
+		}
+		idNoCiphertext = ct
+	}
+	saved, err := s.repo.SubmitKYC(ctx, rec, s.hashIDNo(idNo), idNoCiphertext)
 	if err != nil {
 		return KYCRecord{}, err
 	}
@@ -91,6 +101,18 @@ func (s *Service) ReviewKYC(ctx context.Context, kycID string, approve bool, rev
 		status = kycVerified
 	}
 	return s.repo.ReviewKYC(ctx, kycID, status, reviewerID)
+}
+
+// RevealIDNo decrypts a KYC submission's raw ID number for lawful retrieval.
+// It is the ONLY path that returns plaintext. Authorization (ops/admin) is
+// enforced at the router (RequireRole); the handler MUST record an audit entry.
+// Returns ErrIDNoNotEncrypted when the record has no stored ciphertext.
+func (s *Service) RevealIDNo(ctx context.Context, kycID string) (string, error) {
+	blob, ownerID, err := s.repo.GetIDNoCiphertext(ctx, kycID)
+	if err != nil {
+		return "", err
+	}
+	return decryptIDNo(s.piiSecret, blob, ownerID)
 }
 
 // UpdateRole lets a user change their own role among buyer/seller/both

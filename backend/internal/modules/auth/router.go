@@ -66,4 +66,6 @@ func Register(rg *gin.RouterGroup, svc *Service, tm *TokenManager, limiter ratel
 	admin.Use(Middleware(tm), RequireRole(roleOps, roleAdmin))
 	admin.GET("/kyc/pending", h.adminListKYC)
 	admin.POST("/kyc/review", h.adminReviewKYC)
+	// Lawful retrieval of an applicant's raw ID number (decrypt + audit log).
+	admin.GET("/kyc/:id/id-no", h.revealIDNo)
 }

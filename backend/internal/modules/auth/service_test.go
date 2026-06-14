@@ -3,19 +3,21 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
 
 // fakeRepo is an in-memory Repository so the service can be tested without a DB.
 type fakeRepo struct {
-	byAccount map[string]userWithHash
-	byID      map[string]User
-	kyc       map[string]KYCRecord // by kyc id
-	payouts   map[string]string    // "userID|channel" -> account_ref
-	agrees    map[string][]Agreement
-	seq       int
-	kycSeq    int
+	byAccount  map[string]userWithHash
+	byID       map[string]User
+	kyc        map[string]KYCRecord // by kyc id
+	idNoCipher map[string]idNoBlob  // by kyc id -> encrypted id_no + owner
+	payouts    map[string]string    // "userID|channel" -> account_ref
+	agrees     map[string][]Agreement
+	seq        int
+	kycSeq     int
 	// 2FA + password reset stubs
 	totpSecrets   map[string]string
 	totpEnabled   map[string]bool
@@ -119,13 +121,30 @@ func (r *fakeRepo) UpdateUserRole(_ context.Context, id, role string) (User, err
 	return u, nil
 }
 
-func (r *fakeRepo) SubmitKYC(_ context.Context, rec KYCRecord, _ string) (KYCRecord, error) {
+func (r *fakeRepo) SubmitKYC(_ context.Context, rec KYCRecord, _ string, idNoCiphertext []byte) (KYCRecord, error) {
 	r.kycSeq++
 	rec.ID = "kyc-" + itoa(r.kycSeq)
 	rec.VerifyStatus = kycPending
 	r.kyc[rec.ID] = rec
+	if r.idNoCipher == nil {
+		r.idNoCipher = map[string]idNoBlob{}
+	}
+	r.idNoCipher[rec.ID] = idNoBlob{blob: idNoCiphertext, userID: rec.UserID}
 	r.setKYCStatus(rec.UserID, kycPending)
 	return rec, nil
+}
+
+type idNoBlob struct {
+	blob   []byte
+	userID string
+}
+
+func (r *fakeRepo) GetIDNoCiphertext(_ context.Context, kycID string) ([]byte, string, error) {
+	b, ok := r.idNoCipher[kycID]
+	if !ok {
+		return nil, "", ErrKYCNotFound
+	}
+	return b.blob, b.userID, nil
 }
 
 func (r *fakeRepo) GetLatestKYC(_ context.Context, userID string) (KYCRecord, error) {
@@ -489,3 +508,54 @@ func (r *fakeRepo) UpdatePassword(_ context.Context, userID, hash string) error 
 	return nil
 }
 func (r *fakeRepo) RevokeAllRefreshTokens(_ context.Context, _ string) error { return nil }
+
+func TestKYCIDNoEncryptRevealRoundTrip(t *testing.T) {
+	repo := newFakeRepo()
+	tm := NewTokenManager("test-secret", time.Minute, time.Hour)
+	svc := NewService(repo, tm, WithKYC(AutoApproveVerifier{}, "pii-secret"))
+	ctx := context.Background()
+	reg, _ := svc.Register(ctx, "kycenc@example.com", accountTypeEmail, "password123")
+
+	const idNo = "110101199001011234"
+	rec, err := svc.SubmitKYC(ctx, reg.User.ID, kycTypePersonal, "张三", "", idNo, []string{"oss://id.jpg"})
+	if err != nil {
+		t.Fatalf("submit kyc: %v", err)
+	}
+
+	// Stored ciphertext must not contain the plaintext.
+	blob, owner, _ := repo.GetIDNoCiphertext(ctx, rec.ID)
+	if len(blob) == 0 {
+		t.Fatal("no id_no ciphertext stored")
+	}
+	if strings.Contains(string(blob), idNo) {
+		t.Fatal("plaintext ID number leaked into stored ciphertext")
+	}
+	if owner != reg.User.ID {
+		t.Fatalf("ciphertext owner = %q, want %q", owner, reg.User.ID)
+	}
+
+	// Ops lawful retrieval returns the exact plaintext.
+	got, err := svc.RevealIDNo(ctx, rec.ID)
+	if err != nil {
+		t.Fatalf("reveal: %v", err)
+	}
+	if got != idNo {
+		t.Fatalf("reveal = %q, want %q", got, idNo)
+	}
+}
+
+func TestKYCCompanyHasNoIDNoToReveal(t *testing.T) {
+	repo := newFakeRepo()
+	tm := NewTokenManager("test-secret", time.Minute, time.Hour)
+	svc := NewService(repo, tm, WithKYC(AutoApproveVerifier{}, "pii-secret"))
+	ctx := context.Background()
+	reg, _ := svc.Register(ctx, "co@example.com", accountTypeEmail, "password123")
+
+	rec, err := svc.SubmitKYC(ctx, reg.User.ID, kycTypeCompany, "", "示例公司", "", []string{"oss://license.pdf"})
+	if err != nil {
+		t.Fatalf("submit company kyc: %v", err)
+	}
+	if _, err := svc.RevealIDNo(ctx, rec.ID); !errors.Is(err, ErrIDNoNotEncrypted) {
+		t.Fatalf("company reveal: got %v, want ErrIDNoNotEncrypted", err)
+	}
+}
