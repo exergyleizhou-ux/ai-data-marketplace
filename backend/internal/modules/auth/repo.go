@@ -28,8 +28,12 @@ type Repository interface {
 	UpdateUserRole(ctx context.Context, id, role string) (User, error)
 
 	// SubmitKYC inserts a KYC record and flips the user's kyc_status to pending
-	// atomically. idNoHash is the hashed ID number (raw value never persisted).
-	SubmitKYC(ctx context.Context, rec KYCRecord, idNoHash string) (KYCRecord, error)
+	// atomically. idNoHash is the HMAC blind index; idNoCiphertext is the
+	// AES-GCM blob (nil for company KYC). The raw ID number is never persisted.
+	SubmitKYC(ctx context.Context, rec KYCRecord, idNoHash string, idNoCiphertext []byte) (KYCRecord, error)
+	// GetIDNoCiphertext returns a record's encrypted ID number and owner id, for
+	// the ops-gated lawful-retrieval path. Empty blob when none is stored.
+	GetIDNoCiphertext(ctx context.Context, kycID string) (ciphertext []byte, userID string, err error)
 	// GetLatestKYC returns the user's most recent KYC submission.
 	GetLatestKYC(ctx context.Context, userID string) (KYCRecord, error)
 	// ReviewKYC sets a record's verify_status and syncs the owner's kyc_status,
@@ -149,7 +153,7 @@ func (r *pgRepo) UpdateUserRole(ctx context.Context, id, role string) (User, err
 	return u, nil
 }
 
-func (r *pgRepo) SubmitKYC(ctx context.Context, rec KYCRecord, idNoHash string) (KYCRecord, error) {
+func (r *pgRepo) SubmitKYC(ctx context.Context, rec KYCRecord, idNoHash string, idNoCiphertext []byte) (KYCRecord, error) {
 	materials, err := json.Marshal(rec.MaterialURLs)
 	if err != nil {
 		return KYCRecord{}, fmt.Errorf("marshal material urls: %w", err)
@@ -161,12 +165,12 @@ func (r *pgRepo) SubmitKYC(ctx context.Context, rec KYCRecord, idNoHash string) 
 	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
 
 	const insertKYC = `
-		INSERT INTO kyc_records (user_id, type, real_name, company_name, id_no_hash, material_urls, verify_status)
-		VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'pending')
+		INSERT INTO kyc_records (user_id, type, real_name, company_name, id_no_hash, id_no_ciphertext, material_urls, verify_status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'pending')
 		RETURNING id, verify_status`
 	var out KYCRecord
 	if err := tx.QueryRow(ctx, insertKYC,
-		rec.UserID, rec.Type, nullify(rec.RealName), nullify(rec.CompanyName), idNoHash, string(materials),
+		rec.UserID, rec.Type, nullify(rec.RealName), nullify(rec.CompanyName), idNoHash, idNoCiphertext, string(materials),
 	).Scan(&out.ID, &out.VerifyStatus); err != nil {
 		return KYCRecord{}, fmt.Errorf("insert kyc: %w", err)
 	}
@@ -186,6 +190,21 @@ func (r *pgRepo) SubmitKYC(ctx context.Context, rec KYCRecord, idNoHash string) 
 	out.CompanyName = rec.CompanyName
 	out.MaterialURLs = rec.MaterialURLs
 	return out, nil
+}
+
+func (r *pgRepo) GetIDNoCiphertext(ctx context.Context, kycID string) ([]byte, string, error) {
+	var blob []byte
+	var userID string
+	err := r.pool.QueryRow(ctx,
+		`SELECT id_no_ciphertext, user_id FROM kyc_records WHERE id = $1`, kycID,
+	).Scan(&blob, &userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, "", ErrKYCNotFound
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("get id_no ciphertext: %w", err)
+	}
+	return blob, userID, nil
 }
 
 func (r *pgRepo) GetLatestKYC(ctx context.Context, userID string) (KYCRecord, error) {
