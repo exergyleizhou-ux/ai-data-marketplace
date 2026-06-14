@@ -1400,6 +1400,15 @@ paths:
       responses:
         "200": { $ref: "#/components/schemas/Envelope" }
 
+  /admin/kyc/{id}/id-no:
+    get:
+      tags: [admin]
+      summary: Lawful retrieval of an applicant's raw ID number (decrypt + audit)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
   /admin/datasets:
     get:
       tags: [admin]
