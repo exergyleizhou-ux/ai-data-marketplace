@@ -1,5 +1,5 @@
-.PHONY: help up down logs backend-run backend-tidy backend-test frontend-dev frontend-build \
-        migrate-up migrate-down migrate-create
+.PHONY: help up down logs backend-run backend-tidy backend-test backend-test-integration \
+        frontend-dev frontend-build migrate-up migrate-down migrate-create
 
 # Override with your own DSN if needed.
 DATABASE_URL ?= postgres://app:app@localhost:5432/ai_data_marketplace?sslmode=disable
@@ -25,6 +25,9 @@ backend-tidy: ## Resolve/lock Go dependencies (generates go.sum)
 
 backend-test: ## Run backend tests
 	cd backend && go test ./...
+
+backend-test-integration: ## Run pg-backed concurrency integration tests (needs a real Postgres)
+	cd backend && TEST_DATABASE_URL="$(DATABASE_URL)" go test -tags=integration -run TestConcurrent ./...
 
 migrate-up: ## Apply all up migrations (needs `migrate` CLI: golang-migrate)
 	migrate -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" up

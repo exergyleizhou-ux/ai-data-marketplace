@@ -30,7 +30,9 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	// Authenticated routes (service enforces KYC + ownership).
 	authed := rg.Group("")
 	authed.Use(authMW)
-	authed.POST("/datasets", h.create)
+	authed.POST("/datasets",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "dataset-create", Limit: 20, Window: time.Minute}),
+		h.create)
 	authed.PUT("/datasets/:id", h.update)
 	authed.POST("/datasets/:id/source-declaration/sign", h.signSource)
 	authed.GET("/users/me/datasets", h.listMine) // separate path to avoid /datasets/:id conflict

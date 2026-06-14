@@ -1,0 +1,186 @@
+openapi: 3.0.3
+info:
+  title: AI Data Marketplace (绿洲) API
+  version: "1.0"
+  description: >
+    从 backend/internal/modules/*/router.go 的实际路由 + 中间件分组生成。
+    每个操作的 security 反映真实鉴权:无 security = 公开;bearerAuth = 需访问令牌;
+    路径含 /admin/ = ops/admin 角色。供 ember-scan 枚举端点与校验安全分类。
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Ok:
+      description: OK
+    Unauthorized:
+      description: Unauthorized
+    Forbidden:
+      description: Forbidden
+paths:
+  # ───────── auth ─────────
+  /auth/register:
+    post:
+      summary: 注册(公开,限流 5/min)
+      security: []
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /auth/login:
+    post:
+      summary: 登录(公开,限流 10/min)
+      security: []
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /auth/refresh:
+    post:
+      summary: 刷新令牌(公开)
+      security: []
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /users/me:
+    get:
+      summary: 当前用户
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+    put:
+      summary: 改角色(buyer/seller/both,白名单)
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /users/me/kyc:
+    post:
+      summary: 提交 KYC
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+    get:
+      summary: 查 KYC
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /admin/kyc/pending:
+    get:
+      summary: 待审 KYC(ops/admin)
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /admin/kyc/review:
+    post:
+      summary: 审核 KYC(ops/admin)
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+
+  # ───────── dataset ─────────
+  /datasets:
+    get:
+      summary: 列表(公开)
+      security: []
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+    post:
+      summary: 创建数据集
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /datasets/{id}:
+    get:
+      summary: 详情(公开)
+      security: []
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+    put:
+      summary: 更新数据集
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /datasets/{id}/preview:
+    get:
+      summary: 样例预览(需登录,限流 30/min,防爬)
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /datasets/{id}/source-declaration/sign:
+    post:
+      summary: 来源声明签署
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /users/me/datasets:
+    get:
+      summary: 我的数据集
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /datasets/{id}/upload/init:
+    post:
+      summary: 分片上传 init
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /datasets/{id}/upload/part:
+    put:
+      summary: 分片上传 part
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /datasets/{id}/upload/complete:
+    post:
+      summary: 分片上传 complete
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /datasets/{id}/upload/status:
+    get:
+      summary: 上传状态
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /admin/datasets:
+    get:
+      summary: ops 审核队列(ops/admin)
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /admin/datasets/{id}/review:
+    post:
+      summary: 审核数据集(ops/admin)
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /admin/datasets/{id}/delist:
+    post:
+      summary: 下架数据集(ops/admin)
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+
+  # ───────── delivery ─────────
+  /orders/{id}/download:
+    post:
+      summary: 申请下载(买家,签发一次性 token)
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /files/{token}:
+    get:
+      summary: 凭一次性 token 下载(公开,token 即凭证)
+      security: []
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+
+  # ───────── order ─────────
+  /orders:
+    post:
+      summary: 下单
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+    get:
+      summary: 我的订单
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /orders/{id}:
+    get:
+      summary: 订单详情(service 校验 party)
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /orders/{id}/confirm-delivery:
+    post:
+      summary: 确认交付
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /orders/{id}/dispute:
+    post:
+      summary: 发起纠纷
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /orders/{id}/review:
+    post:
+      summary: 评价订单
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /sellers/me/earnings:
+    get:
+      summary: 卖家收益
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /datasets/{id}/reviews:
+    get:
+      summary: 数据集评价(公开)
+      security: []
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /admin/transactions:
+    get:
+      summary: 全部交易(ops/admin)
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /admin/orders/{id}/resolve:
+    post:
+      summary: 裁决纠纷(ops/admin)
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+
+  # ───────── payment ─────────
+  /payments/create:
+    post:
+      summary: 创建支付(买家)
+      responses: { '200': { $ref: '#/components/responses/Ok' } }
+  /payments/webhook/{channel}:
+    post:
+      summary: 支付回调(公开,服务内验签)
+      security: []
+      responses: { '200': { $ref: '#/components/responses/Ok' } }

@@ -55,6 +55,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 	// metrics times the whole handler stack.
 	engine.Use(
 		middleware.CORS(cfg.CORSAllowOrigin),
+		middleware.SecurityHeaders(),
 		middleware.RequestID(),
 		metrics.Middleware(),
 		middleware.Logger(),
@@ -211,7 +212,7 @@ func (s *Server) routes() {
 		dataset.Register(api, dsSvc, authMW, auth.RequireRole("ops", "admin"), lim)
 
 		orderSvc := order.NewService(order.NewRepository(s.db), authSvc, datasetPurchaseAdapter{ds: dsSvc}, rec)
-		order.Register(api, orderSvc, authMW, auth.RequireRole("ops", "admin"))
+		order.Register(api, orderSvc, authMW, auth.RequireRole("ops", "admin"), lim)
 
 		// Payment + split-settlement provider selection.
 		//  - stripe: REAL Stripe Connect (test mode = free). Separate charges &
@@ -236,7 +237,7 @@ func (s *Server) routes() {
 		// H3: durable settlement — outbox + PG advisory lock + retry worker.
 		paySvc.StartSettlementOutbox(payment.NewOutboxRepository(s.db), payment.NewPGLocker(s.db))
 		s.closers = append(s.closers, paySvc.Close)
-		payment.Register(api, paySvc, authMW, s.cfg.Env != "production")
+		payment.Register(api, paySvc, authMW, lim, s.cfg.Env != "production")
 		orderSvc.SetSettlementTrigger(paySvc) // confirm-delivery -> auto settle
 		orderSvc.SetRefundTrigger(paySvc)     // dispute refund -> provider refund + reversal (H2)
 

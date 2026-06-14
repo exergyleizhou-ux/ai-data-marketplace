@@ -12,14 +12,11 @@ import (
 // set a specific origin in production.
 func CORS(allowedOrigin string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		origin := allowedOrigin
-		if allowedOrigin != "*" {
-			// Reflect only when the request origin matches the allowlist.
-			if reqOrigin := c.GetHeader("Origin"); reqOrigin != allowedOrigin {
-				origin = allowedOrigin
-			}
-		}
-		c.Header("Access-Control-Allow-Origin", origin)
+		// Bearer-token auth (no cookies) → return the configured origin directly.
+		// We never reflect the request's Origin, so an attacker page can't get
+		// itself allowlisted. "*" allows any (dev only); set a specific origin
+		// in production.
+		c.Header("Access-Control-Allow-Origin", allowedOrigin)
 		c.Header("Vary", "Origin")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID, X-Signature, Idempotency-Key")
