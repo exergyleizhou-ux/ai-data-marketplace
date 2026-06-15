@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useT } from "@/lib/i18n";
+import { ComputeFlowDiagram } from "@/components/ComputeFlowDiagram";
 
 type Tier = {
   tag: string;
@@ -75,6 +76,10 @@ export default function TrustPage() {
             "Our signature is available-but-invisible data. But privacy guarantees shouldn't rest on slogans — below is an honest account of what each tier really guarantees today, what's still missing, and how any third party can independently verify a computation's result.",
           )}
         </p>
+      </section>
+
+      <section className="rounded-xl border border-neutral-200 bg-white p-6">
+        <ComputeFlowDiagram />
       </section>
 
       <section className="space-y-5">
