@@ -147,6 +147,7 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
             <Input type="number" step="0.01" min="0" value={price} onChange={(e) => setPrice(e.target.value)} />
           </Field>
         </div>
+        <EarningsSimulator price={price} />
         <Field label={t("领域标签（可选）", "Domain tag (optional)")}>
           <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder={t("如 medical / finance / general", "e.g. medical / finance / general")} />
         </Field>
@@ -308,5 +309,40 @@ function DatasetRow({ d, onChange }: { d: Dataset; onChange: () => void }) {
         </div>
       )}
     </Card>
+  );
+}
+
+// PLATFORM_FEE_BPS mirrors backend order/model.go (10% = 1000 bps); seller nets 90%.
+const PLATFORM_FEE_BPS = 1000;
+
+// EarningsSimulator shows the seller their take-home at the pricing decision
+// point: buyer-pays / platform fee / net, with floor rounding matching the backend.
+function EarningsSimulator({ price }: { price: string }) {
+  const { t } = useT();
+  const cents = Math.round((parseFloat(price) || 0) * 100);
+  if (cents <= 0) return null;
+  const fee = Math.floor((cents * PLATFORM_FEE_BPS) / 10000);
+  const net = cents - fee;
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+      <div className="text-sm font-medium text-neutral-700">{t("到手测算", "Take-home estimate")}</div>
+      <div className="mt-2 grid grid-cols-3 gap-2 text-center text-sm">
+        <div>
+          <div className="text-xs text-neutral-400">{t("买家支付", "Buyer pays")}</div>
+          <div className="font-semibold">{yuan(cents)}</div>
+        </div>
+        <div>
+          <div className="text-xs text-neutral-400">{t("平台手续费 10%", "Platform fee 10%")}</div>
+          <div className="font-semibold text-neutral-500">−{yuan(fee)}</div>
+        </div>
+        <div>
+          <div className="text-xs text-neutral-400">{t("你到手", "You receive")}</div>
+          <div className="font-semibold text-emerald-700">{yuan(net)}</div>
+        </div>
+      </div>
+      <div className="mt-2 text-xs text-neutral-400">
+        {t(`每卖出 10 份累计到手约 ${yuan(net * 10)}`, `~${yuan(net * 10)} for every 10 sales`)}
+      </div>
+    </div>
   );
 }
