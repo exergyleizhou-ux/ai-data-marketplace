@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { BRAND } from "@/lib/brand";
-import { useT, LangToggle } from "@/lib/i18n";
+import { useT, LangToggle, kycLabel } from "@/lib/i18n";
 import { api } from "@/lib/api";
 import { Badge } from "./ui";
 
@@ -89,7 +89,7 @@ export function Nav() {
               </Link>
               <Link href="/account" className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900">
                 <span className="max-w-[10rem] truncate">{user.account}</span>
-                <Badge>{user.kyc_status}</Badge>
+                <Badge>{kycLabel(user.kyc_status, t)}</Badge>
               </Link>
               <button
                 onClick={() => {

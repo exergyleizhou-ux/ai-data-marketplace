@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, yuan, type KYC, type EarningsPoint, type EarningsByDataset, type Watch, type DataExportJob } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { useT } from "@/lib/i18n";
+import { useT, kycLabel } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
-import { FederatedComputePanel, PSIComputePanel } from "@/components/Compute";
 import Link from "next/link";
 import { MiniChart } from "@/components/MiniChart";
 import { Alert, Badge, Button, Card, Field, Input, Select, Spinner } from "@/components/ui";
@@ -87,7 +86,7 @@ function AccountInner() {
           </div>
           <div className="text-right">
             <div className="text-sm text-neutral-500">{t("实名状态", "Verification")}</div>
-            <Badge>{user.kyc_status}</Badge>
+            <Badge>{kycLabel(user.kyc_status, t)}</Badge>
           </div>
         </div>
         <div className="mt-4 border-t border-neutral-100 pt-4">
@@ -153,9 +152,8 @@ function AccountInner() {
       <NotificationPreferencesCard />
 
       <DataRightsCard />
-
-      <FederatedComputePanel />
-      <PSIComputePanel />
+      {/* FederatedComputePanel / PSIComputePanel were moved to /compute (the
+          privacy-compute hub) so each capability has exactly one home. */}
     </div>
   );
 }
