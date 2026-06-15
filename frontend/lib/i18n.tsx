@@ -79,3 +79,22 @@ export function LangToggle({ className = "" }: { className?: string }) {
     </button>
   );
 }
+
+// kycLabel maps the API's raw kyc_status enum to a localized chip label so the
+// Nav badge / account header don't show the API token (e.g. "verified") inside a
+// Chinese-language UI.
+export function kycLabel(status: string, t: (zh: string, en: string) => string): string {
+  switch (status) {
+    case "verified":
+      return t("已实名", "verified");
+    case "pending":
+      return t("审核中", "pending");
+    case "rejected":
+      return t("已驳回", "rejected");
+    case "unverified":
+    case "":
+      return t("未实名", "unverified");
+    default:
+      return status;
+  }
+}
