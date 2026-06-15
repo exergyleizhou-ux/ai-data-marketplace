@@ -98,12 +98,15 @@ func (FedAvgAggregator) Aggregate(partials []Partial) ([]byte, error) {
 // party's real params — closing the "platform sees each party's params" gap of
 // plaintext FedAvg, while producing the IDENTICAL joint model.
 //
-// 诚实边界 (honest scope, 阶段1): this is the aggregation math only. It assumes
-// the parties already hold pairwise masks that cancel. Generating those masks
-// SECURELY inside each sandbox (a key-agreement round) and recovering from
-// dropouts are 阶段2/3 — until then this aggregator is a verified building block,
-// not yet wired into a user-facing "secure" path (that would be a façade without
-// real in-sandbox masking). See docs/superpowers/specs/2026-06-04-direction-c-*.
+// 诚实边界 (honest scope): this type is the aggregation math. The pairwise masks
+// it consumes are now produced by REAL key agreement — see secagg.go (secAggParty),
+// where each party derives masks from ECDH shared secrets so the aggregator never
+// sees a single party's params. What remains for a production "secure" path:
+//   - run the ECDH key agreement INSIDE each sandbox so the platform cannot MITM it
+//     (orchestration wiring — until then secAggParty is a verified primitive);
+//   - fixed-point modular arithmetic for exact (not ~1e-9) cancellation;
+//   - dropout recovery via Shamir shares of the masks (阶段3).
+// See docs/superpowers/specs/2026-06-04-direction-c-*.
 type MaskedSumAggregator struct{}
 
 // Kind identifies the aggregator in audit/metrics.
