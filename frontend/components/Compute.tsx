@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   api,
@@ -951,6 +952,183 @@ export function PSIComputePanel() {
           "Honest note: this is a mock orchestrator — the platform sees each party's set during intersection (not cryptographically private). Real PSI (Secretflow/SPU, platform orchestrates without holding plaintext) is planned.",
         )}
       </p>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hub: the buyer's active compute entitlements across all datasets (算力权益).
+// ---------------------------------------------------------------------------
+function useDatasetNames() {
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  const resolve = useCallback(async (ids: string[]) => {
+    const unique = [...new Set(ids)];
+    const settled = await Promise.allSettled(unique.map((id) => api.getDataset(id)));
+    setNames((prev) => {
+      const next = new Map(prev);
+      settled.forEach((r, i) => {
+        if (r.status === "fulfilled" && r.value.title) next.set(unique[i], r.value.title);
+      });
+      return next;
+    });
+  }, []);
+  const name = useCallback((id: string) => names.get(id) || id.slice(0, 8), [names]);
+  return { name, resolve };
+}
+
+export function MyEntitlementsPanel() {
+  const { user } = useAuth();
+  const { t } = useT();
+  const [ents, setEnts] = useState<ComputeEntitlement[] | null>(null);
+  const { name, resolve } = useDatasetNames();
+
+  useEffect(() => {
+    if (!user) return;
+    api
+      .listMyComputeEntitlements()
+      .then((r) => {
+        const active = r.items.filter((e) => e.status === "active");
+        setEnts(active);
+        void resolve(active.map((e) => e.dataset_id));
+      })
+      .catch(() => setEnts([]));
+  }, [user, resolve]);
+
+  return (
+    <Card>
+      <h2 className="text-lg font-semibold">{t("我的算力权益", "My compute entitlements")}</h2>
+      <p className="mt-1 text-sm text-neutral-500">
+        {t(
+          "你购买的每份计算权益含若干次作业额度。额度用尽后可在数据集页重新购买。",
+          "Each entitlement you buy includes several job credits. Buy again on the dataset page when used up.",
+        )}
+      </p>
+      {ents === null ? (
+        <p className="mt-3 text-sm text-neutral-400">{t("加载中…", "Loading…")}</p>
+      ) : ents.length === 0 ? (
+        <Alert kind="info">
+          {t(
+            "你还没有任何计算权益。去数据集详情页的「沙箱计算」区块购买,即可发起计算 / 联邦 / PSI 作业。",
+            "You have no compute entitlements yet. Buy one in the “Sandbox Compute” block on a dataset page to run compute / federated / PSI jobs.",
+          )}
+        </Alert>
+      ) : (
+        <ul className="mt-3 divide-y divide-neutral-100">
+          {ents.map((e) => {
+            const remaining = Math.max(e.jobs_quota - e.jobs_used, 0);
+            return (
+              <li key={e.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                <Link href={`/datasets/${e.dataset_id}`} className="truncate font-medium text-neutral-800 hover:underline">
+                  {name(e.dataset_id)}
+                </Link>
+                <span className="shrink-0 text-xs text-neutral-400">
+                  {t(`剩余 ${remaining} / ${e.jobs_quota} 次`, `${remaining} / ${e.jobs_quota} runs left`)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hub: all of the buyer's regular sandbox-compute jobs across every dataset
+// (计算作业). One place to track status, download outputs, and view provenance.
+// ---------------------------------------------------------------------------
+export function MyComputeJobsPanel() {
+  const { user } = useAuth();
+  const { t } = useT();
+  const [jobs, setJobs] = useState<ComputeJob[] | null>(null);
+  const [err, setErr] = useState("");
+  const { name, resolve } = useDatasetNames();
+
+  const refresh = useCallback(async () => {
+    if (!user) return;
+    try {
+      const r = await api.listMyComputeJobs();
+      setJobs(r.items);
+      void resolve(r.items.map((j) => j.dataset_id));
+    } catch {
+      setJobs([]);
+    }
+  }, [user, resolve]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const hasPending = (jobs ?? []).some((j) => !TERMINAL.has(j.status));
+  useEffect(() => {
+    if (!hasPending) return;
+    const iv = setInterval(() => void refresh(), 1800);
+    return () => clearInterval(iv);
+  }, [hasPending, refresh]);
+
+  async function download(jobId: string) {
+    setErr("");
+    try {
+      await api.downloadComputeOutput(jobId);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="text-lg font-semibold">{t("我的计算作业", "My compute jobs")}</h2>
+      <p className="mt-1 text-sm text-neutral-500">
+        {t(
+          "你在各数据集沙箱内发起的常规计算作业。完成后可下载结果(模型 / 指标)并查看存证。",
+          "Regular sandbox-compute jobs you started across datasets. Download the result (model / metrics) and view its provenance once released.",
+        )}
+      </p>
+      {err && (
+        <div className="mt-3">
+          <Alert>{err}</Alert>
+        </div>
+      )}
+      {jobs === null ? (
+        <p className="mt-3 text-sm text-neutral-400">{t("加载中…", "Loading…")}</p>
+      ) : jobs.length === 0 ? (
+        <Alert kind="info">
+          {t(
+            "暂无计算作业。在数据集详情页购买计算权益并选择算法即可发起。",
+            "No compute jobs yet. Buy an entitlement on a dataset page and pick an algorithm to start one.",
+          )}
+        </Alert>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {jobs.map((j) => (
+            <li key={j.id} className="flex items-center justify-between gap-2 text-sm">
+              <div className="min-w-0">
+                <Link href={`/datasets/${j.dataset_id}`} className="font-medium text-neutral-800 hover:underline">
+                  {name(j.dataset_id)}
+                </Link>{" "}
+                <span className="font-mono text-xs text-neutral-400">{j.id.slice(0, 8)}</span>{" "}
+                <Badge>{j.status}</Badge>
+                {j.error && <span className="ml-1 text-xs text-red-500">{j.error}</span>}
+                {j.status === "released" && <AttestationChip jobId={j.id} />}
+              </div>
+              {j.status === "released" ? (
+                <div className="flex shrink-0 items-center gap-2">
+                  <JobCertificate jobId={j.id} />
+                  <Button variant="secondary" onClick={() => void download(j.id)}>
+                    {t("下载输出", "Download output")}
+                  </Button>
+                </div>
+              ) : TERMINAL.has(j.status) ? (
+                <span className="text-xs text-neutral-400">—</span>
+              ) : j.status === "output_reviewing" ? (
+                <span className="text-xs text-amber-600">{t("运营审核中…", "Under review…")}</span>
+              ) : (
+                <span className="text-xs text-neutral-400">{t("运行中…", "Running…")}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }

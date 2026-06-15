@@ -19,6 +19,10 @@ export function SiteFooter() {
         <Link href="/privacy" className="hover:underline">
           {t("隐私政策", "Privacy Policy")}
         </Link>
+        <span className="mx-2">·</span>
+        <Link href="/verify" className="hover:underline">
+          {t("存证验真", "Verify certificate")}
+        </Link>
       </p>
     </footer>
   );
