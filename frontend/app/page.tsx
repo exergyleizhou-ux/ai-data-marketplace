@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { BRAND } from "@/lib/brand";
 import { useT } from "@/lib/i18n";
+import { ComputeFlowDiagram } from "@/components/ComputeFlowDiagram";
 
 export default function Home() {
   const { t } = useT();
@@ -74,32 +75,10 @@ export default function Home() {
           )}
         </p>
 
-        {/* How it works — the magic is counterintuitive, so show the 3 steps. */}
-        <ol className="mt-5 grid gap-3 md:grid-cols-3">
-          {[
-            {
-              n: "1",
-              h: t("数据进沙箱", "Data enters the sandbox"),
-              d: t("原始数据留在卖家域内的隔离沙箱，从不下载、不外传。", "Raw data stays in an isolated sandbox in the seller's domain — never downloaded, never shipped."),
-            },
-            {
-              n: "2",
-              h: t("算法跑在数据旁", "Algorithm runs next to the data"),
-              d: t("买方选经审核的算法，在沙箱内对数据训练 / 统计。", "The buyer picks a reviewed algorithm; it trains / computes against the data inside the sandbox."),
-            },
-            {
-              n: "3",
-              h: t("只出结果 + 存证", "Only the result leaves — with a certificate"),
-              d: t("买方取走模型 / 指标(可加 DP 噪声)，输出绑定算法镜像 digest，可验真。", "The buyer takes the model / metrics (optionally DP-noised); the output is bound to the algorithm image digest and verifiable."),
-            },
-          ].map((s) => (
-            <li key={s.n} className="rounded-lg border border-emerald-200 bg-white/70 p-4">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">{s.n}</div>
-              <div className="mt-2 text-sm font-semibold text-emerald-900">{s.h}</div>
-              <p className="mt-1 text-xs leading-relaxed text-emerald-800">{s.d}</p>
-            </li>
-          ))}
-        </ol>
+        {/* How it works — the flow is counterintuitive, so show it visually. */}
+        <div className="mt-5 rounded-lg border border-emerald-200 bg-white/70 p-4">
+          <ComputeFlowDiagram />
+        </div>
 
         <p className="mt-4 text-xs leading-relaxed text-emerald-700">
           {t(
