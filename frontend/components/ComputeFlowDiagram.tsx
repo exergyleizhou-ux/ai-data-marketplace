@@ -9,18 +9,23 @@ import { useT } from "@/lib/i18n";
 export function ComputeFlowDiagram() {
   const { t } = useT();
   return (
-    // overflow-x-auto + min-width keeps the labels legible on mobile (the diagram
-    // scrolls horizontally) instead of shrinking the text to an unreadable size.
+    // overflow-x-auto on the wrapper + fixed SVG width = real horizontal scroll on
+    // mobile (labels stay legible). On desktop the inner div is wider than 720
+    // anyway so it sits centered.
     <div className="overflow-x-auto">
     <svg
       viewBox="0 0 720 250"
-      width="100%"
+      width="720"
+      height="250"
       role="img"
       aria-label={t(
         "可用不可见沙箱计算流程:数据留在卖家域,算法在数据旁运行,买家只取结果",
         "Available-but-invisible flow: data stays with the seller, the algorithm runs next to it, the buyer takes only the result",
       )}
-      className="mx-auto block min-w-[600px] max-w-[720px]"
+      // No max-w-full: the wrapper above is overflow-x-auto, so we WANT the SVG
+      // to keep its intrinsic 720px and let the wrapper scroll on narrow screens.
+      // mx-auto centers it on desktop where the wrapper is wider than 720.
+      className="mx-auto block"
     >
       <defs>
         <marker id="cfd-arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">

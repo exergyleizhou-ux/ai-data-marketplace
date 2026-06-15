@@ -101,12 +101,22 @@ export function Alert({ kind = "error", children }: { kind?: "error" | "success"
   return <div className={`rounded-md border px-3 py-2 text-sm ${cls}`}>{children}</div>;
 }
 
-export function Spinner({ label = "加载中…" }: { label?: string }) {
+// Default label intentionally stays bilingual so callers that omit `label`
+// (e.g. <Spinner />) still respect the active language. Pass an explicit string
+// when you want a fixed-language label.
+function defaultSpinnerLabel() {
+  if (typeof navigator !== "undefined" && navigator.language && navigator.language.toLowerCase().startsWith("zh")) {
+    return "加载中…";
+  }
+  return "Loading…";
+}
+export function Spinner({ label }: { label?: string }) {
+  const text = label ?? defaultSpinnerLabel();
   // role=status + aria-busy so screen readers announce the loading state.
   // Callers pass a localized label (Spinner stays provider-agnostic).
   return (
-    <div role="status" aria-busy="true" aria-label={label} className="py-10 text-center text-sm text-neutral-400">
-      {label}
+    <div role="status" aria-busy="true" aria-label={text} className="py-10 text-center text-sm text-neutral-400">
+      {text}
     </div>
   );
 }
