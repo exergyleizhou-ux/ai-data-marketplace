@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { useBackoffPoll } from "@/lib/usePoll";
 import { Alert, Badge, Button, Card, Field, Input, Select } from "@/components/ui";
 
 const TERMINAL = new Set(["released", "failed", "rejected", "canceled"]);
@@ -95,11 +96,7 @@ export function ComputeBuyer({ datasetId, sellerId }: { datasetId: string; selle
 
   // Poll while any job is still in flight.
   const hasPending = jobs.some((j) => !TERMINAL.has(j.status));
-  useEffect(() => {
-    if (!hasPending) return;
-    const t = setInterval(() => void refreshJobs(), 1500);
-    return () => clearInterval(t);
-  }, [hasPending, refreshJobs]);
+  useBackoffPoll(hasPending, () => void refreshJobs());
 
   // Real purchase: create a compute order and go to the payment page. After
   // paying, the entitlement is granted server-side and appears via refreshEnt.
@@ -485,11 +482,7 @@ export function FederatedComputePanel() {
   }, [picked]);
 
   const hasPending = feds.some((f) => !TERMINAL.has(f.status));
-  useEffect(() => {
-    if (!hasPending) return;
-    const iv = setInterval(() => void refreshFeds(), 1800);
-    return () => clearInterval(iv);
-  }, [hasPending, refreshFeds]);
+  useBackoffPoll(hasPending, () => void refreshFeds());
 
   if (!user) return null;
 
@@ -790,11 +783,7 @@ export function PSIComputePanel() {
   }, [picked]);
 
   const hasPending = jobs.some((j) => !TERMINAL.has(j.status));
-  useEffect(() => {
-    if (!hasPending) return;
-    const iv = setInterval(() => void refreshJobs(), 1800);
-    return () => clearInterval(iv);
-  }, [hasPending, refreshJobs]);
+  useBackoffPoll(hasPending, () => void refreshJobs());
 
   if (!user) return null;
 
@@ -1084,11 +1073,7 @@ export function MyComputeJobsPanel() {
   }, [refresh]);
 
   const hasPending = (jobs ?? []).some((j) => !TERMINAL.has(j.status));
-  useEffect(() => {
-    if (!hasPending) return;
-    const iv = setInterval(() => void refresh(), 1800);
-    return () => clearInterval(iv);
-  }, [hasPending, refresh]);
+  useBackoffPoll(hasPending, () => void refresh());
 
   async function download(jobId: string) {
     setErr("");
