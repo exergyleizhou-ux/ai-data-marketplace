@@ -24,42 +24,58 @@ export function Nav() {
   const router = useRouter();
   const isOps = user?.role === "ops" || user?.role === "admin";
   const [unread, setUnread] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     api.countUnreadNotifications().then((r) => setUnread(r.unread)).catch(() => {});
   }, [user]);
 
+  // Close menu on route change.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  const visibleLinks = LINKS.filter((l) => !l.auth || user);
+  const linkClass = (href: string) =>
+    `rounded-md px-3 py-1.5 text-sm ${
+      pathname.startsWith(href) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-600 hover:bg-neutral-50"
+    }`;
+
   return (
     <header className="sticky top-0 z-10 border-b border-neutral-200 bg-white/80 backdrop-blur">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4">
-        <Link href="/" className="font-semibold tracking-tight">
-          {BRAND.nameEn} <span className="text-neutral-400">{BRAND.nameZh}</span>
+      <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:gap-6">
+        {/* Hamburger (mobile only): toggles the link drawer below. */}
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-label={t("菜单", "Menu")}
+          aria-expanded={menuOpen}
+          className="sm:hidden -ml-1 inline-flex h-9 w-9 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            {menuOpen ? <path d="M18 6L6 18M6 6l12 12" /> : <><path d="M3 6h18" /><path d="M3 12h18" /><path d="M3 18h18" /></>}
+          </svg>
+        </button>
+        <Link href="/" className="font-semibold tracking-tight whitespace-nowrap">
+          {BRAND.nameEn} <span className="text-neutral-400 hidden sm:inline">{BRAND.nameZh}</span>
         </Link>
-        <nav className="flex flex-1 items-center gap-1">
-          {LINKS.filter((l) => !l.auth || user).map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={`rounded-md px-3 py-1.5 text-sm ${
-                pathname.startsWith(l.href) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
+        {/* Desktop links */}
+        <nav className="hidden flex-1 items-center gap-1 sm:flex">
+          {visibleLinks.map((l) => (
+            <Link key={l.href} href={l.href} className={linkClass(l.href)}>
               {t(l.zh, l.en)}
             </Link>
           ))}
           {isOps && (
-            <Link
-              href="/admin"
-              className={`rounded-md px-3 py-1.5 text-sm ${
-                pathname.startsWith("/admin") ? "bg-neutral-100 font-medium" : "text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
+            <Link href="/admin" className={linkClass("/admin")}>
               {t("运营后台", "Ops")}
             </Link>
           )}
         </nav>
-        <div className="flex items-center gap-3 text-sm">
+        {/* Spacer keeps right cluster pinned on mobile (where nav above is hidden). */}
+        <div className="flex-1 sm:hidden" />
+        <div className="flex items-center gap-2 text-sm sm:gap-3">
           <LangToggle />
           {loading ? null : user ? (
             <>
@@ -87,8 +103,9 @@ export function Nav() {
                   </span>
                 )}
               </Link>
+              {/* Account: show email on desktop, only the kyc badge on mobile. */}
               <Link href="/account" className="flex items-center gap-2 text-neutral-700 hover:text-neutral-900">
-                <span className="max-w-[10rem] truncate">{user.account}</span>
+                <span className="hidden max-w-[10rem] truncate sm:inline">{user.account}</span>
                 <Badge>{kycLabel(user.kyc_status, t)}</Badge>
               </Link>
               <button
@@ -96,23 +113,40 @@ export function Nav() {
                   logout();
                   router.push("/");
                 }}
-                className="text-neutral-500 hover:text-neutral-900"
+                className="text-neutral-500 hover:text-neutral-900 whitespace-nowrap"
               >
                 {t("退出", "Sign out")}
               </button>
             </>
           ) : (
             <>
-              <Link href="/login" className="text-neutral-600 hover:text-neutral-900">
+              <Link href="/login" className="text-neutral-600 hover:text-neutral-900 whitespace-nowrap">
                 {t("登录", "Sign in")}
               </Link>
-              <Link href="/register" className="rounded-md bg-neutral-900 px-3 py-1.5 text-white hover:bg-neutral-700">
+              <Link href="/register" className="rounded-md bg-neutral-900 px-3 py-1.5 text-white hover:bg-neutral-700 whitespace-nowrap">
                 {t("注册", "Sign up")}
               </Link>
             </>
           )}
         </div>
       </div>
+      {/* Mobile drawer: shows when hamburger is open, hidden on sm+. */}
+      {menuOpen && (
+        <div className="border-t border-neutral-200 bg-white px-4 py-2 sm:hidden">
+          <nav className="flex flex-col gap-1">
+            {visibleLinks.map((l) => (
+              <Link key={l.href} href={l.href} className={linkClass(l.href)}>
+                {t(l.zh, l.en)}
+              </Link>
+            ))}
+            {isOps && (
+              <Link href="/admin" className={linkClass("/admin")}>
+                {t("运营后台", "Ops")}
+              </Link>
+            )}
+          </nav>
+        </div>
+      )}
     </header>
   );
 }
