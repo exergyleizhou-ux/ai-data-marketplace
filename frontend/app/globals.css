@@ -2,16 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/* See DESIGN.md. The site reads like a printed page, not a screen:
+   warm off-white paper, near-black ink, generous body line-height.
+   Display = Instrument Serif (editorial). Body = Geist (precise).
+   Mono = Geist Mono (proof points: certificate IDs, hashes, counts). */
 :root {
-  --background: #ffffff;
-  --foreground: #0a0a0a;
+  --background: #fafaf7;
+  --foreground: #18181b;
 }
 
 html {
   color-scheme: light;
+  font-family: var(--font-body);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  font-feature-settings: "cv11", "ss01"; /* Geist single-storey a + tighter punctuation */
 }
+
+/* Tabular numbers everywhere by default for data alignment — Geist supports them.
+   This means prices, counts, percentiles, IDs all line up without manual classes. */
+[class*="mono"], code, kbd, samp, pre {
+  font-feature-settings: "tnum" 1, "ss06" 1;
+}
+
+/* Slight reading-rhythm bump on long-form prose. */
+.prose-paper p { line-height: 1.7; }
+
+/* Subtle dotted underline that's visually quieter than the default underline,
+   used for inline tooltip cues without screaming for attention. */
+.cue-underline { text-decoration: underline dotted; text-underline-offset: 4px; text-decoration-color: rgb(212 211 207); }
