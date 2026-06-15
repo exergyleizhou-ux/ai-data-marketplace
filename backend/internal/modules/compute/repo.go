@@ -23,6 +23,7 @@ type Repository interface {
 	GetAlgorithm(ctx context.Context, id string) (Algorithm, error)
 	ListApprovedAlgorithms(ctx context.Context) ([]Algorithm, error)
 	ListAlgorithmsByStatus(ctx context.Context, status string, limit int) ([]Algorithm, error)
+	ListAlgorithmsByOwner(ctx context.Context, ownerID string) ([]Algorithm, error)
 	ReviewAlgorithm(ctx context.Context, id, status string, trusted bool) (Algorithm, error)
 
 	// offers
@@ -193,6 +194,25 @@ func (r *pgRepo) ListApprovedAlgorithms(ctx context.Context) ([]Algorithm, error
 	rows, err := r.pool.Query(ctx, `SELECT `+algoCols+` FROM algorithms WHERE status=$1 ORDER BY name`, AlgoApproved)
 	if err != nil {
 		return nil, fmt.Errorf("list algorithms: %w", err)
+	}
+	defer rows.Close()
+	var out []Algorithm
+	for rows.Next() {
+		a, err := scanAlgo(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// ListAlgorithmsByOwner returns the algorithms a user submitted (any status),
+// newest first, so requesters can track review progress.
+func (r *pgRepo) ListAlgorithmsByOwner(ctx context.Context, ownerID string) ([]Algorithm, error) {
+	rows, err := r.pool.Query(ctx, `SELECT `+algoCols+` FROM algorithms WHERE owner_id=$1::uuid ORDER BY created_at DESC`, ownerID)
+	if err != nil {
+		return nil, fmt.Errorf("list algorithms by owner: %w", err)
 	}
 	defer rows.Close()
 	var out []Algorithm

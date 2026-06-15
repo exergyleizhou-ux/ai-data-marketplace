@@ -48,6 +48,12 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	buyer.GET("/users/me/compute/federated-jobs", h.listMyFederated)
 	buyer.GET("/users/me/compute/jobs", h.listMyJobs)
 	buyer.GET("/users/me/compute/entitlements", h.listMyEntitlements)
+	// Custom-algorithm submission: forced pending + untrusted (never runnable
+	// until ops approve), rate-limited to deter registry spam.
+	buyer.POST("/compute/algorithm-requests",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "algo_request", Limit: 5, Window: time.Minute}),
+		h.requestAlgorithm)
+	buyer.GET("/users/me/compute/algorithm-requests", h.listMyAlgorithmRequests)
 	// Real purchase: create a compute order, then pay it via the payment flow.
 	buyer.POST("/datasets/:id/compute/order",
 		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "compute_order", Limit: 10, Window: time.Minute}),

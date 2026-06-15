@@ -238,6 +238,38 @@ func (s *Service) RegisterAlgorithm(ctx context.Context, a Algorithm) (Algorithm
 	return s.repo.RegisterAlgorithm(ctx, a)
 }
 
+// RequestAlgorithm lets an authenticated (KYC-gated) buyer or seller submit a
+// custom algorithm for ops review. It is the SAFE submission path: the request is
+// forced to pending + untrusted and attributed to the requester, so it can never
+// run until ops approve it (SubmitJob requires AlgoApproved). A requester cannot
+// self-approve, self-declare trust, or spoof ownership — this only feeds the
+// existing review queue, it does not widen the run-gate.
+func (s *Service) RequestAlgorithm(ctx context.Context, requesterID string, a Algorithm) (Algorithm, error) {
+	if requesterID == "" {
+		return Algorithm{}, fmt.Errorf("%w: requester required", ErrValidation)
+	}
+	a.OwnerID = requesterID // attribute to the requester (not a platform built-in)
+	a.Trusted = false       // a requester cannot self-declare trust
+	a.Status = AlgoPending  // never runnable until ops approve
+	out, err := s.RegisterAlgorithm(ctx, a)
+	if err != nil {
+		return Algorithm{}, err
+	}
+	s.audit.Record(ctx, audit.Entry{ActorID: requesterID, Action: "compute.algorithm.request",
+		ResourceType: "algorithm", ResourceID: out.ID,
+		Detail: map[string]any{"name": out.Name, "runtime": out.Runtime}})
+	return out, nil
+}
+
+// ListMyAlgorithmRequests returns the algorithms a user has submitted (any review
+// status), so they can track approval.
+func (s *Service) ListMyAlgorithmRequests(ctx context.Context, ownerID string) ([]Algorithm, error) {
+	if ownerID == "" {
+		return nil, fmt.Errorf("%w: owner required", ErrValidation)
+	}
+	return s.repo.ListAlgorithmsByOwner(ctx, ownerID)
+}
+
 // ReviewAlgorithm is the ops approval decision (approved/rejected/disabled,
 // trusted flag). Approving as trusted requires a pinned digest + source.
 func (s *Service) ReviewAlgorithm(ctx context.Context, opsID, id, status string, trusted bool) (Algorithm, error) {

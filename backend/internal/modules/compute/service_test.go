@@ -161,6 +161,17 @@ func (f *fakeRepo) ListApprovedAlgorithms(_ context.Context) ([]Algorithm, error
 	}
 	return out, nil
 }
+func (f *fakeRepo) ListAlgorithmsByOwner(_ context.Context, ownerID string) ([]Algorithm, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []Algorithm
+	for _, a := range f.algos {
+		if a.OwnerID == ownerID {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
 func (f *fakeRepo) ListAlgorithmsByStatus(_ context.Context, status string, _ int) ([]Algorithm, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
