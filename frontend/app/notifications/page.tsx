@@ -68,7 +68,7 @@ function Inner() {
   const unreadN = items.filter((n) => !n.is_read).length;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">{t("通知", "Notifications")}</h1>
         {unreadN > 0 && (
