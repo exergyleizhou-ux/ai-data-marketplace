@@ -435,6 +435,82 @@ function ComputeJobs() {
   );
 }
 
+// ComputeSLOSummary derives an at-a-glance ops view from the recent jobs already
+// loaded: throughput, success rate, latency percentiles, and the top failure
+// reasons — no extra backend call.
+function ComputeSLOSummary({ jobs }: { jobs: ComputeJob[] }) {
+  const { t } = useT();
+  if (jobs.length === 0) return null;
+  const TERMINAL = new Set(["released", "failed", "rejected", "canceled"]);
+  const byStatus: Record<string, number> = {};
+  for (const j of jobs) byStatus[j.status] = (byStatus[j.status] ?? 0) + 1;
+  const terminal = jobs.filter((j) => TERMINAL.has(j.status));
+  const released = byStatus["released"] ?? 0;
+  const successRate = terminal.length ? Math.round((released / terminal.length) * 100) : null;
+
+  // Parse the first 19 chars as UTC for BOTH timestamps; same real zone → the
+  // offset cancels in the difference, so latency is correct without tz handling.
+  const parse = (s?: string) => (s ? Date.parse(s.slice(0, 19).replace(" ", "T") + "Z") : NaN);
+  const lat = jobs
+    .map((j) => (parse(j.finished_at) - parse(j.created_at)) / 1000)
+    .filter((x) => isFinite(x) && x >= 0)
+    .sort((a, b) => a - b);
+  const pctl = (p: number) => (lat.length ? lat[Math.min(lat.length - 1, Math.floor(p * lat.length))] : null);
+  const fmtSec = (s: number | null) => (s === null ? "—" : s < 1 ? `${Math.round(s * 1000)}ms` : `${s.toFixed(1)}s`);
+
+  const failReasons: Record<string, number> = {};
+  for (const j of jobs) {
+    if (j.status === "failed") {
+      const r = (j.error || "unknown").slice(0, 48);
+      failReasons[r] = (failReasons[r] ?? 0) + 1;
+    }
+  }
+  const topFails = Object.entries(failReasons).sort((a, b) => b[1] - a[1]).slice(0, 4);
+
+  const stats: { label: string; value: string }[] = [
+    { label: t("最近作业", "Recent jobs"), value: String(jobs.length) },
+    { label: t("成功率(终态)", "Success rate (terminal)"), value: successRate === null ? "—" : `${successRate}%` },
+    { label: t("延迟 p50", "Latency p50"), value: fmtSec(pctl(0.5)) },
+    { label: t("延迟 p95", "Latency p95"), value: fmtSec(pctl(0.95)) },
+  ];
+
+  return (
+    <Card>
+      <div className="text-sm font-semibold text-neutral-700">{t("计算 SLO 概览", "Compute SLO overview")}</div>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {stats.map((s) => (
+          <div key={s.label} className="rounded-lg border border-neutral-200 p-3 text-center">
+            <div className="text-xs text-neutral-400">{s.label}</div>
+            <div className="mt-1 text-lg font-semibold">{s.value}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {Object.entries(byStatus)
+          .sort((a, b) => b[1] - a[1])
+          .map(([st, n]) => (
+            <span key={st} className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600">
+              {st}: {n}
+            </span>
+          ))}
+      </div>
+      {topFails.length > 0 && (
+        <div className="mt-3">
+          <div className="text-xs font-medium text-neutral-500">{t("主要失败原因", "Top failure reasons")}</div>
+          <ul className="mt-1 space-y-0.5">
+            {topFails.map(([reason, n]) => (
+              <li key={reason} className="flex justify-between gap-2 text-xs text-red-600">
+                <span className="truncate">{reason}</span>
+                <span className="shrink-0 text-neutral-400">×{n}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function JobReviewQueue() {
   const { t } = useT();
   const [items, setItems] = useState<ComputeJob[] | null>(null);
@@ -466,6 +542,7 @@ function JobReviewQueue() {
   return (
     <div className="space-y-3">
       {err && <Alert>{err}</Alert>}
+      <ComputeSLOSummary jobs={items} />
       {items.length === 0 ? (
         <Empty>{t("暂无待审计算作业", "No compute jobs pending review")}</Empty>
       ) : (

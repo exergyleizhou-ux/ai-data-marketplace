@@ -198,6 +198,8 @@ export type ComputeJob = {
   output_bytes?: number;
   error?: string;
   created_at?: string;
+  started_at?: string;
+  finished_at?: string;
 };
 // Federated (L3) job: fans out one sandbox sub-job per dataset, aggregates the
 // local model params with FedAvg into a joint model. Raw data never leaves a
