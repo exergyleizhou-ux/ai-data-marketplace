@@ -17,14 +17,20 @@ import (
 // parties compute over encrypted inputs so no one (and not the platform) sees
 // another party's private elements.
 //
-// 诚实边界 (honest scope, 阶段1): mockMPC computes the intersection IN-PROCESS —
-// the platform sees every party's raw set. It is NOT cryptographically private;
-// it exists so the orchestration, entitlement checks, and result-gating can be
-// built and tested locally with correct PSI SEMANTICS. The real privacy comes in
-// 阶段2 by delegating to a mature framework (Secretflow / SPU; the platform stays
-// an orchestrator, never holding plaintext). This mirrors how the federated MVP
-// shipped on MockRunner first, then a real training image. See
-// docs/superpowers/specs/2026-06-04-direction-d-mpc-psi-design.md.
+// Two implementations exist:
+//   - mockMPC — computes the intersection IN-PROCESS over plaintext; NOT private
+//     (the platform sees every party's raw set). Kept for fast tests/dev and as
+//     the correctness oracle for the real one.
+//   - ddhPSI (psi_ddh.go) — REAL Diffie-Hellman PSI: parties blind their hashed
+//     elements with private exponents, and the orchestrator matches only blinded
+//     group elements, never plaintext (semi-honest, DDH assumption). This closes
+//     the "platform sees plaintext" gap cryptographically.
+//
+// 诚实边界 (honest scope): ddhPSI is the real primitive; what remains for a
+// production deployment is running each party's blinding inside its own
+// sandbox/node (Secretflow/SPU transport) and malicious-security / cardinality
+// hiding. Until then the N parties are blinded in one process for local
+// verification. See docs/superpowers/specs/2026-06-04-direction-d-mpc-psi-design.md.
 
 // ErrMPCParties is returned when fewer than two parties are supplied.
 var ErrMPCParties = errors.New("compute: MPC/PSI requires at least two parties")
