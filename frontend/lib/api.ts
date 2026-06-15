@@ -733,6 +733,19 @@ export const api = {
     request<Record<string, unknown>>(`/compute/federated-jobs/${id}/certificate`),
   listMyComputeJobs: () => request<{ items: ComputeJob[] }>("/users/me/compute/jobs"),
   cancelComputeJob: (id: string) => request<ComputeJob>(`/compute/jobs/${id}/cancel`, { method: "POST" }),
+  // Custom-algorithm submission: forced pending + untrusted server-side; appears
+  // in the ops review queue. Cannot run until approved.
+  requestAlgorithm: (b: {
+    name: string;
+    runtime: string;
+    image: string;
+    output_kind: string;
+    image_digest?: string;
+    source_ref?: string;
+    entrypoint?: string;
+  }) => request<ComputeAlgorithm>("/compute/algorithm-requests", { body: b }),
+  listMyAlgorithmRequests: () =>
+    request<{ items: ComputeAlgorithm[] }>("/users/me/compute/algorithm-requests"),
   // The output endpoint streams raw bytes (auth-gated); fetch with the bearer
   // token and trigger a browser download.
   downloadComputeOutput: async (id: string) => {

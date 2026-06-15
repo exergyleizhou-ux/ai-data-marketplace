@@ -8,9 +8,10 @@ import {
   MyComputeJobsPanel,
   FederatedComputePanel,
   PSIComputePanel,
+  MyAlgorithmRequestsPanel,
 } from "@/components/Compute";
 
-type Tab = "entitlements" | "jobs" | "federated" | "psi";
+type Tab = "entitlements" | "jobs" | "federated" | "psi" | "algorithms";
 
 export default function ComputePage() {
   return (
@@ -28,6 +29,7 @@ function ComputeInner() {
     entitlements: t("算力权益", "Entitlements"),
     federated: t("联邦学习", "Federated"),
     psi: t("隐私求交 PSI", "PSI"),
+    algorithms: t("申请算法", "Submit algorithm"),
   };
   return (
     <div className="space-y-6">
@@ -41,7 +43,7 @@ function ComputeInner() {
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        {(["jobs", "entitlements", "federated", "psi"] as const).map((tb) => (
+        {(["jobs", "entitlements", "federated", "psi", "algorithms"] as const).map((tb) => (
           <button
             key={tb}
             onClick={() => setTab(tb)}
@@ -57,6 +59,7 @@ function ComputeInner() {
       {tab === "entitlements" && <MyEntitlementsPanel />}
       {tab === "federated" && <FederatedComputePanel />}
       {tab === "psi" && <PSIComputePanel />}
+      {tab === "algorithms" && <MyAlgorithmRequestsPanel />}
     </div>
   );
 }

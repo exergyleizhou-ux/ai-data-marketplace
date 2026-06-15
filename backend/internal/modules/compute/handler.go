@@ -265,6 +265,38 @@ func (h *handler) registerAlgorithm(c *gin.Context) {
 	httpx.OK(c, a)
 }
 
+// requestAlgorithm is the buyer/seller-facing custom-algorithm submission. It
+// reuses the registry body, but the service forces pending + untrusted + owner,
+// so a submitted algorithm can never run until ops approve it.
+func (h *handler) requestAlgorithm(c *gin.Context) {
+	var req registerAlgoRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	a, err := h.svc.RequestAlgorithm(c.Request.Context(), httpx.UserID(c), Algorithm{
+		Name: req.Name, Runtime: req.Runtime, Image: req.Image, ImageDigest: req.ImageDigest,
+		Version: req.Version, SourceRef: req.SourceRef, Entrypoint: req.Entrypoint,
+		OutputKind: req.OutputKind, ParamsSchema: req.ParamsSchema,
+	})
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, a)
+}
+
+// listMyAlgorithmRequests returns the caller's submitted algorithms and their
+// review status.
+func (h *handler) listMyAlgorithmRequests(c *gin.Context) {
+	items, err := h.svc.ListMyAlgorithmRequests(c.Request.Context(), httpx.UserID(c))
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
 type reviewAlgoRequest struct {
 	Status  string `json:"status"`
 	Trusted bool   `json:"trusted"`

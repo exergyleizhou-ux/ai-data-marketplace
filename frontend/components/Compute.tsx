@@ -1143,6 +1143,148 @@ export function MyComputeJobsPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Buyer/seller: submit a custom algorithm for ops review (算法申请). The request
+// is forced pending + untrusted server-side and cannot run until ops approve it,
+// so this safely grows algorithm supply without weakening the audit gate.
+// ---------------------------------------------------------------------------
+const ALGO_OUTPUT_KINDS = ["model", "metrics", "table", "aggregate"];
+
+export function MyAlgorithmRequestsPanel() {
+  const { user } = useAuth();
+  const { t } = useT();
+  const [mine, setMine] = useState<ComputeAlgorithm[] | null>(null);
+  const [name, setName] = useState("");
+  const [runtime, setRuntime] = useState("python-sklearn");
+  const [image, setImage] = useState("");
+  const [imageDigest, setImageDigest] = useState("");
+  const [sourceRef, setSourceRef] = useState("");
+  const [outputKind, setOutputKind] = useState("model");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [okMsg, setOkMsg] = useState("");
+
+  const refresh = useCallback(async () => {
+    if (!user) return;
+    try {
+      const r = await api.listMyAlgorithmRequests();
+      setMine(r.items);
+    } catch {
+      setMine([]);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function submit() {
+    setErr("");
+    setOkMsg("");
+    if (!name.trim() || !image.trim()) {
+      setErr(t("请填写算法名称和镜像。", "Algorithm name and image are required."));
+      return;
+    }
+    setBusy(true);
+    try {
+      const a = await api.requestAlgorithm({
+        name: name.trim(),
+        runtime: runtime.trim(),
+        image: image.trim(),
+        output_kind: outputKind,
+        image_digest: imageDigest.trim() || undefined,
+        source_ref: sourceRef.trim() || undefined,
+      });
+      setOkMsg(t(`已提交「${a.name}」,待运营审核。`, `Submitted “${a.name}” — pending ops review.`));
+      setName("");
+      setImage("");
+      setImageDigest("");
+      setSourceRef("");
+      await refresh();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="text-lg font-semibold">{t("申请自定义算法", "Submit a custom algorithm")}</h2>
+      <p className="mt-1 text-sm text-neutral-500">
+        {t(
+          "提交一个容器化算法供平台审核。通过审核后,它会出现在允许该算法的数据集的可选列表里。诚实说明:提交即进入待审核,审核前不可运行——这是为防止未经审计的代码碰到数据。",
+          "Submit a containerized algorithm for platform review. Once approved it appears in the choices for datasets that allow it. Honest note: a submission is pending and cannot run until reviewed — the audit gate keeps unvetted code away from data.",
+        )}
+      </p>
+
+      {err && (
+        <div className="mt-3">
+          <Alert>{err}</Alert>
+        </div>
+      )}
+      {okMsg && (
+        <div className="mt-3">
+          <Alert kind="success">{okMsg}</Alert>
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <Field label={t("算法名称", "Algorithm name")}>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("如:KMeans 聚类", "e.g. KMeans clustering")} />
+        </Field>
+        <Field label={t("运行时", "Runtime")}>
+          <Input value={runtime} onChange={(e) => setRuntime(e.target.value)} placeholder="python-sklearn" />
+        </Field>
+        <Field label={t("容器镜像", "Container image")} hint={t("registry/repo:tag", "registry/repo:tag")}>
+          <Input value={image} onChange={(e) => setImage(e.target.value)} placeholder="docker.io/you/algo:v1" />
+        </Field>
+        <Field label={t("输出类型", "Output kind")}>
+          <Select value={outputKind} onChange={(e) => setOutputKind(e.target.value)}>
+            {ALGO_OUTPUT_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label={t("镜像 digest(可选,可信算法需要)", "Image digest (optional; required for trusted)")}>
+          <Input value={imageDigest} onChange={(e) => setImageDigest(e.target.value)} placeholder="sha256:…" />
+        </Field>
+        <Field label={t("源码引用(可选)", "Source reference (optional)")}>
+          <Input value={sourceRef} onChange={(e) => setSourceRef(e.target.value)} placeholder={t("如 git 提交 URL", "e.g. a git commit URL")} />
+        </Field>
+      </div>
+      <Button className="mt-3" onClick={submit} disabled={busy}>
+        {busy ? t("提交中…", "Submitting…") : t("提交审核", "Submit for review")}
+      </Button>
+
+      <div className="mt-5 border-t border-neutral-100 pt-4">
+        <div className="mb-2 text-sm font-medium text-neutral-700">{t("我的算法申请", "My algorithm requests")}</div>
+        {mine === null ? (
+          <p className="text-sm text-neutral-400">{t("加载中…", "Loading…")}</p>
+        ) : mine.length === 0 ? (
+          <p className="text-sm text-neutral-400">{t("还没有提交过算法。", "No algorithm requests yet.")}</p>
+        ) : (
+          <ul className="space-y-2">
+            {mine.map((a) => (
+              <li key={a.id} className="flex items-center justify-between gap-2 text-sm">
+                <span className="truncate font-medium text-neutral-800">
+                  {a.name} <span className="text-xs text-neutral-400">· {a.runtime} · {a.output_kind}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <Badge>{a.status}</Badge>
+                  {a.trusted && <Badge>{t("可信", "trusted")}</Badge>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // L2 remote-attestation chip: shows whether the platform-verified attestation
 // for a released confidential-compute job checks out (design P3).
 // ---------------------------------------------------------------------------
