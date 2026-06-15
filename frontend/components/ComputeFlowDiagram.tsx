@@ -11,7 +11,10 @@ export function ComputeFlowDiagram() {
   return (
     // overflow-x-auto on the wrapper + fixed SVG width = real horizontal scroll on
     // mobile (labels stay legible). On desktop the inner div is wider than 720
-    // anyway so it sits centered.
+    // anyway so it sits centered. The fade gradient on the right edge hints to
+    // mobile users that more content is scrollable; it disappears when the SVG
+    // fits in view because the wrapper's inner width then matches its container.
+    <div className="relative">
     <div className="overflow-x-auto">
     <svg
       viewBox="0 0 720 250"
@@ -91,6 +94,13 @@ export function ComputeFlowDiagram() {
         )}
       </text>
     </svg>
+    </div>
+    {/* Right-edge fade hint: visible only when content overflows, since on a
+        wide enough viewport the gradient sits over white SVG that already ends. */}
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute right-0 top-0 h-full w-8 bg-gradient-to-l from-white sm:hidden"
+    />
     </div>
   );
 }
