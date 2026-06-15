@@ -976,6 +976,30 @@ function useDatasetNames() {
   return { name, resolve };
 }
 
+// ComputeFunnelCTA turns the buyer's empty state into a guided path into the
+// signature sandbox-compute flow instead of a dead end.
+function ComputeFunnelCTA({ message }: { message: string }) {
+  const { t } = useT();
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-5">
+      <p className="text-sm text-emerald-900">{message}</p>
+      <ol className="mt-3 space-y-1 text-xs text-emerald-800">
+        <li>{t("1 · 在数据市场挑一个支持「沙箱计算」的数据集", "1 · Pick a compute-enabled dataset in the marketplace")}</li>
+        <li>{t("2 · 在详情页购买计算权益(含若干次作业额度)", "2 · Buy a compute entitlement on its page (includes job credits)")}</li>
+        <li>{t("3 · 选算法发起计算 / 联邦 / PSI,只取走结果、不碰原始数据", "3 · Pick an algorithm and run compute / federated / PSI — take only the result")}</li>
+      </ol>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Link href="/datasets" className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800">
+          {t("去数据市场", "Browse the marketplace")}
+        </Link>
+        <Link href="/trust" className="rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100">
+          {t("它如何保护数据", "How it protects the data")}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export function MyEntitlementsPanel() {
   const { user } = useAuth();
   const { t } = useT();
@@ -1006,12 +1030,12 @@ export function MyEntitlementsPanel() {
       {ents === null ? (
         <p className="mt-3 text-sm text-neutral-400">{t("加载中…", "Loading…")}</p>
       ) : ents.length === 0 ? (
-        <Alert kind="info">
-          {t(
-            "你还没有任何计算权益。去数据集详情页的「沙箱计算」区块购买,即可发起计算 / 联邦 / PSI 作业。",
-            "You have no compute entitlements yet. Buy one in the “Sandbox Compute” block on a dataset page to run compute / federated / PSI jobs.",
+        <ComputeFunnelCTA
+          message={t(
+            "你还没有任何计算权益。买一份就能在平台沙箱里对数据跑算法,只取走结果——原始数据拿不到、也不出域。",
+            "You have no compute entitlements yet. Buy one to run algorithms against data inside the platform sandbox and take only the result — you never get the raw data.",
           )}
-        </Alert>
+        />
       ) : (
         <ul className="mt-3 divide-y divide-neutral-100">
           {ents.map((e) => {
@@ -1092,12 +1116,12 @@ export function MyComputeJobsPanel() {
       {jobs === null ? (
         <p className="mt-3 text-sm text-neutral-400">{t("加载中…", "Loading…")}</p>
       ) : jobs.length === 0 ? (
-        <Alert kind="info">
-          {t(
-            "暂无计算作业。在数据集详情页购买计算权益并选择算法即可发起。",
-            "No compute jobs yet. Buy an entitlement on a dataset page and pick an algorithm to start one.",
+        <ComputeFunnelCTA
+          message={t(
+            "暂无计算作业。发起第一次「可用不可见」沙箱计算——你拿走模型 / 指标,数据方拿走收益,原始数据从不易手。",
+            "No compute jobs yet. Run your first available-but-invisible sandbox computation — you take the model / metrics, the data owner earns, and the raw data never changes hands.",
           )}
-        </Alert>
+        />
       ) : (
         <ul className="mt-3 space-y-2">
           {jobs.map((j) => (
