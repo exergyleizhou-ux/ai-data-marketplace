@@ -9,6 +9,9 @@ import { useT } from "@/lib/i18n";
 export function ComputeFlowDiagram() {
   const { t } = useT();
   return (
+    // overflow-x-auto + min-width keeps the labels legible on mobile (the diagram
+    // scrolls horizontally) instead of shrinking the text to an unreadable size.
+    <div className="overflow-x-auto">
     <svg
       viewBox="0 0 720 250"
       width="100%"
@@ -17,7 +20,7 @@ export function ComputeFlowDiagram() {
         "可用不可见沙箱计算流程:数据留在卖家域,算法在数据旁运行,买家只取结果",
         "Available-but-invisible flow: data stays with the seller, the algorithm runs next to it, the buyer takes only the result",
       )}
-      className="mx-auto block max-w-[720px]"
+      className="mx-auto block min-w-[600px] max-w-[720px]"
     >
       <defs>
         <marker id="cfd-arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
@@ -83,5 +86,6 @@ export function ComputeFlowDiagram() {
         )}
       </text>
     </svg>
+    </div>
   );
 }
