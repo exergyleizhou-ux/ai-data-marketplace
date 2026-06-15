@@ -456,6 +456,12 @@ func (s *Server) routes() {
 		//   tee      docker sandbox wrapped with remote attestation (L2, P3)
 		var runner compute.Runner = compute.NewMockRunner()
 		var computeOpts []compute.Option
+		// PSI/MPC: use REAL Diffie-Hellman PSI (the orchestrator matches only
+		// blinded group elements) instead of the plaintext in-process mock.
+		// (Removing plaintext from the orchestrator entirely needs the blinding to
+		// run inside each sandbox sub-job — a psi-blind algorithm image on the same
+		// Docker infra; no external cluster required.)
+		computeOpts = append(computeOpts, compute.WithOrchestrator(compute.NewDDHPSI()))
 		switch os.Getenv("COMPUTE_RUNNER") {
 		case "docker":
 			res := compute.DefaultDockerResources
@@ -466,20 +472,28 @@ func (s *Server) routes() {
 			res := compute.DefaultDockerResources
 			res.Runtime = os.Getenv("COMPUTE_DOCKER_RUNTIME")
 			// Attester selection (TEE_ATTESTER): "tdx" reads a real hardware quote
-			// from /dev/tdx_guest on a TDX node (fails closed off-hardware); default
-			// is the non-hardware MockAttester (HMAC-bound, tamper-evident) for dev.
-			var att compute.Attester = compute.NewMockAttester()
-			attKind := "mock"
+			// from /dev/tdx_guest on a TDX node (fails closed off-hardware). The
+			// default off-hardware attester is the ASYMMETRIC Ed25519 software
+			// attester (public-key verify + measurement policy) — software-rooted,
+			// so it proves "only the approved code ran" but NOT confidentiality from
+			// the platform. That requires real hardware (TEE_ATTESTER=tdx).
+			ed, err := compute.NewEd25519Attester()
+			if err != nil {
+				slog.Error("compute: ed25519 attester init", "err", err)
+				os.Exit(1)
+			}
+			var att compute.Attester = ed
+			attKind := "ed25519-sw"
 			if os.Getenv("TEE_ATTESTER") == "tdx" {
 				att = compute.NewTDXAttester()
 				attKind = "tdx"
 			}
-			// Production guard: refuse to boot with MockAttester in production —
-			// it uses a hardcoded dev HMAC key (compute/runner_tee.go) and provides
-			// no real confidentiality. Operator must explicitly set TEE_ATTESTER=tdx
-			// (or remove COMPUTE_RUNNER=tee to revert to L1) before serving L2.
-			if s.cfg.Env == "production" && attKind == "mock" {
-				slog.Error("compute: refusing to start TEE runner with MockAttester in production; set TEE_ATTESTER=tdx or disable COMPUTE_RUNNER=tee")
+			// Production guard: serving L2 ("invisible even to the platform") with a
+			// software-rooted attester is privacy theater — refuse unless a HARDWARE
+			// attester is selected. Operator must set TEE_ATTESTER=tdx (or drop
+			// COMPUTE_RUNNER=tee to revert to L1) before serving L2 in production.
+			if s.cfg.Env == "production" && attKind != "tdx" {
+				slog.Error("compute: refusing to start TEE runner without a hardware attester in production; set TEE_ATTESTER=tdx or disable COMPUTE_RUNNER=tee")
 				os.Exit(1)
 			}
 			// Attestation-based key release (KBS): gates data access on a verified
