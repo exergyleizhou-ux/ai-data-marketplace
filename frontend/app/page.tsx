@@ -103,9 +103,12 @@ export default function Home() {
 
         <p className="mt-4 text-xs leading-relaxed text-emerald-700">
           {t(
-            "诚实分级：L1 买方不可见(平台运营方仍可见数据)；L3 数据不出域(联邦 / 求交)；L2（TEE）连平台也不可见。各级真实保证见可验证性说明。",
-            "Honest tiers: L1 invisible to the buyer (the platform operator can still see the data); L3 data-stays-home (federated / PSI); L2 (TEE) invisible to the platform too. See the trust page for what each tier really guarantees.",
-          )}
+            "诚实分级：L1 买方不可见(平台运营方仍可见数据)；L3 数据不出域(联邦 / 求交)；L2（TEE）连平台也不可见。",
+            "Honest tiers: L1 invisible to the buyer (the platform operator can still see the data); L3 data-stays-home (federated / PSI); L2 (TEE) invisible to the platform too.",
+          )}{" "}
+          <Link href="/trust" className="font-medium underline underline-offset-2">
+            {t("各级真实保证 →", "What each tier really guarantees →")}
+          </Link>
         </p>
 
         <div className="mt-4 flex flex-wrap gap-3">

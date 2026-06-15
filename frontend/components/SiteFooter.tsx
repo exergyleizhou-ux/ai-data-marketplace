@@ -23,6 +23,10 @@ export function SiteFooter() {
         <Link href="/verify" className="hover:underline">
           {t("存证验真", "Verify certificate")}
         </Link>
+        <span className="mx-2">·</span>
+        <Link href="/trust" className="hover:underline">
+          {t("可验证性与信任分级", "Trust & verifiability")}
+        </Link>
       </p>
     </footer>
   );
