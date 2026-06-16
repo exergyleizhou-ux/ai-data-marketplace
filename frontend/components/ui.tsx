@@ -99,6 +99,30 @@ export function Tabs<T extends string>({
   );
 }
 
+// AuthShell is the centered card used by sign-in / sign-up / 2FA / reset. The
+// centered pattern is right for auth; a mono kicker + serif title keep it on the
+// editorial system (see DESIGN.md) without abandoning the focused card layout.
+export function AuthShell({
+  kicker,
+  title,
+  children,
+  footer,
+}: {
+  kicker?: string;
+  title: string;
+  children: ReactNode;
+  footer?: ReactNode;
+}) {
+  return (
+    <div className="mx-auto max-w-sm py-8 sm:py-12">
+      {kicker && <p className="text-center font-mono text-kicker uppercase text-muted">{kicker}</p>}
+      <h1 className="mt-3 text-center font-display text-3xl leading-tight tracking-tight">{title}</h1>
+      <div className="mt-6 rounded-2xl border border-rule bg-white p-6">{children}</div>
+      {footer && <div className="mt-4 text-center text-sm text-ink/60">{footer}</div>}
+    </div>
+  );
+}
+
 const STATUS_COLORS: Record<string, string> = {
   // datasets
   draft: "bg-neutral-100 text-neutral-600",
