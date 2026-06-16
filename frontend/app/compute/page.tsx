@@ -32,23 +32,28 @@ function ComputeInner() {
     algorithms: t("申请算法", "Submit algorithm"),
   };
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 pt-2">
       <div>
-        <h1 className="text-2xl font-semibold">{t("隐私计算", "Privacy Compute")}</h1>
-        <p className="mt-1 text-sm text-neutral-500">
+        <p className="font-mono text-kicker uppercase text-forest-700">
+          {t("可用不可见 · 沙箱计算", "Available-but-invisible · sandbox compute")}
+        </p>
+        <h1 className="mt-3 font-display text-display-sm leading-tight tracking-tight">
+          {t("隐私计算", "Privacy compute")}
+        </h1>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink/70">
           {t(
-            "「可用不可见」沙箱计算的统一入口:发起并跟踪你的常规计算、联邦学习与隐私求交作业,管理算力权益,查看存证与远程证明。",
-            "One home for available-but-invisible sandbox compute: start and track your regular, federated, and PSI jobs, manage entitlements, and view provenance & attestation.",
+            "统一入口:发起并跟踪你的常规计算、联邦学习与隐私求交作业,管理算力权益,查看存证与远程证明。",
+            "One home: start and track your regular, federated, and PSI jobs, manage entitlements, and view provenance & attestation.",
           )}
         </p>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 border-b border-rule pb-4">
         {(["jobs", "entitlements", "federated", "psi", "algorithms"] as const).map((tb) => (
           <button
             key={tb}
             onClick={() => setTab(tb)}
-            className={`rounded-md px-4 py-1.5 text-sm ${
-              tab === tb ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700"
+            className={`rounded-full px-4 py-1.5 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 ${
+              tab === tb ? "bg-ink text-paper" : "border border-rule bg-white text-ink/70 hover:bg-paper"
             }`}
           >
             {labels[tb]}
