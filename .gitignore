@@ -10,6 +10,9 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.env.prod
+.env.production
+!.env.prod.example
 *.local
 .envrc
 
