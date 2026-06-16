@@ -17,6 +17,9 @@ export function SiteFooter() {
             <p className="text-sm text-ink/65">{BRAND.sloganZh}</p>
           </div>
           <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-ink/65">
+            <Link href="/build" className="hover:text-ink">
+              {t("用 Lumen 构建", "Build with Lumen")}
+            </Link>
             <Link href="/trust" className="hover:text-ink">
               {t("可验证性 / 信任分级", "Trust & verifiability")}
             </Link>
