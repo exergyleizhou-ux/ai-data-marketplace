@@ -525,6 +525,7 @@ func (s *Server) routes() {
 		computeSvc := compute.NewService(compute.NewRepository(s.db), authSvc,
 			computeDatasetAdapter{ds: dsSvc}, rec, computeOpts...)
 		s.closers = append(s.closers, computeSvc.Close)
+		computeSvc.SetCertRegistrar(verifyRepo) // released compute results → public /verify lookup
 		// dev grant gated like payment's dev mark-paid (never in production).
 		compute.Register(api, computeSvc, authMW, auth.RequireRole("ops", "admin"), lim, s.cfg.Env != "production")
 		// Refund→revoke (H2): when a dispute refund lands, revoke the buyer's
