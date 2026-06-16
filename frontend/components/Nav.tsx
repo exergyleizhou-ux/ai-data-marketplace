@@ -43,7 +43,7 @@ export function Nav() {
     }`;
 
   return (
-    <header className="sticky top-0 z-10 border-b border-neutral-200 bg-white/80 backdrop-blur">
+    <header className="sticky top-0 z-10 border-b border-rule bg-paper/85 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:gap-6">
         {/* Hamburger (mobile only): toggles the link drawer below. */}
         <button
@@ -57,8 +57,11 @@ export function Nav() {
             {menuOpen ? <path d="M18 6L6 18M6 6l12 12" /> : <><path d="M3 6h18" /><path d="M3 12h18" /><path d="M3 18h18" /></>}
           </svg>
         </button>
-        <Link href="/" className="font-semibold tracking-tight whitespace-nowrap">
-          {BRAND.nameEn} <span className="text-neutral-400 hidden sm:inline">{BRAND.nameZh}</span>
+        <Link href="/" className="whitespace-nowrap font-display text-2xl leading-none tracking-tight">
+          {BRAND.nameEn}
+          <span className="ml-1.5 hidden font-mono text-[10px] uppercase tracking-widest text-muted sm:inline-block sm:align-middle">
+            {BRAND.nameZh}
+          </span>
         </Link>
         {/* Desktop links */}
         <nav className="hidden flex-1 items-center gap-1 sm:flex">

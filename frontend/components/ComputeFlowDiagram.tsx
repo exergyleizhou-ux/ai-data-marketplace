@@ -2,105 +2,171 @@
 
 import { useT } from "@/lib/i18n";
 
-// ComputeFlowDiagram is the visual anchor for the signature "available-but-
-// invisible" flow: data stays in the seller's domain, an audited algorithm runs
-// next to it inside the platform sandbox, and only the result (with a
-// certificate) leaves. Themed to the app palette (neutral + emerald); bilingual.
+// Signature C2D flow, redrawn as a schematic plate, not a flowchart:
+//   - Stage numbers in mono (technical authority, like a paper figure)
+//   - Display-serif stage titles (editorial gravitas)
+//   - The platform-sandbox boundary is a long thin dashed rule, not a rounded box
+//   - The certificate carries a gold wax-seal mark (the only gold on the homepage)
+//   - Bilingual via useT; intrinsic 720x260 + overflow-x-auto wrapper for mobile.
 export function ComputeFlowDiagram() {
   const { t } = useT();
+
+  // Stage layout in viewBox coords. Spread out for breathing room.
+  const STAGES = [
+    {
+      n: "01",
+      title: t("数据留下", "Data stays"),
+      role: t("卖方域", "seller domain"),
+      caption: t("从不下载,不外传", "never downloaded or shipped"),
+      x: 110,
+      titleColor: "#18181b",
+    },
+    {
+      n: "02",
+      title: t("算法走入", "Algorithm enters"),
+      role: t("平台沙箱", "platform sandbox"),
+      caption: t("经审核的镜像 + DP 噪声 + 输出闸门", "audited image · DP noise · output gate"),
+      x: 360,
+      titleColor: "#047857",
+    },
+    {
+      n: "03",
+      title: t("结果出域", "Result emerges"),
+      role: t("买方收件", "buyer's receipt"),
+      caption: t("绑定镜像 digest 的凭证", "certificate bound to image digest"),
+      x: 610,
+      titleColor: "#18181b",
+    },
+  ];
+
   return (
-    // overflow-x-auto on the wrapper + fixed SVG width = real horizontal scroll on
-    // mobile (labels stay legible). On desktop the inner div is wider than 720
-    // anyway so it sits centered. The fade gradient on the right edge hints to
-    // mobile users that more content is scrollable; it disappears when the SVG
-    // fits in view because the wrapper's inner width then matches its container.
     <div className="relative">
-    <div className="overflow-x-auto">
-    <svg
-      viewBox="0 0 720 250"
-      width="720"
-      height="250"
-      role="img"
-      aria-label={t(
-        "可用不可见沙箱计算流程:数据留在卖家域,算法在数据旁运行,买家只取结果",
-        "Available-but-invisible flow: data stays with the seller, the algorithm runs next to it, the buyer takes only the result",
-      )}
-      // No max-w-full: the wrapper above is overflow-x-auto, so we WANT the SVG
-      // to keep its intrinsic 720px and let the wrapper scroll on narrow screens.
-      // mx-auto centers it on desktop where the wrapper is wider than 720.
-      className="mx-auto block"
-    >
-      <defs>
-        <marker id="cfd-arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
-          <path d="M0,0 L7,3 L0,6 Z" fill="#059669" />
-        </marker>
-      </defs>
+      <div className="overflow-x-auto">
+        <svg
+          viewBox="0 0 720 260"
+          width="720"
+          height="260"
+          role="img"
+          aria-label={t(
+            "C2D 三阶段流程图:数据留下、算法走入沙箱、结果出域并带凭证",
+            "C2D three-stage flow: data stays, the algorithm enters a sandbox, the result emerges with a certificate",
+          )}
+          className="mx-auto block"
+        >
+          {/* Long thin connecting rule across all three stages */}
+          <line x1="50" y1="120" x2="670" y2="120" stroke="#e7e5e0" strokeWidth="1" />
 
-      {/* Stage A: seller data */}
-      <rect x="14" y="56" width="190" height="92" rx="10" fill="#ffffff" stroke="#e5e5e5" />
-      <text x="109" y="90" textAnchor="middle" fontSize="15" fontWeight="500" fill="#171717">
-        {t("数据留在卖家域", "Data stays with the seller")}
-      </text>
-      <text x="109" y="112" textAnchor="middle" fontSize="12" fill="#737373">
-        {t("从不下载 · 不外传", "never downloaded or shipped")}
-      </text>
-      <text x="109" y="132" textAnchor="middle" fontSize="12" fill="#737373">
-        🔒 {t("原始数据", "raw data")}
-      </text>
+          {/* Platform sandbox boundary — a dashed bracket around stage 2,
+              communicating "this is where the action happens, inside walls" */}
+          <line x1="260" y1="44" x2="460" y2="44" stroke="#047857" strokeWidth="1" strokeDasharray="3 3" />
+          <line x1="260" y1="44" x2="260" y2="180" stroke="#047857" strokeWidth="1" strokeDasharray="3 3" />
+          <line x1="460" y1="44" x2="460" y2="180" stroke="#047857" strokeWidth="1" strokeDasharray="3 3" />
+          <line x1="260" y1="180" x2="460" y2="180" stroke="#047857" strokeWidth="1" strokeDasharray="3 3" />
+          <text
+            x="360"
+            y="36"
+            textAnchor="middle"
+            fontSize="9"
+            fontFamily="var(--font-mono)"
+            letterSpacing="0.12em"
+            fill="#047857"
+          >
+            {t("沙箱边界 · DATA STAYS HOME", "SANDBOX BOUNDARY · DATA STAYS HOME")}
+          </text>
 
-      <line x1="206" y1="102" x2="252" y2="102" stroke="#059669" strokeWidth="1.5" markerEnd="url(#cfd-arrow)" />
+          {/* Three stage nodes */}
+          {STAGES.map((s, i) => (
+            <g key={s.n}>
+              {/* Stage anchor dot on the connecting rule */}
+              <circle cx={s.x} cy="120" r="5" fill="#fafaf7" stroke="#18181b" strokeWidth="1.5" />
+              {i === 1 && <circle cx={s.x} cy="120" r="2.5" fill="#047857" />}
+              {i === 2 && <circle cx={s.x} cy="120" r="2.5" fill="#b45309" />}
 
-      {/* Stage B: platform sandbox (dashed = boundary) */}
-      <rect x="256" y="40" width="208" height="124" rx="10" fill="none" stroke="#059669" strokeWidth="1.5" strokeDasharray="5 4" />
-      <text x="360" y="33" textAnchor="middle" fontSize="12" fill="#047857">
-        {t("平台沙箱 · 数据不出域", "Platform sandbox · data stays home")}
-      </text>
-      <rect x="280" y="60" width="160" height="84" rx="8" fill="#ffffff" stroke="#e5e5e5" />
-      <text x="360" y="92" textAnchor="middle" fontSize="15" fontWeight="500" fill="#171717">
-        {t("算法跑在数据旁", "Algorithm runs by the data")}
-      </text>
-      <text x="360" y="114" textAnchor="middle" fontSize="12" fill="#737373">
-        {t("经审核的代码", "audited code")}
-      </text>
-      <text x="360" y="132" textAnchor="middle" fontSize="12" fill="#737373">
-        {t("差分隐私 · 输出闸门", "DP noise · output gate")}
-      </text>
+              {/* Stage number kicker (mono) */}
+              <text
+                x={s.x}
+                y="80"
+                textAnchor="middle"
+                fontSize="10"
+                fontFamily="var(--font-mono)"
+                letterSpacing="0.16em"
+                fill="#71717a"
+              >
+                STAGE {s.n}
+              </text>
+              {/* Title (serif display) */}
+              <text
+                x={s.x}
+                y="106"
+                textAnchor="middle"
+                fontSize="20"
+                fontFamily="var(--font-display)"
+                fill={s.titleColor}
+              >
+                {s.title}
+              </text>
+              {/* Role (small mono uppercase) */}
+              <text
+                x={s.x}
+                y="142"
+                textAnchor="middle"
+                fontSize="10"
+                fontFamily="var(--font-mono)"
+                letterSpacing="0.14em"
+                fill="#71717a"
+              >
+                {s.role.toUpperCase()}
+              </text>
+              {/* Caption */}
+              <text x={s.x} y="162" textAnchor="middle" fontSize="11.5" fill="#52525b">
+                {s.caption}
+              </text>
+            </g>
+          ))}
 
-      <line x1="466" y1="102" x2="512" y2="102" stroke="#059669" strokeWidth="1.5" markerEnd="url(#cfd-arrow)" />
+          {/* Gold seal mark on Stage 3 — the only gold on the page,
+              tied to the verifiable certificate */}
+          <g transform="translate(665 100)">
+            <circle r="9" fill="none" stroke="#b45309" strokeWidth="1" />
+            <text
+              y="3"
+              textAnchor="middle"
+              fontSize="9"
+              fontFamily="var(--font-mono)"
+              fontWeight="500"
+              fill="#b45309"
+            >
+              ✓
+            </text>
+          </g>
 
-      {/* Stage C: buyer result */}
-      <rect x="516" y="56" width="190" height="92" rx="10" fill="#ffffff" stroke="#e5e5e5" />
-      <text x="611" y="90" textAnchor="middle" fontSize="15" fontWeight="500" fill="#171717">
-        {t("买家只取结果", "Buyer takes only the result")}
-      </text>
-      <text x="611" y="112" textAnchor="middle" fontSize="12" fill="#737373">
-        {t("模型 / 指标", "model / metrics")}
-      </text>
-      <text x="611" y="132" textAnchor="middle" fontSize="12" fill="#737373">
-        📄 {t("存证凭证 · 可验真", "certificate · verifiable")}
-      </text>
+          {/* Direction arrows — minimal, ink-colored */}
+          <g fill="#a1a1aa">
+            <polygon points="245,118 235,113 235,123" />
+            <polygon points="485,118 475,113 475,123" />
+          </g>
 
-      {/* caption */}
-      <text x="360" y="196" textAnchor="middle" fontSize="12.5" fill="#737373">
-        {t(
-          "原始数据从不离开沙箱 · 只有计算结果出域 · 输出绑定算法镜像 digest",
-          "Raw data never leaves the sandbox · only the result exits · output bound to the algorithm image digest",
-        )}
-      </text>
-      <text x="360" y="222" textAnchor="middle" fontSize="12.5" fill="#737373">
-        {t(
-          "L1 买方不可见 · L3 数据不出域(联邦 / PSI) · L2 连平台也不可见(TEE)",
-          "L1 invisible to the buyer · L3 data-stays-home (federated / PSI) · L2 invisible to the platform too (TEE)",
-        )}
-      </text>
-    </svg>
-    </div>
-    {/* Right-edge fade hint: visible only when content overflows, since on a
-        wide enough viewport the gradient sits over white SVG that already ends. */}
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute right-0 top-0 h-full w-8 bg-gradient-to-l from-white sm:hidden"
-    />
+          {/* Bottom footnote — the L-tier honesty in mono */}
+          <text
+            x="360"
+            y="220"
+            textAnchor="middle"
+            fontSize="11"
+            fontFamily="var(--font-mono)"
+            letterSpacing="0.06em"
+            fill="#71717a"
+          >
+            {t(
+              "L1 沙箱  ·  L2 TEE 连平台也不可见  ·  L3 数据不出域(联邦 / PSI)",
+              "L1 SANDBOX  ·  L2 TEE INVISIBLE TO PLATFORM  ·  L3 DATA-STAYS-HOME (FED / PSI)",
+            )}
+          </text>
+        </svg>
+      </div>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute right-0 top-0 h-full w-8 bg-gradient-to-l from-white sm:hidden"
+      />
     </div>
   );
 }
