@@ -28,9 +28,10 @@ export default function DatasetsPage() {
   }, []);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{t("数据市场", "Data Marketplace")}</h1>
+    <div className="space-y-6 pt-2">
+      <div>
+        <p className="font-mono text-kicker uppercase text-muted">{t("目录", "Catalog")}</p>
+        <h1 className="mt-3 font-display text-display-sm leading-tight tracking-tight">{t("数据市场", "Data Marketplace")}</h1>
       </div>
 
       <form
