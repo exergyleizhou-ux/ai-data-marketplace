@@ -1216,6 +1216,12 @@ export function MyAlgorithmRequestsPanel() {
           "Submit a containerized algorithm for platform review. Once approved it appears in the choices for datasets that allow it. Honest note: a submission is pending and cannot run until reviewed — the audit gate keeps unvetted code away from data.",
         )}
       </p>
+      <p className="mt-2 text-sm text-neutral-500">
+        {t("不知道怎么写?用 ", "Not sure how to write it? Author it with ")}
+        <Link href="/build" className="font-medium text-forest-700 underline underline-offset-2">
+          {t("Lumen 按算法契约编写 →", "Lumen against the algorithm contract →")}
+        </Link>
+      </p>
 
       {err && (
         <div className="mt-3">
