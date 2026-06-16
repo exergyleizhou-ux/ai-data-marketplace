@@ -1,0 +1,23 @@
+# Production reverse proxy with automatic HTTPS (Let's Encrypt).
+# One domain serves both the app and the API:
+#   /api/*, /healthz, /readyz, /metrics, /docs*  → Go backend (:8080)
+#   everything else                              → Next.js frontend (:3000)
+#
+# Caddy obtains and renews TLS certs automatically once {$DOMAIN} resolves to
+# this host on ports 80/443. For a purely local/offline trial, set DOMAIN=localhost
+# (Caddy issues an internal cert) or front it with your own TLS terminator.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Backend: API + ops/health/metrics/docs.
+	@backend path /api/* /healthz /readyz /metrics /docs /docs/*
+	handle @backend {
+		reverse_proxy backend:8080
+	}
+
+	# Everything else is the Next.js app.
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

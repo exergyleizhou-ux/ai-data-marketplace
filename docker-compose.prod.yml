@@ -1,0 +1,132 @@
+# Production stack — one command to a running, self-hosted deployment.
+#
+#   cp .env.prod.example .env.prod   # then edit secrets + DOMAIN
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+#
+# What this gives you (real, not a mock):
+#   - Caddy reverse proxy with automatic HTTPS on {DOMAIN}
+#   - Go backend (auto-migrates on boot), MinIO S3 storage (bucket auto-created),
+#     Postgres + Redis, all on a private network — only Caddy is exposed (80/443).
+#
+# Honest substitutes for what needs real-world resources (see docs/部署-生产一键栈.md):
+#   - PAYMENT_PROVIDER=mock by default (no real funds). Set =stripe with real keys
+#     to move real money via Stripe; WeChat/Alipay split settlement still needs a
+#     licensed Chinese provider + custody (a legal gate, not a code gate).
+#   - KYC_AUTO_APPROVE=false → real-name submissions go to MANUAL ops review
+#     (a legitimate operating model) instead of a third-party ID-verification API.
+#   - L2 confidential compute stays gated on real TEE hardware; the runner falls
+#     back to the L1 sandbox unless COMPUTE_RUNNER=tee + TEE_ATTESTER=tdx on a TEE node.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      HTTP_ADDR: ":8080"
+      APP_BASE_URL: "https://${DOMAIN}"
+      CORS_ALLOW_ORIGIN: "https://${DOMAIN}"
+      DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+      AUTO_MIGRATE: "true" # first boot creates the schema; safe to leave on
+      JWT_SECRET: ${JWT_SECRET}
+      PII_SECRET: ${PII_SECRET}
+      METRICS_TOKEN: ${METRICS_TOKEN}
+      KYC_AUTO_APPROVE: "false" # manual ops review (honest substitute for a KYC vendor)
+      STORAGE_DRIVER: s3
+      S3_ENDPOINT: minio:9000
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      S3_USE_SSL: "false"
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER}
+      PAYMENT_MOCK_SECRET: ${PAYMENT_MOCK_SECRET}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_CURRENCY: ${STRIPE_CURRENCY}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "/api", "--healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Same-origin API: Caddy proxies /api/* to the backend, so the browser
+        # bundle just calls a relative path. No hardcoded host.
+        NEXT_PUBLIC_API_BASE_URL: "/api/v1"
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  caddydata:
+  caddyconfig:
