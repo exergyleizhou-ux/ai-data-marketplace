@@ -5,7 +5,7 @@ import Link from "next/link";
 import { api, yuan, type Order } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
-import { Alert, Badge, Button, Card, Empty, Spinner } from "@/components/ui";
+import { Alert, Badge, Button, Card, Empty, PageHeader, Spinner, Tabs } from "@/components/ui";
 
 export default function OrdersPage() {
   return (
@@ -61,20 +61,15 @@ function OrdersInner() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">{t("订单", "Orders")}</h1>
-      <div className="flex gap-2">
-        {(["buyer", "seller"] as const).map((tb) => (
-          <button
-            key={tb}
-            onClick={() => setTab(tb)}
-            className={`rounded-md px-4 py-1.5 text-sm ${
-              tab === tb ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700"
-            }`}
-          >
-            {tb === "buyer" ? t("我买的", "Bought") : t("我卖的", "Sold")}
-          </button>
-        ))}
-      </div>
+      <PageHeader kicker={t("交易", "Transactions")} title={t("订单", "Orders")} />
+      <Tabs
+        active={tab}
+        onChange={setTab}
+        tabs={[
+          { id: "buyer", label: t("我买的", "Bought") },
+          { id: "seller", label: t("我卖的", "Sold") },
+        ]}
+      />
 
       {items === null ? (
         <Spinner />
