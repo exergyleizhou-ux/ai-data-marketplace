@@ -473,7 +473,7 @@ function ComputeSLOSummary({ jobs }: { jobs: ComputeJob[] }) {
       <div className="text-sm font-semibold text-neutral-700">{t("计算 SLO 概览", "Compute SLO overview")}</div>
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {stats.map((s) => (
-          <div key={s.label} className="rounded-lg border border-neutral-200 p-3 text-center">
+          <div key={s.label} className="rounded-lg border border-rule p-3 text-center">
             <div className="text-xs text-neutral-400">{s.label}</div>
             <div className="mt-1 text-lg font-semibold">{s.value}</div>
           </div>
@@ -742,7 +742,7 @@ function SettlementOutbox() {
       ) : (
         <Card className="overflow-x-auto p-0">
           <table className="w-full text-sm">
-            <thead className="border-b border-neutral-200 text-left text-neutral-500">
+            <thead className="border-b border-rule text-left text-neutral-500">
               <tr>
                 <th className="px-4 py-2 font-medium">{t("订单", "Order")}</th>
                 <th className="px-4 py-2 font-medium">{t("状态", "Status")}</th>
@@ -754,7 +754,7 @@ function SettlementOutbox() {
             </thead>
             <tbody>
               {items.map((e) => (
-                <tr key={e.order_id} className="border-b border-neutral-100 last:border-0">
+                <tr key={e.order_id} className="border-b border-rule last:border-0">
                   <td className="px-4 py-2 font-mono text-xs">
                     <Link href={`/orders/${e.order_id}`} className="hover:underline">
                       #{e.order_id.slice(0, 8)}
@@ -842,7 +842,7 @@ function AuditLogs() {
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="border-b border-neutral-200 text-left text-neutral-500">
+          <thead className="border-b border-rule text-left text-neutral-500">
             <tr>
               <th className="px-2 py-1 font-medium w-[140px]">{t("时间", "Time")}</th>
               <th className="px-2 py-1 font-medium">{t("操作者", "Actor")}</th>
@@ -854,7 +854,7 @@ function AuditLogs() {
           <tbody>
             {items.map((e) => (
               <>
-                <tr key={e.id} className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50">
+                <tr key={e.id} className="border-b border-rule last:border-0 hover:bg-neutral-50">
                   <td className="px-2 py-1 text-xs text-neutral-400">{e.created_at?.slice(0, 19)}</td>
                   <td className="px-2 py-1 text-xs max-w-[120px] truncate" title={e.actor_id}>
                     {e.actor_id?.slice(0, 8) || "—"}
