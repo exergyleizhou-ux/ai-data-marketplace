@@ -370,27 +370,27 @@ function Transactions() {
 
       <Card className="overflow-x-auto p-0">
         <table className="w-full text-sm">
-          <thead className="border-b border-neutral-200 text-left text-neutral-500">
-            <tr>
-              <th className="px-4 py-2 font-medium">{t("订单", "Order")}</th>
-              <th className="px-4 py-2 font-medium">{t("金额", "Amount")}</th>
-              <th className="px-4 py-2 font-medium">{t("佣金", "Fee")}</th>
-              <th className="px-4 py-2 font-medium">{t("卖家", "Seller")}</th>
-              <th className="px-4 py-2 font-medium">{t("状态", "Status")}</th>
+          <thead className="border-b border-rule text-left">
+            <tr className="font-mono text-[10px] uppercase tracking-wider text-muted">
+              <th className="px-4 py-2.5 font-medium">{t("订单", "Order")}</th>
+              <th className="px-4 py-2.5 text-right font-medium">{t("金额", "Amount")}</th>
+              <th className="px-4 py-2.5 text-right font-medium">{t("佣金", "Fee")}</th>
+              <th className="px-4 py-2.5 text-right font-medium">{t("卖家", "Seller")}</th>
+              <th className="px-4 py-2.5 font-medium">{t("状态", "Status")}</th>
             </tr>
           </thead>
           <tbody>
             {items.map((o) => (
-              <tr key={o.id} className="border-b border-neutral-100 last:border-0">
-                <td className="px-4 py-2 font-mono text-xs">
+              <tr key={o.id} className="border-b border-rule last:border-0 hover:bg-paper">
+                <td className="px-4 py-2.5 font-mono text-xs text-forest-700">
                   <Link href={`/orders/${o.id}`} className="hover:underline">
                     #{o.id.slice(0, 8)}
                   </Link>
                 </td>
-                <td className="px-4 py-2">{yuan(o.amount_cents)}</td>
-                <td className="px-4 py-2">{yuan(o.platform_fee_cents)}</td>
-                <td className="px-4 py-2">{yuan(o.seller_amount_cents)}</td>
-                <td className="px-4 py-2">
+                <td className="px-4 py-2.5 text-right font-mono">{yuan(o.amount_cents)}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-muted">{yuan(o.platform_fee_cents)}</td>
+                <td className="px-4 py-2.5 text-right font-mono">{yuan(o.seller_amount_cents)}</td>
+                <td className="px-4 py-2.5">
                   <Badge>{o.status}</Badge>
                 </td>
               </tr>
