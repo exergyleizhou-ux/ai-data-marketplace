@@ -97,24 +97,26 @@ cd lumen && go build -o bin/lumen ./cmd/lumen
           )}
         </p>
         <div className="mt-5">
-          <Code>{`# the sandbox invokes your image like this (no network):
-docker run --network none \\
-  -v <dataset>:/data:ro \\
-  -v <out>:/out \\
-  -v <params>:/params.json:ro \\
+          <Code>{`# start from the canonical scaffold (runs out of the box):
+cp -r algorithms/_template algorithms/myalgo
+#   → edit algorithms/myalgo/train.py : compute(df, params)
+
+# the sandbox invokes your image like this (no network, read-only data):
+docker run --network=none --read-only --tmpfs=/tmp:rw,size=64m \\
+  -v <dataset>:/data:ro -v <out>:/out -v <params>:/params.json:ro \\
   your-algorithm:tag
 
-# your code:
+# the contract:
 #   1. read the first tabular file under /data        (read-only)
-#   2. compute (train a model / aggregate statistics)
+#   2. compute AGGREGATES only — never per-row outputs (leakage)
 #   3. write /out/output.bin  =  zip(model.json, metrics.json)
 # the platform hashes output.bin and binds it to your image digest
 # in the buyer's certificate (VO-xxxxxxxx).`}</Code>
         </div>
         <p className="mt-4 text-sm leading-relaxed text-ink/60">
           {t(
-            "参考实现见仓库 algorithms/(logreg、dp_stats、fed-logreg、redteam)——Lumen 可以读它们当模板。",
-            "Reference implementations live in algorithms/ (logreg, dp_stats, fed-logreg, redteam) — Lumen can read them as templates.",
+            "起点是 algorithms/_template(开箱即跑的脚手架);完整范例:logreg(分类)、kmeans(聚类)、dp_stats(差分隐私统计)、fed-logreg(联邦)。让 Lumen 读它们当模板。",
+            "Start from algorithms/_template (a scaffold that runs out of the box); full worked examples: logreg (classification), kmeans (clustering), dp_stats (DP statistics), fed-logreg (federated). Have Lumen read them as templates.",
           )}
         </p>
       </section>
