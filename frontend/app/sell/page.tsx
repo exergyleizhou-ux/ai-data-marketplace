@@ -5,7 +5,7 @@ import Link from "next/link";
 import { api, yuan, type Dataset } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
-import { Alert, Badge, Button, Card, Empty, Field, Input, Select, Spinner, Textarea } from "@/components/ui";
+import { Alert, Badge, Button, Card, Empty, Field, Input, PageHeader, Select, Spinner, Textarea } from "@/components/ui";
 import { DatasheetEditor } from "@/components/Datasheet";
 import { ComputeOfferEditor } from "@/components/Compute";
 
@@ -36,7 +36,8 @@ function SellInner() {
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold">{t("卖家工作台", "Seller Workbench")}</h1>
+      <PageHeader kicker={t("供给", "Supply")} title={t("卖家工作台", "Seller Workbench")} />
+
       {err && <Alert>{err}</Alert>}
       <CreateForm onCreated={reload} />
 

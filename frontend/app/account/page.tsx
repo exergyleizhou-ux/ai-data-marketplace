@@ -7,7 +7,7 @@ import { useT, kycLabel } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
 import Link from "next/link";
 import { MiniChart } from "@/components/MiniChart";
-import { Alert, Badge, Button, Card, Field, Input, Select, Spinner } from "@/components/ui";
+import { Alert, Badge, Button, Card, Field, Input, PageHeader, Select, Spinner } from "@/components/ui";
 
 export default function AccountPage() {
   return (
@@ -74,7 +74,8 @@ function AccountInner() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-2xl font-semibold">{t("账户", "Account")}</h1>
+      <PageHeader kicker={t("身份", "Identity")} title={t("账户", "Account")} />
+
       {msg && <Alert kind="success">{msg}</Alert>}
       {err && <Alert>{err}</Alert>}
 

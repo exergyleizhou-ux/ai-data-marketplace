@@ -60,6 +60,45 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
   return <div className={`rounded-2xl border border-rule bg-white p-6 ${className}`}>{children}</div>;
 }
 
+// PageHeader is the editorial title block shared by every destination/tool page
+// (see DESIGN.md): a mono kicker over a serif H1, with an optional subtitle.
+export function PageHeader({ kicker, title, subtitle }: { kicker?: string; title: string; subtitle?: string }) {
+  return (
+    <div className="pt-2">
+      {kicker && <p className="font-mono text-kicker uppercase text-muted">{kicker}</p>}
+      <h1 className="mt-3 font-display text-display-sm leading-tight tracking-tight">{title}</h1>
+      {subtitle && <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink/70">{subtitle}</p>}
+    </div>
+  );
+}
+
+// Tabs renders the standard pill segmented control used across tool pages.
+export function Tabs<T extends string>({
+  tabs,
+  active,
+  onChange,
+}: {
+  tabs: { id: T; label: string }[];
+  active: T;
+  onChange: (id: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2 border-b border-rule pb-4">
+      {tabs.map((tb) => (
+        <button
+          key={tb.id}
+          onClick={() => onChange(tb.id)}
+          className={`rounded-full px-4 py-1.5 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 ${
+            active === tb.id ? "bg-ink text-paper" : "border border-rule bg-white text-ink/70 hover:bg-paper"
+          }`}
+        >
+          {tb.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const STATUS_COLORS: Record<string, string> = {
   // datasets
   draft: "bg-neutral-100 text-neutral-600",

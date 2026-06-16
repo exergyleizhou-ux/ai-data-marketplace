@@ -5,7 +5,7 @@ import Link from "next/link";
 import { api, yuan, type Dataset, type KYC, type Order, type ComputeAlgorithm, type ComputeJob, type OutboxEntry, type ReconciliationPoint, type AuditLogEntry, type Withdrawal, type Anomaly, type DeletionRequest, type Report } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
-import { Alert, Badge, Button, Card, Empty, Input, Spinner } from "@/components/ui";
+import { Alert, Badge, Button, Card, Empty, Input, PageHeader, Spinner, Tabs } from "@/components/ui";
 import { MiniChart } from "@/components/MiniChart";
 
 type Tab = "review" | "kyc" | "tx" | "compute" | "outbox" | "audit" | "withdraw" | "anomaly" | "deletion" | "moderation";
@@ -35,20 +35,14 @@ function AdminInner() {
   };
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">{t("运营后台", "Ops Console")}</h1>
-      <div className="flex flex-wrap gap-2">
-        {(["review", "kyc", "tx", "compute", "outbox", "audit", "withdraw", "anomaly", "deletion", "moderation"] as const).map((tb) => (
-          <button
-            key={tb}
-            onClick={() => setTab(tb)}
-            className={`rounded-md px-4 py-1.5 text-sm ${
-              tab === tb ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700"
-            }`}
-          >
-            {labels[tb]}
-          </button>
-        ))}
-      </div>
+      <PageHeader kicker={t("运营", "Operations")} title={t("运营后台", "Ops Console")} />
+      <Tabs
+        active={tab}
+        onChange={setTab}
+        tabs={(["review", "kyc", "tx", "compute", "outbox", "audit", "withdraw", "anomaly", "deletion", "moderation"] as const).map(
+          (id) => ({ id, label: labels[id] }),
+        )}
+      />
       {tab === "review" && <ReviewQueue />}
       {tab === "kyc" && <KYCQueue />}
       {tab === "tx" && <Transactions />}
