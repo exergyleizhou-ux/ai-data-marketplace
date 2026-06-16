@@ -276,6 +276,7 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 		slog.Error("compute: release failed", "job_id", jobID, "err", err)
 		return
 	}
+	s.registerResultCert(ctx, released) // make the result publicly verifiable at /verify
 	s.audit.Record(ctx, audit.Entry{Action: "compute.job.release", ResourceType: "compute_job",
 		ResourceID: jobID, Detail: map[string]any{"output_kind": released.OutputKind, "output_bytes": size}})
 	metrics.RecordComputeJob("released")

@@ -72,6 +72,7 @@ type Service struct {
 	allowlist    MeasurementAllowlist // optional; auto-sync KBS release policy on algorithm approval (W1-6)
 	aggregator   Aggregator           // federated aggregation (P4-a); defaults to FedAvgAggregator
 	orchestrator MPCOrchestrator      // PSI/MPC orchestration (Direction D); defaults to mockMPC
+	certReg      CertRegistrar        // optional; registers result certs for public /verify lookup
 	runnerID     string
 	leaseSecs    int
 	maxAttempts  int
@@ -401,6 +402,45 @@ func (s *Service) ListEntitlements(ctx context.Context, buyerID string, limit, o
 // --- ops: output review (for offers with review_output) ---
 
 // OpsReleaseOutput releases a job parked in output_reviewing to the buyer.
+// CertRegistrar persists a result certificate idempotently for public lookup
+// (mirrors dataset.CertRegistrar — same `certificates` table, satisfied by the
+// verify repo).
+type CertRegistrar interface {
+	Register(ctx context.Context, certID, resourceType, resourceID string) error
+}
+
+// SetCertRegistrar wires the registrar so released compute results become
+// publicly verifiable at /verify/<cert_id>.
+func (s *Service) SetCertRegistrar(r CertRegistrar) { s.certReg = r }
+
+// registerResultCert records a released job's certificate into the public
+// certificates table, keyed by the SAME id the buyer-facing certificate uses
+// (jobCertificateID = output fingerprint bound to the job). Best-effort: a
+// failure here never blocks the release. The public lookup only exposes
+// {cert_id, compute_result, job_id} — integrity details stay behind the authed
+// certificate endpoint, so this leaks no buyer identity or output content.
+func (s *Service) registerResultCert(ctx context.Context, j Job) {
+	if s.certReg == nil || s.store == nil || j.Status != JobReleased || j.OutputKey == "" {
+		return
+	}
+	rc, _, err := s.store.Open(ctx, j.OutputKey)
+	if err != nil {
+		slog.Error("compute: cert register: open output", "job_id", j.ID, "err", err)
+		return
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, rc); err != nil {
+		rc.Close()
+		slog.Error("compute: cert register: hash output", "job_id", j.ID, "err", err)
+		return
+	}
+	rc.Close()
+	certID := jobCertificateID(j.ID, hex.EncodeToString(h.Sum(nil)))
+	if err := s.certReg.Register(ctx, certID, "compute_result", j.ID); err != nil {
+		slog.Error("compute: cert register", "job_id", j.ID, "err", err)
+	}
+}
+
 func (s *Service) OpsReleaseOutput(ctx context.Context, opsID, jobID string) (Job, error) {
 	j, err := s.repo.GetJob(ctx, jobID)
 	if err != nil {
@@ -413,6 +453,7 @@ func (s *Service) OpsReleaseOutput(ctx context.Context, opsID, jobID string) (Jo
 	if err != nil {
 		return Job{}, err
 	}
+	s.registerResultCert(ctx, out)
 	s.audit.Record(ctx, audit.Entry{ActorID: opsID, Action: "compute.job.ops_release",
 		ResourceType: "compute_job", ResourceID: jobID})
 	return out, nil
