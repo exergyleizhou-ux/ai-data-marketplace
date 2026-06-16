@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, yuan, type Earnings, type Withdrawal } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
-import { Card, Spinner } from "@/components/ui";
+import { Card, PageHeader, Spinner } from "@/components/ui";
 import { WithdrawalForm } from "@/components/WithdrawalForm";
 import { WithdrawalHistory } from "@/components/WithdrawalHistory";
 
@@ -49,7 +49,8 @@ function EarningsInner() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">{t("卖家收益", "Seller earnings")}</h1>
+      <PageHeader kicker={t("结算", "Settlement")} title={t("卖家收益", "Seller earnings")} />
+
       <div className="grid gap-4 sm:grid-cols-3">
         <Stat
           label={t("可提现(扣除未到账)", "Available (net of in-flight)")}

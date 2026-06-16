@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { Alert, Badge, Button, Card, Input } from "@/components/ui";
+import { Alert, Badge, Button, Card, Input, PageHeader } from "@/components/ui";
 
 export default function VerifyPage() {
   const { t } = useT();
@@ -32,25 +32,25 @@ export default function VerifyPage() {
   }
 
   return (
-    <div className="mx-auto max-w-xl space-y-6 py-8">
-      <h1 className="text-2xl font-semibold">
-        {t("存证验证", "Certificate verification")}
-      </h1>
-      <p className="text-sm text-neutral-500">
-        {t(
-          "输入存证编号（如 VO-XXXXXXXXXXXX）验证数据或计算结果的上链存证。",
-          "Enter a certificate ID (e.g. VO-XXXXXXXXXXXX) to verify a provenance record.",
+    <div className="max-w-2xl space-y-8 pb-16">
+      <PageHeader
+        kicker={t("公开验证 · 无需登录", "Public verification · no login")}
+        title={t("存证验真", "Verify a certificate")}
+        subtitle={t(
+          "输入存证编号(如 VO-XXXXXXXXXXXX),独立核验一份数据或计算结果的来源——它确认输出确由声明的算法、对声明的数据产生。",
+          "Enter a certificate ID (e.g. VO-XXXXXXXXXXXX) to independently check the provenance of a dataset or computation — it confirms the output came from the stated algorithm over the stated data.",
         )}
-      </p>
-      <form onSubmit={lookup} className="flex gap-2">
+      />
+      <form onSubmit={lookup} className="flex flex-col gap-2 sm:flex-row">
         <Input
           value={certId}
           onChange={(e) => setCertId(e.target.value)}
           placeholder="VO-XXXXXXXXXXXX"
-          className="font-mono flex-1"
+          className="flex-1 font-mono text-base"
+          aria-label={t("存证编号", "Certificate ID")}
         />
         <Button type="submit" disabled={busy || !certId.trim()}>
-          {t("验证", "Verify")}
+          {busy ? t("核验中…", "Verifying…") : t("验真", "Verify")}
         </Button>
       </form>
       {err && <Alert>{err}</Alert>}
@@ -61,35 +61,35 @@ export default function VerifyPage() {
               <Badge>{result.status === "registered" ? t("已登记", "Registered") : result.status}</Badge>
               {result.verifiable && <Badge>{t("可验证", "Verifiable")}</Badge>}
             </div>
-            <div className="grid gap-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-neutral-500">{t("存证编号", "Cert ID")}</span>
-                <span className="font-mono">{result.cert_id}</span>
+            <div className="grid gap-2.5 text-sm">
+              <div className="flex justify-between gap-4">
+                <span className="text-muted">{t("存证编号", "Cert ID")}</span>
+                <span className="font-mono text-forest-700">{result.cert_id}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">{t("资源类型", "Resource type")}</span>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted">{t("资源类型", "Resource type")}</span>
                 <span>{result.resource_type}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">{t("资源ID", "Resource ID")}</span>
-                <span className="font-mono text-xs">{result.resource_id}</span>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted">{t("资源ID", "Resource ID")}</span>
+                <span className="truncate font-mono text-xs">{result.resource_id}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-500">{t("登记时间", "Registered at")}</span>
-                <span>{result.registered_at?.slice(0, 19)}</span>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted">{t("登记时间", "Registered at")}</span>
+                <span className="font-mono text-xs">{result.registered_at?.slice(0, 19)}</span>
               </div>
             </div>
-            <div className="border-t border-neutral-100 pt-3">
-              <p className="text-xs leading-relaxed text-neutral-500">{result.statement_zh}</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-neutral-400">{result.statement_en}</p>
+            <div className="border-t border-rule pt-3">
+              <p className="text-xs leading-relaxed text-ink/70">{result.statement_zh}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted">{result.statement_en}</p>
             </div>
           </div>
         </Card>
       )}
-      <p className="text-xs text-neutral-300 text-center">
+      <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
         {t(
-          "绿洲平台 · AI训练数据交易 · 一码存证 · 溯源可信",
-          "Verdant Oasis · AI training data marketplace · provenance by certificate",
+          "绿洲 · AI 训练数据 · 一码存证 · 溯源可信",
+          "Verdant Oasis · AI training data · provenance by certificate",
         )}
       </p>
     </div>

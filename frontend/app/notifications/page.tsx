@@ -69,8 +69,11 @@ function Inner() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{t("通知", "Notifications")}</h1>
+      <div className="flex items-end justify-between pt-2">
+        <div>
+          <p className="font-mono text-kicker uppercase text-muted">{t("消息", "Inbox")}</p>
+          <h1 className="mt-3 font-display text-display-sm leading-tight tracking-tight">{t("通知", "Notifications")}</h1>
+        </div>
         {unreadN > 0 && (
           <Button variant="secondary" disabled={busy === "all"} onClick={markAll}>
             {t(`${unreadN} 条未读全部标为已读`, `Mark ${unreadN} as read`)}
