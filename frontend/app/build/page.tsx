@@ -56,10 +56,13 @@ export default function BuildPage() {
           {t("安全优先的 agent,配安全优先的市场", "A security-first agent for a security-first marketplace")}
         </h2>
         <ul className="mt-6 grid gap-x-10 gap-y-4 border-t border-rule pt-6 sm:grid-cols-2">
+          {/* Kept evergreen on purpose: Lumen iterates fast, so these state
+              stable architecture, not volatile counts (exact model/provider
+              numbers + binary size live in Lumen's own README, linked below). */}
           {[
-            t("4 种权限模式 + 5 层 bash 防护 + 文件系统边界——它不无条件信任模型", "4 permission modes + a 5-layer bash guard + filesystem boundaries — it doesn't trust the model unconditionally"),
-            t("9 个模型供应商、26 个模型,一个会话内随时切换", "9 model providers, 26 models, switchable within a single session"),
-            t("单个 9.9MB Go 二进制,无运行时依赖", "A single 9.9 MB Go binary, no runtime dependency"),
+            t("多种权限模式 + 分层 bash 防护 + 文件系统边界——它不无条件信任模型", "Layered permission modes + a bash command guard + filesystem boundaries — it doesn't trust the model unconditionally"),
+            t("多模型、多供应商(DeepSeek / OpenAI / Grok / Ollama…),一个会话内随时切换", "Many models across providers (DeepSeek / OpenAI / Grok / Ollama…), switchable within a single session"),
+            t("单个 Go 二进制(~10MB),无运行时依赖", "A single Go binary (~10 MB), no runtime dependency"),
             t("会话时间线 + /replay + 变更收件箱,全程可观测", "Session timeline + /replay + a change inbox — fully observable"),
           ].map((li) => (
             <li key={li} className="flex gap-3 text-sm leading-relaxed text-ink/85">
