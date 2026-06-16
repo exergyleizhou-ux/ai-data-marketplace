@@ -67,60 +67,74 @@ const TIERS: Tier[] = [
 export default function TrustPage() {
   const { t } = useT();
   return (
-    <div className="space-y-10">
-      <section className="space-y-3 py-6">
-        <h1 className="text-3xl font-semibold tracking-tight">{t("可验证性与信任分级", "Verifiability & trust tiers")}</h1>
-        <p className="max-w-3xl leading-relaxed text-neutral-600">
+    <div className="space-y-20 pb-16 pt-10">
+      <section>
+        <p className="font-mono text-kicker uppercase text-muted">
+          {t("白皮书 · 一页式", "Whitepaper · single page")}
+        </p>
+        <h1 className="mt-4 max-w-3xl font-display text-display-md leading-[1.04] tracking-tight sm:text-display-lg">
+          {t("可验证性与信任分级", "Verifiability & trust tiers")}
+        </h1>
+        <p className="mt-6 max-w-2xl text-base leading-relaxed text-ink/80 sm:text-lg">
           {t(
-            "我们的招牌是「数据可用不可见」。但隐私保证不该靠口号——下面诚实写清每一档现在真正保证什么、还差什么,以及任何第三方如何独立核验一次计算的结果。",
-            "Our signature is available-but-invisible data. But privacy guarantees shouldn't rest on slogans — below is an honest account of what each tier really guarantees today, what's still missing, and how any third party can independently verify a computation's result.",
+            "招牌是「数据可用不可见」。但隐私保证不该靠口号——下面诚实写清每一档现在真正保证什么、还差什么,以及任何第三方如何独立核验一次计算的结果。",
+            "Our signature is available-but-invisible data. But privacy guarantees shouldn't rest on slogans — below is an honest account of what each tier really guarantees today, what's still missing, and how any third party can independently verify a result.",
           )}
         </p>
       </section>
 
-      <section className="rounded-xl border border-neutral-200 bg-white p-6">
+      <section className="rounded-2xl border border-rule bg-white px-6 py-8 sm:px-10">
         <ComputeFlowDiagram />
       </section>
 
-      <section className="space-y-5">
+      <section className="space-y-12">
         {TIERS.map((tier) => (
-          <div key={tier.tag} className="rounded-xl border border-neutral-200 bg-white p-6">
-            <div className="flex items-center gap-2">
-              <span className="rounded-md bg-neutral-900 px-2 py-0.5 text-xs font-bold text-white">{tier.tag}</span>
-              <h2 className="text-lg font-semibold">{t(tier.name[0], tier.name[1])}</h2>
+          <article key={tier.tag} className="border-t border-rule pt-10">
+            <div className="flex items-baseline gap-4">
+              <span className="font-mono text-[11px] uppercase tracking-[0.24em] text-forest-700">{tier.tag}</span>
+              <h2 className="font-display text-3xl leading-tight tracking-tight sm:text-display-sm">
+                {t(tier.name[0], tier.name[1])}
+              </h2>
             </div>
-            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-neutral-600">{t(tier.promise[0], tier.promise[1])}</p>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-800">{t("真实保证", "What it really guarantees")}</div>
-                <ul className="mt-2 space-y-1.5">
+            <p className="mt-4 max-w-3xl text-base leading-relaxed text-ink/75">{t(tier.promise[0], tier.promise[1])}</p>
+            <div className="mt-6 grid gap-x-10 gap-y-8 md:grid-cols-2">
+              <div>
+                <p className="font-mono text-kicker uppercase text-forest-700">
+                  {t("真实保证", "What it really guarantees")}
+                </p>
+                <ul className="mt-3 space-y-2.5 border-t border-rule pt-3">
                   {tier.guarantees.map(([zh, en]) => (
-                    <li key={en} className="flex gap-2 text-sm text-emerald-900">
-                      <span aria-hidden>✓</span>
+                    <li key={en} className="flex gap-3 text-sm leading-relaxed text-ink/85">
+                      <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-forest-600" aria-hidden />
                       <span>{t(zh, en)}</span>
                     </li>
                   ))}
                 </ul>
               </div>
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-                <div className="text-xs font-semibold uppercase tracking-wide text-amber-800">{t("诚实边界", "Honest limits")}</div>
-                <ul className="mt-2 space-y-1.5">
+              <div>
+                <p className="font-mono text-kicker uppercase text-gold-700">{t("诚实边界", "Honest limits")}</p>
+                <ul className="mt-3 space-y-2.5 border-t border-rule pt-3">
                   {tier.limits.map(([zh, en]) => (
-                    <li key={en} className="flex gap-2 text-sm text-amber-900">
-                      <span aria-hidden>⚠</span>
+                    <li key={en} className="flex gap-3 text-sm leading-relaxed text-ink/85">
+                      <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-gold-600" aria-hidden />
                       <span>{t(zh, en)}</span>
                     </li>
                   ))}
                 </ul>
               </div>
             </div>
-          </div>
+          </article>
         ))}
       </section>
 
-      <section className="rounded-xl border border-neutral-200 bg-white p-6">
-        <h2 className="text-lg font-semibold">{t("如何独立核验一次计算", "How to independently verify a computation")}</h2>
-        <ol className="mt-3 space-y-3">
+      <section>
+        <p className="font-mono text-kicker uppercase text-muted">
+          {t("公开协议", "Open protocol")}
+        </p>
+        <h2 className="mt-4 max-w-3xl font-display text-display-sm leading-tight tracking-tight">
+          {t("如何独立核验一次计算", "How to independently verify a computation")}
+        </h2>
+        <ol className="mt-8 space-y-7 border-t border-rule pt-7">
           {[
             [
               "每次放行的计算结果都出具一张存证凭证(VO-…),把输出的 SHA-256 绑定到已审核算法的镜像 digest。",
@@ -135,15 +149,16 @@ export default function TrustPage() {
               "L2 jobs additionally carry a remote attestation whose measurement should equal the stated algorithm image digest — a mismatch means a forged attestation.",
             ],
           ].map(([zh, en], i) => (
-            <li key={en} className="flex gap-3 text-sm text-neutral-700">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-xs font-bold text-white">{i + 1}</span>
-              <span className="leading-relaxed">{t(zh, en)}</span>
+            <li key={en} className="grid grid-cols-[3rem_1fr] items-baseline gap-x-6">
+              <span className="font-mono text-2xl leading-none text-forest-700">{String(i + 1).padStart(2, "0")}</span>
+              <span className="text-base leading-relaxed text-ink/85">{t(zh, en)}</span>
             </li>
           ))}
         </ol>
-        <div className="mt-5">
-          <Link href="/verify" className="rounded-md bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-neutral-700">
+        <div className="mt-10 border-t border-rule pt-6">
+          <Link href="/verify" className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper hover:bg-ink/85">
             {t("去验真一张凭证", "Verify a certificate")}
+            <span aria-hidden>→</span>
           </Link>
         </div>
       </section>
