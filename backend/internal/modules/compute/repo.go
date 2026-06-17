@@ -20,6 +20,7 @@ type Repository interface {
 	CreateJob(ctx context.Context, j Job) (Job, error)
 	GetJob(ctx context.Context, id string) (Job, error)
 	ListJobsByBuyer(ctx context.Context, buyerID string, limit, offset int) ([]Job, error)
+	ListPendingJobs(ctx context.Context, limit int) ([]Job, error) // for worker loop
 	UpdateJobStatus(ctx context.Context, id, status, errMsg string) error
 	SetJobAttestation(ctx context.Context, id, inputHash, outputHash, signature string) error
 	SetJobOutput(ctx context.Context, id string, outputKind string, outputBytes int64) error
@@ -142,6 +143,17 @@ func scanAlgos(rows pgx.Rows) ([]Algo, error) {
 		out = append(out, a)
 	}
 	return out, nil
+}
+
+func (r *PostgresRepo) ListPendingJobs(ctx context.Context, limit int) ([]Job, error) {
+	const q = `SELECT id, algorithm_id, buyer_id, dataset_id, params, status, output_kind, output_bytes, error, attest_input_hash, attest_output_hash, attest_signature, attest_signed_at, created_at, updated_at
+		FROM compute_jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT $1`
+	rows, err := r.pool.Query(ctx, q, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanJobs(rows)
 }
 
 func scanJob(row pgx.Row) (Job, error) {

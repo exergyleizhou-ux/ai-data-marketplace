@@ -13,10 +13,11 @@ const (
 	ResultWarn = "warn"
 	ResultFail = "fail"
 
-	TypeFormat = "format"
-	TypeStats  = "stats"
-	TypeDedup  = "dedup"
-	TypePII    = "pii"
+	TypeFormat       = "format"
+	TypeStats        = "stats"
+	TypeDedup        = "dedup"
+	TypePII          = "pii"
+	TypeAuthenticity = "authenticity" // 000007: statistical data-authenticity screening
 )
 
 // Check is one check's outcome, ready to persist as a quality_check row.

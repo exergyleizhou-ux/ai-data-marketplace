@@ -7,7 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -156,7 +159,7 @@ func (s *Service) ExecuteJob(ctx context.Context, jobID, datasetPath, outputDir,
 	if err != nil {
 		return RunResult{}, fmt.Errorf("get job: %w", err)
 	}
-	if job.Status != "pending" && job.Status != "" {
+	if job.Status != "pending" {
 		return RunResult{}, fmt.Errorf("job %s is %s, not pending", jobID, job.Status)
 	}
 
@@ -189,6 +192,7 @@ func (s *Service) ExecuteJob(ctx context.Context, jobID, datasetPath, outputDir,
 		Params:      params,
 		SigningKey:  signingKey,
 		StorageDir:  storageDir,
+		Timeout:     5 * time.Minute,
 	})
 
 	// Record result
@@ -201,6 +205,58 @@ func (s *Service) ExecuteJob(ctx context.Context, jobID, datasetPath, outputDir,
 	}
 
 	return res, nil
+}
+
+// ── Worker (SpaceX: automatic launch sequencer) ───────────
+
+// Worker polls for pending C2D jobs and executes them.
+// Runs as a background goroutine. Stops when ctx is cancelled.
+type Worker struct {
+	svc        *Service
+	datasetDir string // where dataset files live
+	outputDir  string // scratch space for each run
+	storageDir string // where attested results persist
+	signingKey ed25519.PrivateKey
+	interval   time.Duration // poll interval (default 3s)
+}
+
+// NewWorker creates a background job executor.
+func NewWorker(svc *Service, datasetDir, outputDir, storageDir string, key ed25519.PrivateKey) *Worker {
+	return &Worker{
+		svc:        svc,
+		datasetDir: datasetDir,
+		outputDir:  outputDir,
+		storageDir: storageDir,
+		signingKey: key,
+		interval:   3 * time.Second,
+	}
+}
+
+// Run starts the worker loop. Blocks until ctx is cancelled.
+func (w *Worker) Run(ctx context.Context) {
+	ticker := time.NewTicker(w.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			w.pollAndExecute(ctx)
+		}
+	}
+}
+
+func (w *Worker) pollAndExecute(ctx context.Context) {
+	jobs, err := w.svc.repo.ListPendingJobs(ctx, 5)
+	if err != nil || len(jobs) == 0 {
+		return
+	}
+	for _, job := range jobs {
+		outDir := filepath.Join(w.outputDir, job.ID)
+		os.MkdirAll(outDir, 0755)
+		w.svc.ExecuteJob(ctx, job.ID, w.datasetDir, outDir, w.storageDir, w.signingKey)
+	}
 }
 
 // ── Helpers ────────────────────────────────────────────────
