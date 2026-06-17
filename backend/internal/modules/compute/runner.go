@@ -168,31 +168,26 @@ func (r *DockerRunner) run(ctx context.Context, imageRef, datasetPath, outputDir
 	inputData, _ := os.ReadFile(inputPath)
 
 	if r.DirectExec {
-		// Run binary directly (for testing without Docker).
 		absData, _ := filepath.Abs(datasetPath)
 		absOut, _ := filepath.Abs(outputDir)
 
-		// Simulate /data and /out mounts via env vars + fs layout.
-		// The algo binary reads /out/output.json — we make outputDir its CWD.
 		cmd := exec.CommandContext(ctx, r.dockerPath)
 		cmd.Stdin = bytes.NewReader(inputData)
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		cmd.Dir = absOut
-		// Tell the algo where data and out are (real paths, not /data mounts).
+		var stdoutBuf, stderrBuf bytes.Buffer
+		cmd.Stdout = &stdoutBuf
+		cmd.Stderr = &stderrBuf
 		cmd.Env = append(os.Environ(),
 			"C2D_DATA_DIR="+absData,
 			"C2D_OUT_DIR="+absOut,
 		)
 		err := cmd.Run()
+		if stdoutBuf.Len() > 0 {
+			os.WriteFile(filepath.Join(outputDir, "output.json"), stdoutBuf.Bytes(), 0644)
+		}
 		if err != nil {
-			errMsg := strings.TrimSpace(stderr.String())
-			if errMsg == "" {
-				errMsg = err.Error()
-			}
-			if len(errMsg) > 500 {
-				errMsg = errMsg[:497] + "..."
-			}
+			errMsg := strings.TrimSpace(stderrBuf.String())
+			if errMsg == "" { errMsg = err.Error() }
+			if len(errMsg) > 500 { errMsg = errMsg[:497] + "..." }
 			return fmt.Errorf("%s", errMsg)
 		}
 		return nil
@@ -223,18 +218,30 @@ func (r *DockerRunner) run(ctx context.Context, imageRef, datasetPath, outputDir
 	inputData, _ = os.ReadFile(inputPath)
 	cmd.Stdin = bytes.NewReader(inputData)
 
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Run(); err != nil {
-		errMsg := strings.TrimSpace(stderr.String())
+		errMsg := strings.TrimSpace(stderrBuf.String())
 		if errMsg == "" {
 			errMsg = err.Error()
 		}
 		if len(errMsg) > 500 {
 			errMsg = errMsg[:497] + "..."
 		}
+		// If container produced stdout, save it as output.json
+		if stdoutBuf.Len() > 0 {
+			outputPath := filepath.Join(outputDir, "output.json")
+			os.WriteFile(outputPath, stdoutBuf.Bytes(), 0644)
+		}
 		return fmt.Errorf("%s", errMsg)
+	}
+
+	// Container succeeded — save stdout as output.json
+	outputPath := filepath.Join(outputDir, "output.json")
+	if err := os.WriteFile(outputPath, stdoutBuf.Bytes(), 0644); err != nil {
+		return fmt.Errorf("write output: %w", err)
 	}
 	return nil
 }

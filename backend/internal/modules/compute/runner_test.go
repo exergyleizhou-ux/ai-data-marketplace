@@ -27,13 +27,11 @@ func TestRunnerOutputDispatch(t *testing.T) {
 	// Build mock algo binary.
 	algoPath := filepath.Join(dir, "mock-algo")
 	buildGoBinary(t, algoPath, `package main
-import ("encoding/json";"os")
+import ("encoding/json";"fmt")
 func main() {
 	out := map[string]any{"status":"ok","weights":[]float64{1,2,3},"mae":0.05}
-	data,_ := json.MarshalIndent(out,"","  ")
-	dir := os.Getenv("C2D_OUT_DIR")
-	if dir == "" { dir = "/out" }
-	os.WriteFile(dir+"/output.json",data,0644)
+	data,_ := json.Marshal(out)
+	fmt.Println(string(data))
 }`)
 
 	outputDir := filepath.Join(dir, "out")
@@ -83,11 +81,9 @@ func TestRunnerContainerFailure(t *testing.T) {
 
 	algoPath := filepath.Join(dir, "crash-algo")
 	buildGoBinary(t, algoPath, `package main
-import "os"
+import ("fmt";"os")
 func main() {
-	dir := os.Getenv("C2D_OUT_DIR")
-	if dir == "" { dir = "/out" }
-	os.WriteFile(dir+"/output.json",[]byte(`+"`"+`{"partial":true}`+"`"+`),0644)
+	fmt.Println(`+"`"+`{"partial":true}`+"`"+`)
 	os.Exit(1)
 }`)
 
