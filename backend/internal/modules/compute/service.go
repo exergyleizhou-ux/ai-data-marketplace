@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -145,18 +146,61 @@ func (s *Service) SaveAttestation(ctx context.Context, jobID, inputHash, outputH
 
 // Runner executes a compute job and returns the result.
 type Runner interface {
-	Run(ctx context.Context, job Job, algo Algo, datasetPath string) (output []byte, err error)
+	Run(ctx context.Context, req RunRequest) RunResult
 }
 
-// LocalRunner runs algorithms locally with the Docker CLI.
-// In production this would use a sandbox/TEE; this is the MVP implementation.
-type LocalRunner struct{}
+// ExecuteJob orchestrates the full C2D lifecycle for one job:
+// pending → running → done/failed, with attestation.
+func (s *Service) ExecuteJob(ctx context.Context, jobID, datasetPath, outputDir, storageDir string, signingKey ed25519.PrivateKey) (RunResult, error) {
+	job, err := s.repo.GetJob(ctx, jobID)
+	if err != nil {
+		return RunResult{}, fmt.Errorf("get job: %w", err)
+	}
+	if job.Status != "pending" && job.Status != "" {
+		return RunResult{}, fmt.Errorf("job %s is %s, not pending", jobID, job.Status)
+	}
 
-func (LocalRunner) Run(ctx context.Context, job Job, algo Algo, datasetPath string) ([]byte, error) {
-	// TODO: implement Docker pull + run with volume mounts.
-	// For MVP, the attestation chain is the key deliverable — actual
-	// execution is deferred to the runner infrastructure (P4-2).
-	return nil, fmt.Errorf("LocalRunner.Run not yet implemented — use lumen oasis build + deploy")
+	algo, err := s.repo.GetAlgo(ctx, job.AlgorithmID)
+	if err != nil {
+		return RunResult{}, fmt.Errorf("get algo: %w", err)
+	}
+
+	// Parse params
+	var params map[string]any
+	if job.Params != "" {
+		json.Unmarshal([]byte(job.Params), &params)
+	}
+	if params == nil {
+		params = map[string]any{}
+	}
+
+	// Mark running
+	if err := s.repo.UpdateJobStatus(ctx, jobID, "running", ""); err != nil {
+		return RunResult{}, fmt.Errorf("set running: %w", err)
+	}
+
+	// Execute
+	runner := NewDockerRunner()
+	res := runner.Run(ctx, RunRequest{
+		Job:         job,
+		Algo:        algo,
+		DatasetPath: datasetPath,
+		OutputDir:   outputDir,
+		Params:      params,
+		SigningKey:  signingKey,
+		StorageDir:  storageDir,
+	})
+
+	// Record result
+	if res.OK {
+		s.repo.SetJobOutput(ctx, jobID, algo.OutputKind, int64(len(res.OutputSHA256)))
+		s.repo.SetJobAttestation(ctx, jobID, res.InputHash, res.OutputHash, res.Signature)
+		s.repo.UpdateJobStatus(ctx, jobID, "done", "")
+	} else {
+		s.repo.UpdateJobStatus(ctx, jobID, "failed", res.Error)
+	}
+
+	return res, nil
 }
 
 // ── Helpers ────────────────────────────────────────────────
