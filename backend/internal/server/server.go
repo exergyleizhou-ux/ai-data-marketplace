@@ -16,6 +16,7 @@ import (
 
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/compute"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/dataset"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/delivery"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/order"
@@ -247,6 +248,13 @@ func (s *Server) routes() {
 				store, s.cfg.PIISecret, rec)
 			delivery.Register(api, delSvc, authMW)
 		}
+
+		// --- C2D compute module (SpaceX Phase 2 R15) ---
+		// Wire the algorithm factory→shelf conveyor belt.
+		// Requires: docker daemon + running marketplace worker.
+		computeRepo := compute.NewPostgresRepo(s.db)
+		computeSvc := compute.NewService(computeRepo)
+		compute.Register(api, computeSvc, authMW)
 	}
 }
 
