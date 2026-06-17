@@ -1,48 +1,52 @@
-name: CI
+name: Lumen CI
 
 on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
 
 jobs:
-  backend:
+  lumen:
+    name: Lumen — build + vet + test -race
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
-      - name: Resolve dependencies
-        run: go mod tidy
+          go-version: "1.23"
+          cache: true
+
+      - name: Build
+        run: go build -o bin/lumen ./cmd/lumen
+
       - name: Vet
         run: go vet ./...
-      - name: Build
-        run: go build ./...
-      - name: Test
-        run: go test ./...
 
-  frontend:
+      - name: Test (race)
+        run: go test -race -count=1 -timeout=60s ./...
+
+  marketplace:
+    name: Marketplace — build + vet + test
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: ./backend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - uses: actions/setup-go@v5
         with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install
-        run: npm install
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Lint
-        run: npm run lint
+          go-version: "1.23"
+          cache: true
+          cache-dependency-path: backend/go.sum
+
       - name: Build
-        run: npm run build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -count=1 -timeout=60s ./...
