@@ -691,6 +691,11 @@ func (s *Service) GetAttestation(ctx context.Context, userID, jobID string) (Att
 	if err != nil {
 		return Attestation{}, err
 	}
+	if j.FederatedJobID != "" {
+		// Federated sub-jobs are internal — their per-partial attestation (OutputSHA
+		// + TEE measurement) is never surfaced, like every sibling per-job read.
+		return Attestation{}, ErrForbidden
+	}
 	if j.BuyerID != userID {
 		ds, derr := s.datasets.ForCompute(ctx, j.DatasetID)
 		if derr != nil {

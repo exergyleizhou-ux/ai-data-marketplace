@@ -21,10 +21,12 @@ func TestJobCertificateID_Deterministic(t *testing.T) {
 
 func TestBuildJobCertificate_BindsProvenance(t *testing.T) {
 	job := Job{
-		ID: "job-9", DatasetID: "ds-1", BuyerID: "buyer-1",
+		ID: "job-9", DatasetID: "ds-1", BuyerID: "buyer-1", AlgorithmVersion: 2,
 		Status: JobReleased, OutputKind: OutputModel, OutputBytes: 465, FinishedAt: "2026-06-04T00:00:00Z",
 	}
-	algo := Algorithm{ID: "algo-1", Name: "logreg", ImageDigest: "sha256:codedigest", Version: 2, Trusted: true}
+	// The live algo row now says version 5 (re-registered since the job ran), but the
+	// cert must report the version PINNED on the job at submit (2).
+	algo := Algorithm{ID: "algo-1", Name: "logreg", ImageDigest: "sha256:codedigest", Version: 5, Trusted: true}
 	cert := BuildJobCertificate(job, algo, "deadbeefcafe")
 
 	if cert["status"] != "registered" {
@@ -46,6 +48,9 @@ func TestBuildJobCertificate_BindsProvenance(t *testing.T) {
 	}
 	if prov["image_digest"] != "sha256:codedigest" || prov["name"] != "logreg" || prov["trusted"] != true {
 		t.Fatalf("algorithm provenance wrong: %+v", prov)
+	}
+	if prov["version"] != 2 {
+		t.Fatalf("cert must report the pinned job version 2, not the live algo version: %v", prov["version"])
 	}
 }
 
