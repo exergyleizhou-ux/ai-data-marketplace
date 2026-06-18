@@ -24,6 +24,7 @@ func TestDockerRunArgs_SecurityFlags(t *testing.T) {
 		"--read-only",
 		"--security-opt=no-new-privileges",
 		"--cap-drop=ALL",
+		"--user=65534:65534",
 		"--pids-limit=128",
 		"--memory=512m",
 		"--cpus=1",
@@ -39,7 +40,11 @@ func TestDockerRunArgs_SecurityFlags(t *testing.T) {
 	if !strings.Contains(joined, "--tmpfs=/tmp:") {
 		t.Errorf("missing writable /tmp tmpfs: %s", joined)
 	}
-	// The image (pinned by digest) must be the LAST arg.
+	// A `--` separator must precede the image so a crafted image string can't be
+	// parsed as a docker flag; the digest-pinned image is the LAST arg.
+	if args[len(args)-2] != "--" {
+		t.Errorf("missing -- separator before image: %v", args)
+	}
 	if got := args[len(args)-1]; got != "reg/vo-logreg@sha256:abc123" {
 		t.Errorf("last arg = %q, want digest-pinned image", got)
 	}
