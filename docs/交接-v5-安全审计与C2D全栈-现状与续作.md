@@ -22,7 +22,9 @@
 > - #187 delivery 版本钉死(下载现版本非购买版本,可换包/投毒) → `OrderInfo.VersionID` + `ObjectKeyForVersion`
 > - #188 audit_logs TRUNCATE 绕过(行级触发器不在 TRUNCATE 触发) → **迁移 000030** 语句级 TRUNCATE 触发器（完整修=DB 权限分离,部署级,已注明）
 > - **本地 gotcha：** `/private/tmp/oasis-run` 共享 live DB 是**跨分支迁移陷阱**——测了含迁移 N 的分支后 live DB 停在 N，再测缺 N 的分支会报「no migration for version N」。切分支时 `UPDATE schema_migrations SET version=<base>` + drop 那列。CI 不受影响(每次 fresh DB)。
-> - **下一程**：§9 的 C(新产品面) / D(lumen) / E(gated TEE/Secretflow)，或对 round-3 剩下的 29 条 med/low 跑 round-4。compute+资金(round2) 与这 13 模块(round3) 现都已审。
+> - **MEDIUM 续修**：除 1 crit + 14 high(#177–#188)外,又修了 **8 条净正向 medium(#190/#191/#192/#194/#196)**:M2/M4/M7 限流缺口(search/files/watch)、M18 2FA 挑战漏查冻结、M1 公开 reviews 泄露 buyer_id/order_id、M14/M15 导出缓存无界+OpenExport 不回退 store、M16 举报 target 不校验存在。**其余 med/low 是设计级/大重构/已缓解/nit,有意「记录不动」**(M5 anomaly 白名单需产品意图+补审计发射、M9 cert_id 设计、M12 审计非事务、M11 React 自转义、M19 已有 per-IP+挑战门、M3/M6/M8/M17 nit)——详见记忆 `c2d-author-loop-status.md`。
+> - **⚠️ 并行会话同时在审**:另一个 agent 同程也在修审计,已合 **#193**(X-Forwarded-For 可伪造限流 key→只信配置的代理)并对 live DB 应用了**未进 main 的 migration 000031(`revoked_refresh_tokens`)**。**跨会话 DB 陷阱:live `ai_data_marketplace` 在 v31、main 只到 v30 → 后端 AUTO_MIGRATE 重启 / main 分支的 live-DB 集成测试会报「no migration for version 31」**,直到 000031 进 main。临时:测试用一次性库(`CREATE DATABASE oasis_modtest OWNER app` + `DATABASE_URL=…oasis_modtest` 全新 migrate 1→30);**别在 main-only 分支重启 live 后端**;别回滚 v31(会破坏并行会话)。CI 不受影响(每次 fresh DB)。
+> - **下一程**：§9 的 C(新产品面) / D(lumen) / E(gated TEE/Secretflow)。compute+资金(round2) 与这 13 模块(round3) 现都已审,crit/high/净正向-medium 全修。
 
 ---
 
