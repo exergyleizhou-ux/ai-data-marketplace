@@ -187,6 +187,36 @@ func TestListByUser_ReturnsOwnOnly(t *testing.T) {
 	}
 }
 
+// TestListByUser_HidesTitleOfNonPublished: a watched dataset that is not
+// currently published (e.g. delisted after the watch was created) must not leak
+// its title back through ListByUser. The title is surfaced only while published.
+func TestListByUser_HidesTitleOfNonPublished(t *testing.T) {
+	repo, cleanup := testRepo(t)
+	defer cleanup()
+	ctx := context.Background()
+	pool := repo.(*pgRepo).pool
+	seedUser(t, pool, "user-TLx")
+	ds, _ := genDS(t, pool)
+	if _, err := pool.Exec(ctx, `UPDATE datasets SET status='published' WHERE id=$1`, ds); err != nil {
+		t.Fatal(err)
+	}
+	repo.Add(ctx, "user-TLx", ds)
+
+	// While published, the title is visible.
+	list, _ := repo.ListByUser(ctx, "user-TLx")
+	if len(list) != 1 || list[0].DatasetTitle == "" {
+		t.Fatalf("published watch should expose title, got %+v", list)
+	}
+	// Delist it: the title must no longer be returned.
+	if _, err := pool.Exec(ctx, `UPDATE datasets SET status='delisted' WHERE id=$1`, ds); err != nil {
+		t.Fatal(err)
+	}
+	list, _ = repo.ListByUser(ctx, "user-TLx")
+	if len(list) != 1 || list[0].DatasetTitle != "" {
+		t.Fatalf("delisted watch must not leak title, got %+v", list)
+	}
+}
+
 func TestListByDataset_ReturnsAllWatchers(t *testing.T) {
 	repo, cleanup := testRepo(t)
 	defer cleanup()
