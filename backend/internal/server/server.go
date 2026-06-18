@@ -359,7 +359,7 @@ func (s *Server) routes() {
 
 		// Certificate verification: public lookup endpoint + cert registration.
 		verifyRepo := verify.NewRepository(s.db)
-		verify.Register(api, verifyRepo)
+		verify.Register(api, verifyRepo, lim)
 
 		// Audit-log viewer: ops-only, read-only over audit_logs.
 		auditSvc := auditlog.NewService(auditlog.NewRepository(s.db))
