@@ -326,7 +326,7 @@ func (s *Server) routes() {
 		dataset.Register(api, dsSvc, authMW, auth.RequireRole("ops", "admin"), lim)
 
 		// Search module: thin public search endpoint backed by the dataset index.
-		search.Register(api, datasetSearchAdapter{ds: dsSvc})
+		search.Register(api, datasetSearchAdapter{ds: dsSvc}, lim)
 
 		orderSvc := order.NewService(order.NewRepository(s.db), authSvc, datasetPurchaseAdapter{ds: dsSvc}, rec)
 		order.Register(api, orderSvc, authMW, auth.RequireRole("ops", "admin"), lim)
@@ -369,7 +369,7 @@ func (s *Server) routes() {
 		// Watchlist: dataset watching + new-version notification.
 		watchRepo := watchlist.NewRepository(s.db)
 		watchSvc := watchlist.NewService(watchRepo, notifySvc, watchlistDatasetAdapter{ds: dsSvc})
-		watchlist.Register(api, watchSvc, authMW)
+		watchlist.Register(api, watchSvc, authMW, lim)
 		dsSvc.SetWatchersNotifier(watchSvc)
 
 		// Dataset Q&A: buyer asks + seller answers (PR-O).
@@ -441,7 +441,7 @@ func (s *Server) routes() {
 			delSvc := delivery.NewService(delivery.NewRepository(s.db),
 				orderDeliveryAdapter{o: orderSvc}, datasetDeliveryAdapter{ds: dsSvc},
 				store, s.cfg.PIISecret, rec)
-			delivery.Register(api, delSvc, authMW)
+			delivery.Register(api, delSvc, authMW, lim)
 		}
 
 		// Compute-to-Data (隐私计算 / 可用不可见). The buyer-invisible L1 sandbox:

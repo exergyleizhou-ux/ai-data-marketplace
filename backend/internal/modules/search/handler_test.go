@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
 )
 
 type fakeSearcher struct {
@@ -26,7 +28,7 @@ func setupSearch(t *testing.T, f *fakeSearcher) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	Register(r.Group("/api/v1"), f)
+	Register(r.Group("/api/v1"), f, ratelimit.NewInMemory())
 	return r
 }
 

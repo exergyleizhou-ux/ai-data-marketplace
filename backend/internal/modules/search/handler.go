@@ -3,10 +3,13 @@ package search
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
 )
 
 // DatasetSearcher is the search index the search module reads from.
@@ -40,10 +43,14 @@ type SearchResult struct {
 
 type handler struct{ searcher DatasetSearcher }
 
-// Register mounts the search endpoint.
-func Register(rg *gin.RouterGroup, searcher DatasetSearcher) {
+// Register mounts the search endpoint. It is public (unauthenticated) and
+// runs ts_query against the catalog, so it is rate limited like the sibling
+// preview endpoint to bound scraping / query-amplification DoS.
+func Register(rg *gin.RouterGroup, searcher DatasetSearcher, limiter ratelimit.Limiter) {
 	h := &handler{searcher: searcher}
-	rg.GET("/search", h.search)
+	rg.GET("/search",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "search", Limit: 60, Window: time.Minute}),
+		h.search)
 }
 
 func (h *handler) search(c *gin.Context) {
