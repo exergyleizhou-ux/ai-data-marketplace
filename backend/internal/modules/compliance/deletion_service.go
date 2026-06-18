@@ -2,9 +2,28 @@ package compliance
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 )
+
+// parseDBTimestamp parses a timestamp string as emitted by Postgres ::text
+// (e.g. "2026-06-25 11:03:49.281982+00" — space separator, "+00" offset) as
+// well as RFC3339. The repo returns cooling_until via ::text, so parsing it
+// with only time.RFC3339 always failed and silently blocked deletion approval.
+func parseDBTimestamp(s string) (time.Time, error) {
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999-07",
+		"2006-01-02 15:04:05.999999-07:00",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognized timestamp %q", s)
+}
 
 // ExportPurger erases a user's data-export jobs + their backing PII zips, so
 // account deletion doesn't leave an export archive behind. Implemented by
@@ -56,8 +75,12 @@ func (s *DeletionService) Approve(ctx context.Context, opsID, id, note string) (
 	if d.Status != DeletionCooling {
 		return DeletionRequest{}, ErrBadTransition
 	}
-	coolingAt, err := time.Parse(time.RFC3339, d.CoolingUntil)
-	if err != nil || time.Now().Before(coolingAt) {
+	coolingAt, err := parseDBTimestamp(d.CoolingUntil)
+	if err != nil {
+		// Don't disguise a parse failure as "cooling not elapsed" — surface it.
+		return DeletionRequest{}, fmt.Errorf("approve deletion %s: %w", id, err)
+	}
+	if time.Now().Before(coolingAt) {
 		return DeletionRequest{}, ErrCoolingNotElapsed
 	}
 	r, err := s.repo.Transition(ctx, id, DeletionCooling, DeletionApproved, opsID, note)
