@@ -449,10 +449,14 @@ func (f *fakeRepo) SetAttestation(_ context.Context, id string, report []byte) e
 	return nil
 }
 func (f *fakeRepo) ReclaimStaleLeases(_ context.Context, _ int) (int, error) { return 0, nil }
-func (f *fakeRepo) SpendDP(_ context.Context, datasetID, buyerID, _ string, eps float64) error {
+func (f *fakeRepo) SpendDP(_ context.Context, datasetID, buyerID, _ string, eps float64, total *float64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.dp[datasetID+"|"+buyerID] += eps
+	key := datasetID + "|" + buyerID
+	if total != nil && f.dp[key]+eps > *total {
+		return ErrDPBudgetExceeded
+	}
+	f.dp[key] += eps
 	return nil
 }
 func (f *fakeRepo) SumDP(_ context.Context, datasetID, buyerID string) (float64, error) {
@@ -642,7 +646,7 @@ func TestSubmitJob_DPBudgetExceeded(t *testing.T) {
 	}
 	ent, _ := repo.CreateEntitlement(ctx, Entitlement{DatasetID: "ds-1", BuyerID: "buyer-1", JobsQuota: 5})
 	// Pre-spend 3 of a 5.0 budget; another 4.0 would exceed.
-	_ = repo.SpendDP(ctx, "ds-1", "buyer-1", "", 3.0)
+	_ = repo.SpendDP(ctx, "ds-1", "buyer-1", "", 3.0, nil)
 	_, err := svc.SubmitJob(ctx, "buyer-1", SubmitInput{DatasetID: "ds-1", EntitlementID: ent.ID, AlgorithmID: algo.ID})
 	if !errors.Is(err, ErrDPBudgetExceeded) {
 		t.Fatalf("err = %v, want ErrDPBudgetExceeded", err)
@@ -667,6 +671,26 @@ func TestSubmitJob_RefusesUnpinnedAlgorithm(t *testing.T) {
 	_, err := svc.SubmitJob(ctx, "buyer-1", SubmitInput{DatasetID: "ds-1", EntitlementID: ent.ID, AlgorithmID: algo.ID})
 	if !errors.Is(err, ErrAlgoNotAllowed) {
 		t.Fatalf("unpinned algorithm should be refused at run, got err=%v", err)
+	}
+}
+
+// SpendDP with a non-nil total is the real budget gate: it must refuse a spend
+// that would exceed the cap, while an uncapped (nil) spend always records.
+func TestSpendDP_CappedRejectsOverBudget(t *testing.T) {
+	repo := newFakeRepo()
+	ctx := context.Background()
+	total := 5.0
+	if err := repo.SpendDP(ctx, "ds", "buyer", "", 3.0, &total); err != nil {
+		t.Fatalf("first spend within budget should succeed: %v", err)
+	}
+	if err := repo.SpendDP(ctx, "ds", "buyer", "", 2.0, &total); err != nil {
+		t.Fatalf("spend up to the cap should succeed: %v", err)
+	}
+	if err := repo.SpendDP(ctx, "ds", "buyer", "", 0.5, &total); !errors.Is(err, ErrDPBudgetExceeded) {
+		t.Fatalf("over-budget spend = %v, want ErrDPBudgetExceeded", err)
+	}
+	if err := repo.SpendDP(ctx, "ds", "buyer", "", 100.0, nil); err != nil {
+		t.Fatalf("uncapped spend should always succeed: %v", err)
 	}
 }
 

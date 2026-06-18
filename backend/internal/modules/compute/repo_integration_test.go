@@ -195,10 +195,10 @@ func TestComputeRepoIntegration(t *testing.T) {
 	}
 
 	// --- DP ledger ---
-	if err := repo.SpendDP(ctx, dsID, buyer, j1.ID, 2.0); err != nil {
+	if err := repo.SpendDP(ctx, dsID, buyer, j1.ID, 2.0, nil); err != nil {
 		t.Fatalf("spend dp: %v", err)
 	}
-	if err := repo.SpendDP(ctx, dsID, buyer, "", 1.5); err != nil {
+	if err := repo.SpendDP(ctx, dsID, buyer, "", 1.5, nil); err != nil {
 		t.Fatalf("spend dp2: %v", err)
 	}
 	sum, err := repo.SumDP(ctx, dsID, buyer)
@@ -276,4 +276,73 @@ func seedOrder(t *testing.T, pool *pgxpool.Pool, buyer, seller, datasetID string
 		t.Fatalf("seed order: %v", err)
 	}
 	return id
+}
+
+// TestSpendDP_AtomicUnderConcurrency proves the per-(dataset,buyer) advisory lock
+// makes the capped SpendDP atomic: N concurrent spends against a budget that only
+// fits K must commit EXACTLY K and never overshoot the cap. Without the lock,
+// concurrent read-then-insert lets a burst of jobs all pass the budget check and
+// overspend (the bug this fixes).
+func TestSpendDP_AtomicUnderConcurrency(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping real-DB concurrency test")
+	}
+	if err := db.RunMigrations(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	defer pool.Close()
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	seller := seedUser(t, pool, "dpc-s", "seller")
+	buyer := seedUser(t, pool, "dpc-b", "buyer")
+	ds := seedDataset(t, pool, seller)
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM dp_budget_ledger WHERE dataset_id=$1 AND buyer_id=$2`, ds, buyer)
+		pool.Exec(ctx, `DELETE FROM datasets WHERE id=$1`, ds)
+		pool.Exec(ctx, `DELETE FROM users WHERE id IN ($1,$2)`, seller, buyer)
+	})
+
+	const eps = 1.0
+	const N = 24
+	total := 5.0 // budget fits exactly 5 spends of 1.0
+	var committed, rejected int64
+	var wg sync.WaitGroup
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			switch err := repo.SpendDP(ctx, ds, buyer, "", eps, &total); {
+			case err == nil:
+				atomic.AddInt64(&committed, 1)
+			case errors.Is(err, ErrDPBudgetExceeded):
+				atomic.AddInt64(&rejected, 1)
+			default:
+				t.Errorf("unexpected SpendDP error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if committed != 5 {
+		t.Errorf("committed spends = %d, want 5 — the advisory lock failed to serialize concurrent spends", committed)
+	}
+	if rejected != N-5 {
+		t.Errorf("rejected = %d, want %d", rejected, N-5)
+	}
+	sum, err := repo.SumDP(ctx, ds, buyer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum > total {
+		t.Errorf("ledger sum=%.2f OVERSHOT budget=%.2f under concurrency", sum, total)
+	}
+	if sum != 5.0 {
+		t.Errorf("ledger sum=%.2f, want 5.00", sum)
+	}
 }
