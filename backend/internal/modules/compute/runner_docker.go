@@ -102,9 +102,11 @@ func dockerRunArgs(req RunRequest, res DockerResources, dataDir, outDir, paramsF
 		"--memory="+res.Memory,
 		"--cpus="+res.CPUs,
 		"--tmpfs=/tmp:rw,size="+res.TmpfsSize+",nodev,nosuid,noexec",
+		"--user=65534:65534", // non-root nobody, even if the image declares USER root
 		"-v", dataDir+":/data:ro", // dataset, read-only
 		"-v", outDir+":/out", // output collection
 		"-v", paramsFile+":/params.json:ro", // job params, read-only
+		"--", // stop option parsing: a crafted image string can't inject docker flags
 		imageRef(req.Algorithm),
 	)
 	return args

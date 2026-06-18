@@ -633,7 +633,7 @@ func TestSubmitJob_DPBudgetExceeded(t *testing.T) {
 	svc := NewService(repo, fakeIdentity{status: kycVerified},
 		fakeDatasets{info: DatasetInfo{SellerID: "seller-1", VersionID: "ver-1", Published: true}}, nil)
 	algo, _ := repo.RegisterAlgorithm(ctx, Algorithm{
-		Name: "stats", Runtime: RuntimeSklearn, Image: "stats", OutputKind: OutputAggregate, Status: AlgoApproved,
+		Name: "stats", Runtime: RuntimeSklearn, Image: "stats", ImageDigest: "sha256:stats", OutputKind: OutputAggregate, Status: AlgoApproved,
 	})
 	eps, total := 4.0, 5.0
 	if _, err := repo.UpsertOffer(ctx, Offer{DatasetID: "ds-1", Enabled: true, TrustLevel: TrustL1,
@@ -646,6 +646,27 @@ func TestSubmitJob_DPBudgetExceeded(t *testing.T) {
 	_, err := svc.SubmitJob(ctx, "buyer-1", SubmitInput{DatasetID: "ds-1", EntitlementID: ent.ID, AlgorithmID: algo.ID})
 	if !errors.Is(err, ErrDPBudgetExceeded) {
 		t.Fatalf("err = %v, want ErrDPBudgetExceeded", err)
+	}
+}
+
+// An approved but un-pinned algorithm (mutable :latest tag, no sha256 digest)
+// must be refused at run — otherwise the registry tag could be swapped between
+// approval and execution, voiding the audit boundary.
+func TestSubmitJob_RefusesUnpinnedAlgorithm(t *testing.T) {
+	repo := newFakeRepo()
+	ctx := context.Background()
+	svc := NewService(repo, fakeIdentity{status: kycVerified},
+		fakeDatasets{info: DatasetInfo{SellerID: "seller-1", VersionID: "ver-1", Published: true}}, nil)
+	algo, _ := repo.RegisterAlgorithm(ctx, Algorithm{
+		Name: "unpinned", Runtime: RuntimeSklearn, Image: "reg/x:latest", OutputKind: OutputAggregate, Status: AlgoApproved,
+	})
+	if _, err := repo.UpsertOffer(ctx, Offer{DatasetID: "ds-1", Enabled: true, TrustLevel: TrustL1}); err != nil {
+		t.Fatal(err)
+	}
+	ent, _ := repo.CreateEntitlement(ctx, Entitlement{DatasetID: "ds-1", BuyerID: "buyer-1", JobsQuota: 5})
+	_, err := svc.SubmitJob(ctx, "buyer-1", SubmitInput{DatasetID: "ds-1", EntitlementID: ent.ID, AlgorithmID: algo.ID})
+	if !errors.Is(err, ErrAlgoNotAllowed) {
+		t.Fatalf("unpinned algorithm should be refused at run, got err=%v", err)
 	}
 }
 

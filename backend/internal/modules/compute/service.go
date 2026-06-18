@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
@@ -632,6 +633,14 @@ func (s *Service) resolveAlgorithm(ctx context.Context, offer Offer, algorithmID
 	}
 	if algo.Status != AlgoApproved {
 		return Algorithm{}, ErrAlgoNotAllowed
+	}
+	// Every executed algorithm must be digest-pinned: a missing/mutable image ref
+	// lets the registry tag be swapped between approval and execution, voiding the
+	// audit ("the audited code is the boundary", design §4). Trusted algos already
+	// pin at register/review; this closes the gap for approved non-trusted
+	// (metrics/aggregate/table) algorithms too.
+	if !strings.HasPrefix(algo.ImageDigest, "sha256:") {
+		return Algorithm{}, fmt.Errorf("%w: algorithm must pin a sha256 image digest to run", ErrAlgoNotAllowed)
 	}
 	if len(offer.AllowedAlgoIDs) > 0 {
 		ok := false
