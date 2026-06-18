@@ -82,7 +82,7 @@ type Repository interface {
 	ReclaimStaleLeases(ctx context.Context, maxAttempts int) (int, error)
 
 	// differential-privacy budget
-	SpendDP(ctx context.Context, datasetID, buyerID, jobID string, eps float64) error
+	SpendDP(ctx context.Context, datasetID, buyerID, jobID string, eps float64, total *float64) error
 	SumDP(ctx context.Context, datasetID, buyerID string) (float64, error)
 
 	// federated (P4-a)
@@ -685,14 +685,42 @@ func (r *pgRepo) ReclaimStaleLeases(ctx context.Context, maxAttempts int) (int, 
 
 // --- DP budget ---
 
-func (r *pgRepo) SpendDP(ctx context.Context, datasetID, buyerID, jobID string, eps float64) error {
-	_, err := r.pool.Exec(ctx,
-		`INSERT INTO dp_budget_ledger (dataset_id, buyer_id, job_id, epsilon_spent)
-		 VALUES ($1,$2,NULLIF($3,'')::uuid,$4)`, datasetID, buyerID, jobID, eps)
+// SpendDP atomically records epsilon against the per-(dataset,buyer) budget. When
+// total != nil the spend is rejected (ErrDPBudgetExceeded) if it would exceed the
+// cap; a per-(dataset,buyer) advisory lock serializes concurrent spends so a burst
+// of jobs can't each pass an independent read-then-insert and overshoot the cap.
+func (r *pgRepo) SpendDP(ctx context.Context, datasetID, buyerID, jobID string, eps float64, total *float64) error {
+	const ins = `INSERT INTO dp_budget_ledger (dataset_id, buyer_id, job_id, epsilon_spent)
+		 VALUES ($1,$2,NULLIF($3,'')::uuid,$4)`
+	if total == nil {
+		if _, err := r.pool.Exec(ctx, ins, datasetID, buyerID, jobID, eps); err != nil {
+			return fmt.Errorf("spend dp: %w", err)
+		}
+		return nil
+	}
+	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("spend dp: %w", err)
 	}
-	return nil
+	defer tx.Rollback(ctx)
+	// Serialize spends for this (dataset, buyer) so the SUM below sees every
+	// committed spend rather than a stale read (closes the concurrent-submit race).
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, datasetID+":"+buyerID); err != nil {
+		return fmt.Errorf("spend dp lock: %w", err)
+	}
+	var spent float64
+	if err := tx.QueryRow(ctx,
+		`SELECT COALESCE(SUM(epsilon_spent),0) FROM dp_budget_ledger WHERE dataset_id=$1 AND buyer_id=$2`,
+		datasetID, buyerID).Scan(&spent); err != nil {
+		return fmt.Errorf("spend dp sum: %w", err)
+	}
+	if spent+eps > *total {
+		return ErrDPBudgetExceeded
+	}
+	if _, err := tx.Exec(ctx, ins, datasetID, buyerID, jobID, eps); err != nil {
+		return fmt.Errorf("spend dp: %w", err)
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *pgRepo) SumDP(ctx context.Context, datasetID, buyerID string) (float64, error) {

@@ -3,6 +3,7 @@ package compute
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -224,10 +225,20 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 		return
 	}
 
-	// DP ledger: record the spent epsilon for aggregate/metric outputs (§8).
+	// DP ledger: atomically record the spent epsilon against the offer's total
+	// budget (§8). The submit-time check is advisory; this atomic spend is the real
+	// gate — a burst of jobs that each passed submit cannot overshoot the cap.
+	// Over-budget ⇒ reject (output withheld, credit refunded); any other ledger
+	// error ⇒ fail. Either way the output is NOT released.
 	if job.DPEpsilon != nil {
-		if err := s.repo.SpendDP(ctx, job.DatasetID, job.BuyerID, jobID, *job.DPEpsilon); err != nil {
-			slog.Error("compute: dp ledger write failed", "job_id", jobID, "err", err)
+		if err := s.repo.SpendDP(ctx, job.DatasetID, job.BuyerID, jobID, *job.DPEpsilon, offer.DPEpsilonTotal); err != nil {
+			if errors.Is(err, ErrDPBudgetExceeded) {
+				s.rejectJob(ctx, jobID, job.EntitlementID, "dp_budget_exceeded")
+			} else {
+				slog.Error("compute: dp ledger write failed", "job_id", jobID, "err", err)
+				s.failJob(ctx, jobID, "dp_ledger_error")
+			}
+			return
 		}
 	}
 

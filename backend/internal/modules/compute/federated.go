@@ -330,7 +330,7 @@ func (s *Service) aggregateAndRelease(ctx context.Context, fed FederatedJob, sub
 	// which is a real compute_jobs row — design §8 budget tracking).
 	if fed.DPEpsilon != nil {
 		for _, j := range subs {
-			if err := s.repo.SpendDP(ctx, j.DatasetID, fed.BuyerID, j.ID, *fed.DPEpsilon); err != nil {
+			if err := s.repo.SpendDP(ctx, j.DatasetID, fed.BuyerID, j.ID, *fed.DPEpsilon, nil); err != nil {
 				slog.Error("compute: federated dp ledger write failed", "federated_job_id", fed.ID, "sub_job", j.ID, "err", err)
 			}
 		}
