@@ -101,7 +101,25 @@ func (s *Server) startBackgroundCleaners() {
 		}
 	}()
 
-	slog.Info("background cleaners started", "tasks", 2)
+	// Revoked refresh tokens: drop rows past their expiry every hour (IsRevoked
+	// already ignores them; this just bounds the table).
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := s.db.Exec(ctx,
+					`DELETE FROM revoked_refresh_tokens WHERE expires_at < now()`); err != nil {
+					slog.Warn("revoked-token cleanup failed", "err", err)
+				}
+			}
+		}
+	}()
+
+	slog.Info("background cleaners started", "tasks", 3)
 }
 
 // New builds the server. db may be nil in tests that exercise only routes that
@@ -158,14 +176,18 @@ func (s *Server) limiter() ratelimit.Limiter {
 	return ratelimit.NewInMemory()
 }
 
-// denylist returns a shared Redis-backed refresh-token denylist, falling back
-// to an in-memory one when Redis is unreachable (same degradation as limiter).
+// denylist returns the refresh-token revocation backend. It is Postgres-backed
+// so revocation (logout + rotation reuse-detection) is durable across restarts
+// and shared across all instances — the source of truth, already on the
+// refresh path. A Redis-backed denylist was fail-open: when Redis was down it
+// degraded to a per-process in-memory map, so a logout/rotation on one instance
+// left the token valid elsewhere and was lost on restart (refresh TTL 30 days).
+// The in-memory backend is used only when there is no DB (route-only tests).
 func (s *Server) denylist() auth.Denylist {
-	if client, err := redispkg.New(context.Background(), s.cfg.RedisURL); err == nil {
-		slog.Info("token denylist backend", "type", "redis")
-		return auth.NewRedisDenylist(client)
+	if s.db != nil {
+		slog.Info("token denylist backend", "type", "postgres")
+		return auth.NewPostgresDenylist(s.db)
 	}
-	slog.Warn("redis unavailable; using in-memory token denylist")
 	return auth.NewInMemoryDenylist()
 }
 
