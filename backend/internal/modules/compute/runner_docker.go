@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,6 +95,7 @@ func dockerRunArgs(req RunRequest, res DockerResources, dataDir, outDir, paramsF
 		args = append(args, "--runtime="+res.Runtime) // P2: gVisor (runsc) / Kata kernel boundary (§7.2)
 	}
 	args = append(args,
+		"--name=c2d-"+req.Job.ID,            // deterministic name so a timed-out container can be reaped
 		"--network=none",                   // no network: the only exfil path is the gated output
 		"--read-only",                      // immutable rootfs
 		"--security-opt=no-new-privileges", // no privilege escalation
@@ -125,6 +127,12 @@ func (r dockerRunner) Run(ctx context.Context, req RunRequest) (RunResult, error
 		return RunResult{}, err
 	}
 	defer os.RemoveAll(outDir)
+	// MkdirTemp makes the dir 0700 owned by the runner-host user, but the container
+	// runs as uid 65534 (--user); without this it can't create /out/output.bin on a
+	// non-root Linux runner (Docker Desktop masks it by ignoring host uid perms).
+	if err := os.Chmod(outDir, 0o777); err != nil {
+		return RunResult{}, err
+	}
 
 	effParams := req.Params
 	if effParams == nil {
@@ -146,13 +154,34 @@ func (r dockerRunner) Run(ctx context.Context, req RunRequest) (RunResult, error
 	cmd := exec.CommandContext(cctx, "docker", dockerRunArgs(req, r.res, req.DataPath, outDir, paramsFile)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return RunResult{}, fmt.Errorf("sandbox execution failed: %w", err)
+	runErr := cmd.Run()
+	if cctx.Err() == context.DeadlineExceeded {
+		// CommandContext only SIGKILLs the docker CLI; the daemon-owned container
+		// keeps running. Reap it so timed-out jobs don't pile up and starve caps.
+		_ = exec.Command("docker", "kill", "c2d-"+req.Job.ID).Run()
+	}
+	if runErr != nil {
+		return RunResult{}, fmt.Errorf("sandbox execution failed: %w", runErr)
 	}
 
-	out, err := os.ReadFile(filepath.Join(outDir, "output.bin"))
+	// Bounded read: never load more than the cap into memory — a huge output.bin
+	// would otherwise OOM the worker. (The host /out dir should also sit on a
+	// size-quota'd filesystem to bound disk use during the run — a deployment knob.)
+	maxOut := req.MaxOutputBytes
+	if maxOut <= 0 {
+		maxOut = 64 << 20 // 64 MiB ceiling when the offer sets no explicit cap
+	}
+	f, err := os.Open(filepath.Join(outDir, "output.bin"))
 	if err != nil {
 		return RunResult{}, fmt.Errorf("algorithm produced no output")
+	}
+	defer f.Close()
+	out, err := io.ReadAll(io.LimitReader(f, maxOut+1))
+	if err != nil {
+		return RunResult{}, fmt.Errorf("read output: %w", err)
+	}
+	if int64(len(out)) > maxOut {
+		return RunResult{}, fmt.Errorf("output exceeds max_output_bytes (%d)", maxOut)
 	}
 	return RunResult{OutputKind: req.Algorithm.OutputKind, Output: out, Logs: stderr.Bytes()}, nil
 }
