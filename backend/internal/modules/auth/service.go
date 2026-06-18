@@ -190,6 +190,14 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (AuthResult,
 	if user.Status == statusFrozen {
 		return AuthResult{}, ErrUserFrozen
 	}
+	// Session-invalidation epoch: a refresh token minted before the user's
+	// tokens_valid_after (set on password reset) is dead, even if not individually
+	// denylisted. This is what actually terminates a thief's stolen session on
+	// reset. Access tokens are short-lived and expire on their own TTL.
+	if user.TokensValidAfter != nil && claims.IssuedAt != nil &&
+		claims.IssuedAt.Time.Before(*user.TokensValidAfter) {
+		return AuthResult{}, ErrInvalidToken
+	}
 	// Rotation: the presented refresh token is now spent.
 	if claims.ID != "" && claims.ExpiresAt != nil {
 		if err := s.denylist.Revoke(ctx, claims.ID, time.Until(claims.ExpiresAt.Time)); err != nil {

@@ -127,11 +127,14 @@ func (r *pgRepo) UpdatePassword(ctx context.Context, userID, passwordHash string
 	return nil
 }
 
-func (r *pgRepo) RevokeAllRefreshTokens(ctx context.Context, userID string) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE refresh_tokens SET revoked=true WHERE user_id=$1`, userID)
-	if err != nil {
-		return fmt.Errorf("revoke refresh tokens: %w", err)
+// InvalidateSessions stamps the user's session-invalidation epoch so every
+// refresh token issued before now is rejected on the next refresh. (The prior
+// implementation updated a non-existent refresh_tokens table and its error was
+// swallowed, so a password reset terminated no sessions at all.)
+func (r *pgRepo) InvalidateSessions(ctx context.Context, userID string) error {
+	if _, err := r.pool.Exec(ctx,
+		`UPDATE users SET tokens_valid_after = now() WHERE id=$1`, userID); err != nil {
+		return fmt.Errorf("invalidate sessions: %w", err)
 	}
 	return nil
 }
