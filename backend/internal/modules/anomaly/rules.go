@@ -60,7 +60,12 @@ func (r *HighRiskActionRule) Kind() string { return "high_risk_action" }
 
 func (r *HighRiskActionRule) Detect(ctx context.Context, db DBQuerier, since time.Time) ([]Anomaly, error) {
 	rows, err := db.Query(ctx,
-		`SELECT COALESCE(actor_id::text,''), action, COALESCE(resource_type,'?') || ':' || COALESCE(resource_id,'-'),
+		// Combine the action and its target into the single ResourcePattern column
+		// (col 2) the shared scanAnomalies expects — emitting them as two columns
+		// produced 7 columns for a 6-destination scan, so the scan failed once real
+		// high-risk audit rows existed (see TestHighRiskActionRule_DetectsAndScans).
+		`SELECT COALESCE(actor_id::text,''),
+			action || ' ' || COALESCE(resource_type,'?') || ':' || COALESCE(resource_id,'-'),
 			1 as cnt, created_at as first_at, created_at as last_at,
 			ARRAY[id] as sample_ids
 		 FROM audit_logs
