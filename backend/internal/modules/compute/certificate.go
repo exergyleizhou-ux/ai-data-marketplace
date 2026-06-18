@@ -46,8 +46,8 @@ func BuildJobCertificate(job Job, algo Algorithm, outputSHA string) map[string]a
 		"algorithm": map[string]any{
 			"id":           algo.ID,
 			"name":         algo.Name,
-			"version":      algo.Version,
-			"image_digest": algo.ImageDigest, // the audited code that produced the result
+			"version":      job.AlgorithmVersion, // the version PINNED at submit, not the live (mutable) algo row
+			"image_digest": algo.ImageDigest,     // immutable post-register: the audited code that produced the result
 			"trusted":      algo.Trusted,
 		},
 		"statement_zh": "本凭证由平台基于「可用不可见」计算结果的内容指纹（SHA-256）、产出该结果的已审核算法（镜像 digest 钉死）" +
