@@ -3,8 +3,17 @@ package notification
 import (
 	"context"
 	"fmt"
+	"html"
 	"log/slog"
 )
+
+// htmlParagraph wraps a notification body as an HTML paragraph, HTML-escaping the
+// (attacker-controllable) body so injected markup — e.g. a dataset title like
+// <img src=x onerror=...> surfaced through a watcher notification — cannot become
+// live HTML / phishing links in the recipient's email client or in-app renderer.
+func htmlParagraph(body string) string {
+	return "<p>" + html.EscapeString(body) + "</p>"
+}
 
 // UserLookup resolves a user ID to their email address.
 type UserLookup interface {
@@ -96,7 +105,7 @@ func (s *Service) sendEmailWithLog(ctx context.Context, userID, kind, title, bod
 	}
 
 	subject := "[绿洲] " + title
-	htmlBody := "<p>" + body + "</p>"
+	htmlBody := htmlParagraph(body)
 	textBody := title + "\n\n" + body
 
 	if err := s.email.Send(ctx, addr, subject, htmlBody, textBody); err != nil {
