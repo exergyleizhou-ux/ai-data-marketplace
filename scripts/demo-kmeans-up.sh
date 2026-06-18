@@ -89,4 +89,4 @@ require("fs").writeFileSync("/tmp/.offer.put.json",JSON.stringify({
 curl -fsS -X PUT "$API/datasets/$DATASET_ID/compute-offer" -H "Authorization: Bearer $SELLER" -H 'Content-Type: application/json' \
   -d @/tmp/.offer.put.json >/dev/null
 rm -f /tmp/.algos.json /tmp/.offer.json /tmp/.offer.put.json
-echo "✓ kmeans runnable on dataset $DATASET_ID (algo $AID, digest $DIGEST)"
+echo "✓ $ALGO runnable on dataset $DATASET_ID (algo $AID, digest $DIGEST)"

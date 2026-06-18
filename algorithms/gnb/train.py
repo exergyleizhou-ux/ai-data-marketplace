@@ -177,7 +177,14 @@ def main():
     # Determine classes (sorted ascending as strings).
     classes = sorted(set(y))
     n_classes = len(classes)
-    log("classes", count=n_classes, names=classes)
+    # Privacy guard (L1: the audited code is the boundary). A classification label
+    # must be low-cardinality; if `label` points at an id/email/free-text column,
+    # every distinct value would otherwise leak into the model as a "class". Refuse
+    # rather than emit per-row identifiers.
+    max_classes = int(params.get("max_classes", 100))
+    if n_classes > max_classes or n_classes * 2 > n_train:
+        die("too_many_classes")
+    log("classes", count=n_classes)  # count only — never echo the class values
 
     # Group feature values by class.
     # class_values[c][j] = list of feature j values for class c.
