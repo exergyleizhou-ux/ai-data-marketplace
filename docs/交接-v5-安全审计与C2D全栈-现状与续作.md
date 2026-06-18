@@ -7,6 +7,22 @@
 > - **顺带修了静默腐烂的 CI**（`ci.yml` 因近期都是 docs-only PR 被 path-filter，许久没在后端代码上跑过，积了 3 处既存破损，被本次后端改动一触即发）：gofmt 漂移（#174 内）、openapi.yaml 漏的 2 条 algorithm-request 路由（#174 内）、前端 `app/login/page.test.tsx` 的 `useRouter` 缺 `replace` mock（**PR #175**，merge `195c738`）。**两仓 main 干净、ci.yml 双 job 全绿、live Oasis :8080 已在合并后的 main 上重启。**
 > - **已知既存非阻断 bug（未修，低优先）**：anomaly 规则 SQL 报 `syntax error at or near "LIMIT" (SQLSTATE 42601)`，server 测试里只是 WARN，不挂任何测试。碰 anomaly/audit 模块时顺手看。
 > - **下一程：挑新方向**（本文档 §9 的 B 扩审计 / C 新产品面 / D lumen 主力 / E gated 前沿）。下面正文 §0/§7/§9 写于完成 #6/#7 之前，按此 UPDATE 校正阅读。
+>
+> **⚠️ UPDATE 2026-06-18（同日续作 ROUND-3 — §9 方向 B「扩审计」已做完）：** marketplace main 现 @ `c12b8b5`，CI 全绿，live Oasis :8080 已在其上重启，`schema_migrations=30`。用 ultracode Workflow 审了**此前未深审的 13 个模块**（auth/dataset/order/delivery/compliance/quality/moderation/notification/anomaly/watchlist/auditlog/verify/search），13 审计 agent + 每条 3 透镜 skeptic。**verify 阶段中途卡死**（hung ~19min）→ 我从 agent transcript 提取 45 条原始发现(1 crit/14 high/19 med/11 low)，**逐条对真代码自验后修复**，shipped **12 个安全 PR #177–#188 全部合并**（各 TDD + 真 DB 验证，一卡一 PR）：
+> - #177 dataset 公开 by-id 端点泄露未发布/已下架（provenance/PII/seller）→ `getPublished()` 门
+> - #178 delivery 下载不复查订单态 → 争议/退款仍下载 → 复查 {paid,delivered,confirmed}
+> - #179 notification 邮件 HTML 未转义(XSS) + SMTP CRLF 头注入 → `html.EscapeString` + `sanitizeHeader`
+> - **#180 (CRITICAL)** quality/pii flank 绕过(相邻数字隐藏手机/身份证/卡号) → `scanNumeric` 窗口扫描
+> - #181 watchlist 泄露 reviewing 数据集存在+标题 → published-only 门 + JOIN status 过滤
+> - #182 moderation hide/dismiss 无审计留痕 → 接 `audit.Recorder`
+> - #183 verify 枚举预言机(回显内部 UUID + 无限流) → 去 resource_id + 限流
+> - #184 compliance 账户删除遗留 PII 导出包 → `storage.Delete`(local+s3)+`PurgeByUser`/`PurgeUser`
+> - #185 anomaly LIMIT SQL（并行会话修）
+> - #186 auth 改密不撤销会话(打不存在的表,吞错) → **迁移 000029** `users.tokens_valid_after`，refresh 拒过期 epoch 前的 token
+> - #187 delivery 版本钉死(下载现版本非购买版本,可换包/投毒) → `OrderInfo.VersionID` + `ObjectKeyForVersion`
+> - #188 audit_logs TRUNCATE 绕过(行级触发器不在 TRUNCATE 触发) → **迁移 000030** 语句级 TRUNCATE 触发器（完整修=DB 权限分离,部署级,已注明）
+> - **本地 gotcha：** `/private/tmp/oasis-run` 共享 live DB 是**跨分支迁移陷阱**——测了含迁移 N 的分支后 live DB 停在 N，再测缺 N 的分支会报「no migration for version N」。切分支时 `UPDATE schema_migrations SET version=<base>` + drop 那列。CI 不受影响(每次 fresh DB)。
+> - **下一程**：§9 的 C(新产品面) / D(lumen) / E(gated TEE/Secretflow)，或对 round-3 剩下的 29 条 med/low 跑 round-4。compute+资金(round2) 与这 13 模块(round3) 现都已审。
 
 ---
 
