@@ -58,10 +58,13 @@ var (
 
 // Review is a buyer's rating of a completed purchase.
 type Review struct {
-	ID        string `json:"id"`
-	OrderID   string `json:"order_id"`
+	ID string `json:"id"`
+	// OrderID and BuyerID are internal linkage and are NEVER serialized: the
+	// reviews list is PUBLIC, so exposing them deanonymizes every purchaser and
+	// links them to an order. (The buyer already knows their own ids.)
+	OrderID   string `json:"-"`
 	DatasetID string `json:"dataset_id"`
-	BuyerID   string `json:"buyer_id"`
+	BuyerID   string `json:"-"`
 	Score     int    `json:"score"`
 	Comment   string `json:"comment,omitempty"`
 	IssueFlag bool   `json:"issue_flag"`
