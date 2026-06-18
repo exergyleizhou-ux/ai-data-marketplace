@@ -219,10 +219,14 @@ func (s *Service) settleOnce(ctx context.Context, orderID string) error {
 	if err != nil {
 		return err
 	}
+	// Escrow invariant: money leaves escrow ONLY for an order in the settle-able
+	// 'confirmed' state. This must guard EVERY ExecuteSplit, not just the first
+	// attempt — a 'pending' settlement row from a prior failed attempt must not let
+	// an outbox retry pay the seller out for an order that has since been disputed.
+	if o.Status != "confirmed" {
+		return ErrNotConfirmed
+	}
 	if !exists {
-		if o.Status != "confirmed" {
-			return ErrNotConfirmed
-		}
 		if _, err := s.repo.CreateSettlement(ctx, orderID, "settle:"+orderID, o.PlatformFeeCents, o.SellerAmountCents); err != nil {
 			return err
 		}
