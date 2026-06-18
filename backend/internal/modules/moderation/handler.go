@@ -89,7 +89,7 @@ func fail(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidTarget), errors.Is(err, ErrEmptyReason), errors.Is(err, ErrInvalidResolution):
 		httpx.Fail(c, httpx.ErrInvalidParam)
-	case errors.Is(err, ErrReportNotFound):
+	case errors.Is(err, ErrReportNotFound), errors.Is(err, ErrTargetNotFound):
 		httpx.Fail(c, httpx.ErrNotFound)
 	default:
 		httpx.Fail(c, httpx.ErrInternal)

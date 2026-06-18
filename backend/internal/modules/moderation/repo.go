@@ -39,7 +39,35 @@ func scanReport(row pgx.Row) (Report, error) {
 	return r, err
 }
 
+// assertTargetExists returns ErrTargetNotFound unless the reported question/
+// review actually exists. A malformed uuid (cast error) is also treated as
+// not-found, so a client can't spam reports against arbitrary / fabricated ids.
+func (r *pgRepo) assertTargetExists(ctx context.Context, targetType, targetID string) error {
+	var q string
+	switch targetType {
+	case TargetQuestion:
+		q = `SELECT EXISTS(SELECT 1 FROM dataset_questions WHERE id=$1::uuid)`
+	case TargetReview:
+		q = `SELECT EXISTS(SELECT 1 FROM reviews WHERE id=$1::uuid)`
+	default:
+		return ErrInvalidTarget
+	}
+	var exists bool
+	if err := r.pool.QueryRow(ctx, q, targetID).Scan(&exists); err != nil {
+		return ErrTargetNotFound // includes invalid-uuid cast errors
+	}
+	if !exists {
+		return ErrTargetNotFound
+	}
+	return nil
+}
+
 func (r *pgRepo) CreateReport(ctx context.Context, reporterID, targetType, targetID, reason string) (Report, error) {
+	// Validate the target actually exists before persisting — otherwise target_id
+	// is attacker-controlled and reports can be spammed against arbitrary ids.
+	if err := r.assertTargetExists(ctx, targetType, targetID); err != nil {
+		return Report{}, err
+	}
 	// ON CONFLICT on the partial unique index (reporter, target) WHERE open:
 	// a duplicate open report does nothing; we then read back the winning row.
 	row := r.pool.QueryRow(ctx,

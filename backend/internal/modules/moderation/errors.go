@@ -7,6 +7,7 @@ var (
 	ErrEmptyReason       = errors.New("reason is required")
 	ErrInvalidResolution = errors.New("invalid resolution")
 	ErrReportNotFound    = errors.New("report not found")
+	ErrTargetNotFound    = errors.New("reported target does not exist")
 )
 
 func validTarget(t string) bool { return t == TargetQuestion || t == TargetReview }
