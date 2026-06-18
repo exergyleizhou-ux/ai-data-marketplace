@@ -166,6 +166,15 @@ func (s *S3) Open(ctx context.Context, objectKey string) (io.ReadCloser, int64, 
 	return obj, info.Size, nil
 }
 
+// Delete removes a completed object (idempotent: removing a missing object is a
+// no-op in S3). Used for right-to-erasure purges.
+func (s *S3) Delete(ctx context.Context, objectKey string) error {
+	if err := s.core.Client.RemoveObject(ctx, s.bucket, objectKey, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("s3 delete: %w", err)
+	}
+	return nil
+}
+
 // PresignGet returns a short-lived direct-download URL (production best
 // practice: bytes don't transit the app server). Satisfies storage.PresignedGetter.
 func (s *S3) PresignGet(ctx context.Context, objectKey string, ttl time.Duration) (string, error) {

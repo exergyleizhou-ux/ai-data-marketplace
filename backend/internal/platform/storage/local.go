@@ -33,6 +33,18 @@ func NewLocal(baseDir string) (*Local, error) {
 func (l *Local) uploadDir(id string) string { return filepath.Join(l.baseDir, ".uploads", id) }
 
 // safeObjectPath rejects path traversal and maps an object key to a FS path.
+// Delete removes a completed object. Missing object → no error (idempotent).
+func (l *Local) Delete(_ context.Context, objectKey string) error {
+	path, err := l.safeObjectPath(objectKey)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 func (l *Local) safeObjectPath(key string) (string, error) {
 	if key == "" {
 		return "", fmt.Errorf("empty object key")

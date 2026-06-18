@@ -405,7 +405,7 @@ func (s *Server) routes() {
 		compExportSvc := compliance.NewExportService(compliance.NewExportRepository(s.db),
 			complianceSourceAdapter{pool: s.db}, notifySvc, store)
 		compExportSvc.StartScanner(context.Background())
-		compDeletionSvc := compliance.NewDeletionService(compliance.NewDeletionRepository(s.db), notifySvc)
+		compDeletionSvc := compliance.NewDeletionService(compliance.NewDeletionRepository(s.db), notifySvc, compExportSvc)
 		compliance.Register(api, compExportSvc, compDeletionSvc, authMW, auth.RequireRole("ops", "admin"))
 		// compute certs: registered in compute module via the same interface
 		// (wired below after computeSvc is constructed)

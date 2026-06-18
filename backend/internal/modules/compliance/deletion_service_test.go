@@ -2,9 +2,49 @@ package compliance
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
+
+type fakePurger struct {
+	purged []string
+	err    error
+}
+
+func (p *fakePurger) PurgeUser(_ context.Context, userID string) error {
+	p.purged = append(p.purged, userID)
+	return p.err
+}
+
+// TestExecute_PurgesExportsBeforeScrub: account deletion must erase the user's
+// data-export archives (each a full PII snapshot). If the purge fails, the
+// deletion aborts (user not marked deleted) so it retries rather than leaving an
+// orphaned archive behind.
+func TestExecute_PurgesExportsBeforeScrub(t *testing.T) {
+	repo := &fakeDeletionRepo{reqs: map[string]DeletionRequest{
+		"d-9": {ID: "d-9", UserID: "u9", Status: DeletionApproved},
+	}}
+	purger := &fakePurger{}
+	svc := NewDeletionService(repo, nil, purger)
+	if err := svc.Execute(context.Background(), "ops", "d-9"); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if len(purger.purged) != 1 || purger.purged[0] != "u9" {
+		t.Fatalf("export purge not invoked for deleted user, got %v", purger.purged)
+	}
+
+	repo2 := &fakeDeletionRepo{reqs: map[string]DeletionRequest{
+		"d-10": {ID: "d-10", UserID: "u10", Status: DeletionApproved},
+	}}
+	svc2 := NewDeletionService(repo2, nil, &fakePurger{err: errors.New("boom")})
+	if err := svc2.Execute(context.Background(), "ops", "d-10"); err == nil {
+		t.Fatal("a purge failure must abort the deletion")
+	}
+	if repo2.reqs["d-10"].Status == DeletionDeleted {
+		t.Fatal("user must NOT be marked deleted when export purge failed")
+	}
+}
 
 type fakeDeletionRepo struct {
 	reqs map[string]DeletionRequest
@@ -68,7 +108,7 @@ func (f *fakeCNotifier) NotifyUser(_ context.Context, userID, kind, _, _, _, _ s
 
 func TestRequestDeletion_SetsCoolingUntilSevenDaysOut(t *testing.T) {
 	repo := &fakeDeletionRepo{}
-	svc := NewDeletionService(repo, nil)
+	svc := NewDeletionService(repo, nil, nil)
 	d, err := svc.RequestDeletion(context.Background(), "u1", "reason")
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +122,7 @@ func TestRequestDeletion_SetsCoolingUntilSevenDaysOut(t *testing.T) {
 
 func TestApproveDeletion_RejectsBeforeCoolingElapsed(t *testing.T) {
 	repo := &fakeDeletionRepo{}
-	svc := NewDeletionService(repo, nil)
+	svc := NewDeletionService(repo, nil, nil)
 	d, _ := svc.RequestDeletion(context.Background(), "u1", "reason")
 	d.CoolingUntil = time.Now().Add(24 * time.Hour).Format(time.RFC3339)
 	repo.reqs[d.ID] = d
@@ -95,7 +135,7 @@ func TestApproveDeletion_RejectsBeforeCoolingElapsed(t *testing.T) {
 
 func TestExecuteDeletion_OnlyAcceptsApproved(t *testing.T) {
 	repo := &fakeDeletionRepo{}
-	svc := NewDeletionService(repo, nil)
+	svc := NewDeletionService(repo, nil, nil)
 	d, _ := svc.RequestDeletion(context.Background(), "u1", "reason")
 	repo.reqs[d.ID] = d
 
@@ -111,7 +151,7 @@ func TestRequestDeletion_StartsCooling(t *testing.T) {
 	// This unit test confirms the flow: Execute checks status=approved, calls
 	// repo.ExecuteDeletion (which in production does the real SQL).
 	repo := &fakeDeletionRepo{}
-	svc := NewDeletionService(repo, nil)
+	svc := NewDeletionService(repo, nil, nil)
 	d, _ := svc.RequestDeletion(context.Background(), "u1", "reason")
 	if d.Status != DeletionCooling {
 		t.Fatal("new request must be cooling")

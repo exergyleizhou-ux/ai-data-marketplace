@@ -60,6 +60,31 @@ func TestExportRepo_CreatesPendingJob(t *testing.T) {
 	}
 }
 
+func TestExportRepo_PurgeByUserDeletesRowsAndReturnsKeys(t *testing.T) {
+	repo, cleanup := testExportRepo(t)
+	defer cleanup()
+	ctx := context.Background()
+	uid := seedExportUser(t, repo.(*pgExportRepo).pool)
+
+	// A ready job (with an object key) + a pending job (key NULL).
+	ready, _ := repo.Create(ctx, uid)
+	if err := repo.SetReady(ctx, ready.ID, "exports/"+uid+"/z.zip", 1024, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = repo.Create(ctx, uid)
+
+	keys, err := repo.PurgeByUser(ctx, uid)
+	if err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	if len(keys) != 1 || keys[0] != "exports/"+uid+"/z.zip" {
+		t.Fatalf("returned keys = %v, want the one ready object key (NULL keys skipped)", keys)
+	}
+	if _, err := repo.FindRecentByUser(ctx, uid); err != ErrNotFound {
+		t.Fatalf("after purge FindRecentByUser = %v, want ErrNotFound", err)
+	}
+}
+
 func TestExportRepo_SetReadyPopulatesObjectKeyAndExpiresAt(t *testing.T) {
 	repo, cleanup := testExportRepo(t)
 	defer cleanup()

@@ -47,6 +47,9 @@ type Storage interface {
 	Stat(ctx context.Context, uploadID string) (UploadStat, error)
 	// Open returns a reader for a completed object.
 	Open(ctx context.Context, objectKey string) (io.ReadCloser, int64, error)
+	// Delete removes a completed object. Deleting a missing object is NOT an
+	// error (idempotent) — used for right-to-erasure purges.
+	Delete(ctx context.Context, objectKey string) error
 }
 
 // PresignedGetter is an OPTIONAL capability: drivers that can hand out a
