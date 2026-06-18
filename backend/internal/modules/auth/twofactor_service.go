@@ -36,6 +36,12 @@ func (s *Service) Enroll2FA(ctx context.Context, userID string) (Enroll2FAResult
 	if err := s.repo.SetTOTPSecret(ctx, userID, key.Secret()); err != nil {
 		return Enroll2FAResult{}, err
 	}
+	// Re-enrolling (before verifying) overwrites the secret above; clear any
+	// recovery codes from a prior attempt so they don't stay valid alongside the
+	// new ones (an abandoned attempt's codes may have been screenshotted/logged).
+	if err := s.repo.ClearRecoveryCodes(ctx, userID); err != nil {
+		return Enroll2FAResult{}, err
+	}
 
 	// Generate 8 recovery codes (10-char alphanumeric, bcrypt-hashed for storage).
 	codes := make([]string, 0, 8)
