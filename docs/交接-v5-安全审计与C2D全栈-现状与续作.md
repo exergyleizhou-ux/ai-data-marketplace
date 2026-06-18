@@ -2,6 +2,12 @@
 
 > 写于 2026-06-18。**这是新会话的单一自包含起点**，覆盖 **marketplace**（资金/compute 安全审计与修复）+ **lumen**（oasis 作者工具链）双线。全权由 Claude 决定方向；用户的标准指令是「继续 / 全部做完 / 高质量 / 全权交给你」，且开了 **ultracode**（实质任务用 Workflow 编排，token 成本不设限）。
 
+> **⚠️ UPDATE 2026-06-18（在本文档写就后同日续作）：§7/§9 的「待办 #6/#7」已完成，审计达 11/11。** marketplace main 现 @ `195c738`（非 bbfe981）。
+> - **PR #174**（merge `20a1897`）— offer-gate 快照（config-TOCTOU）：`Job` 加 `ReviewOutput *bool`+`MaxOutputBytes *int64`（仿 `DPEpsilon` 先例）、**迁移 000028**（nullable，已干净应用 = schema_migrations v28）、`SubmitJob` 快照、worker `job 快照 ?? live offer`。TDD 三测（fake 快照 + 真 DB round-trip + `TestProcessJob_HonorsOfferSnapshotOverLiveOffer` review/size/nil-fallback，真 DB 验红验绿）。**第二轮 Workflow 审计从 9 修+2 deferred → 11/11。**
+> - **顺带修了静默腐烂的 CI**（`ci.yml` 因近期都是 docs-only PR 被 path-filter，许久没在后端代码上跑过，积了 3 处既存破损，被本次后端改动一触即发）：gofmt 漂移（#174 内）、openapi.yaml 漏的 2 条 algorithm-request 路由（#174 内）、前端 `app/login/page.test.tsx` 的 `useRouter` 缺 `replace` mock（**PR #175**，merge `195c738`）。**两仓 main 干净、ci.yml 双 job 全绿、live Oasis :8080 已在合并后的 main 上重启。**
+> - **已知既存非阻断 bug（未修，低优先）**：anomaly 规则 SQL 报 `syntax error at or near "LIMIT" (SQLSTATE 42601)`，server 测试里只是 WARN，不挂任何测试。碰 anomaly/audit 模块时顺手看。
+> - **下一程：挑新方向**（本文档 §9 的 B 扩审计 / C 新产品面 / D lumen 主力 / E gated 前沿）。下面正文 §0/§7/§9 写于完成 #6/#7 之前，按此 UPDATE 校正阅读。
+
 ---
 
 ## 0. 一句话现状
