@@ -116,16 +116,29 @@ func TestComputeRepoIntegration(t *testing.T) {
 
 	// --- job state machine: create → claim → release (idempotent) ---
 	jent, _ := repo.CreateEntitlement(ctx, Entitlement{DatasetID: dsID, BuyerID: buyer, JobsQuota: 10})
+	reviewSnap := true
+	maxBytesSnap := int64(7777)
 	job, err := repo.CreateJob(ctx, Job{
 		DatasetID: dsID, BuyerID: buyer, EntitlementID: jent.ID,
 		AlgorithmID: algo.ID, AlgorithmVersion: algo.Version, Status: JobQueued,
-		Params: map[string]any{"target": "y"},
+		Params:       map[string]any{"target": "y"},
+		ReviewOutput: &reviewSnap, MaxOutputBytes: &maxBytesSnap,
 	})
 	if err != nil {
 		t.Fatalf("create job: %v", err)
 	}
 	if job.Status != JobQueued || job.AlgorithmVersion != 2 {
 		t.Fatalf("job create wrong: %+v", job)
+	}
+	// Offer-gate snapshot (config-TOCTOU fix) must round-trip through CreateJob's
+	// RETURNING and a fresh GetJob.
+	if job.ReviewOutput == nil || *job.ReviewOutput != true || job.MaxOutputBytes == nil || *job.MaxOutputBytes != 7777 {
+		t.Fatalf("snapshot not returned from CreateJob: review=%v maxbytes=%v", job.ReviewOutput, job.MaxOutputBytes)
+	}
+	if reloaded, err := repo.GetJob(ctx, job.ID); err != nil {
+		t.Fatalf("get job: %v", err)
+	} else if reloaded.ReviewOutput == nil || *reloaded.ReviewOutput != true || reloaded.MaxOutputBytes == nil || *reloaded.MaxOutputBytes != 7777 {
+		t.Fatalf("snapshot not persisted: review=%v maxbytes=%v", reloaded.ReviewOutput, reloaded.MaxOutputBytes)
 	}
 	claimed, err := repo.ClaimJob(ctx, job.ID, "runner-A", 120)
 	if err != nil || claimed.Status != JobRunning || claimed.Attempts != 1 {

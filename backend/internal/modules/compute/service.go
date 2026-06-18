@@ -587,10 +587,17 @@ func (s *Service) submitJobTagged(ctx context.Context, buyerID string, in Submit
 		return Job{}, err
 	}
 
+	// Snapshot the offer's output-gate config so a later seller edit can't change
+	// this queued job's review/size behavior (config TOCTOU). The worker prefers
+	// these over the live offer; nil only on pre-migration jobs (it falls back).
+	reviewSnap := offer.ReviewOutput
+	maxBytesSnap := offer.MaxOutputBytes
+
 	job := Job{
 		DatasetID: in.DatasetID, VersionID: ds.VersionID, BuyerID: buyerID, EntitlementID: in.EntitlementID,
 		AlgorithmID: algo.ID, AlgorithmVersion: algo.Version, Params: in.Params,
 		Status: JobQueued, DPEpsilon: jobEps, FederatedJobID: federatedID,
+		ReviewOutput: &reviewSnap, MaxOutputBytes: &maxBytesSnap,
 	}.WithIdempotencyKey(in.IdempotencyKey)
 
 	out, err := s.repo.CreateJob(ctx, job)
