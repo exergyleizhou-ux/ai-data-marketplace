@@ -5,9 +5,13 @@ import { LocaleProvider } from "@/lib/i18n";
 import { AuthProvider } from "@/lib/auth";
 import LoginPage from "./page";
 
-// Router + API are the page's two side-effect boundaries; stub both.
+// Router + API are the page's two side-effect boundaries; stub both. The page
+// also calls router.replace() in an effect when a user is already signed in, so
+// the mock must provide it or that effect throws an unhandled TypeError (which
+// fails the run even though every test asserts green).
 const push = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+const replace = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace }) }));
 
 const login = vi.fn();
 const verify2FA = vi.fn();
