@@ -63,6 +63,30 @@ func seedQuestion(t *testing.T, pool *pgxpool.Pool, sellerID string) string {
 	return qID
 }
 
+// TestReport_RejectsNonexistentTarget: a report against a target id that doesn't
+// exist (or a malformed uuid) must be rejected, not persisted — otherwise the
+// attacker-controlled target_id is a report-spam vector.
+func TestReport_RejectsNonexistentTarget(t *testing.T) {
+	repo, pool, done := testRepo(t)
+	defer done()
+	reporter := seedUser(t, pool, "buyer")
+	ctx := context.Background()
+
+	// A well-formed but non-existent question id.
+	if _, err := repo.CreateReport(ctx, reporter, TargetQuestion, "00000000-0000-0000-0000-0000000000ff", "abuse"); err != ErrTargetNotFound {
+		t.Fatalf("nonexistent target = %v, want ErrTargetNotFound", err)
+	}
+	// A malformed uuid.
+	if _, err := repo.CreateReport(ctx, reporter, TargetReview, "not-a-uuid", "abuse"); err != ErrTargetNotFound {
+		t.Fatalf("malformed target = %v, want ErrTargetNotFound", err)
+	}
+	var n int
+	pool.QueryRow(ctx, `SELECT count(*) FROM content_reports WHERE reporter_id=$1::uuid`, reporter).Scan(&n)
+	if n != 0 {
+		t.Fatalf("no report row should be created for a bad target, got %d", n)
+	}
+}
+
 func TestReport_DedupesOpenReports(t *testing.T) {
 	repo, pool, done := testRepo(t)
 	defer done()
