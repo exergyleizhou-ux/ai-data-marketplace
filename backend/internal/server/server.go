@@ -7,6 +7,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -306,7 +307,9 @@ func (s *Server) metricsAuth(next gin.HandlerFunc) gin.HandlerFunc {
 		} else {
 			tok = strings.TrimPrefix(tok, "Bearer ")
 		}
-		if tok != s.cfg.MetricsToken {
+		// Constant-time compare so the token can't be recovered via a timing
+		// side-channel (matches hmac.Equal usage elsewhere for secrets).
+		if subtle.ConstantTimeCompare([]byte(tok), []byte(s.cfg.MetricsToken)) != 1 {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
