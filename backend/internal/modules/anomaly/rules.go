@@ -16,7 +16,7 @@ func (r *RepeatedFailureRule) Detect(ctx context.Context, db DBQuerier, since ti
 	rows, err := db.Query(ctx,
 		`SELECT COALESCE(actor_id::text,''), action, COUNT(*) as cnt,
 			MIN(created_at) as first_at, MAX(created_at) as last_at,
-			ARRAY_AGG(id ORDER BY created_at DESC LIMIT 5) as sample_ids
+			(ARRAY_AGG(id ORDER BY created_at DESC))[1:5] as sample_ids
 		 FROM audit_logs
 		 WHERE created_at >= $1
 		   AND (action LIKE '%reject' OR action LIKE '%fail' OR action LIKE '%error')
@@ -40,7 +40,7 @@ func (r *BulkModificationRule) Detect(ctx context.Context, db DBQuerier, since t
 		`SELECT COALESCE(actor_id::text,''), action || '.' || COALESCE(resource_type,'?'),
 			COUNT(DISTINCT resource_id) as cnt,
 			MIN(created_at) as first_at, MAX(created_at) as last_at,
-			ARRAY_AGG(id ORDER BY created_at DESC LIMIT 5) as sample_ids
+			(ARRAY_AGG(id ORDER BY created_at DESC))[1:5] as sample_ids
 		 FROM audit_logs
 		 WHERE created_at >= $1
 		   AND actor_id IS NOT NULL AND resource_id IS NOT NULL
