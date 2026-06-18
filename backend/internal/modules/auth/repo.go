@@ -60,6 +60,7 @@ type Repository interface {
 	EnableTOTP(ctx context.Context, userID string) error
 	GetTOTPSecret(ctx context.Context, userID string) (string, error)
 	AddRecoveryCode(ctx context.Context, userID, codeHash string) error
+	ClearRecoveryCodes(ctx context.Context, userID string) error
 	ConsumeRecoveryCode(ctx context.Context, userID, plaintext string) (bool, error)
 	CountUnusedRecoveryCodes(ctx context.Context, userID string) (int, error)
 	DisableTOTP(ctx context.Context, userID string) error

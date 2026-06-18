@@ -26,6 +26,26 @@ func TestEnroll2FA_GeneratesSecretAndRecoveryCodes(t *testing.T) {
 	}
 }
 
+// Re-enrolling before verifying (UI back/retry) overwrites the TOTP secret but
+// must NOT leave the previous attempt's recovery codes valid — otherwise codes
+// shown in an abandoned attempt (possibly screenshotted/logged) stay live and
+// decoupled from the current secret. Only the latest 8 codes may remain.
+func TestEnroll2FA_ReEnrollClearsStaleRecoveryCodes(t *testing.T) {
+	svc, repo := newTestService()
+	repo.byID["u1"] = User{ID: "u1", Account: "a@b.com"}
+
+	if _, err := svc.Enroll2FA(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Enroll2FA(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if n := len(repo.recoveryCodes["u1"]); n != 8 {
+		t.Fatalf("stored recovery codes after re-enroll = %d, want 8 (stale codes must be cleared)", n)
+	}
+}
+
 func TestEnroll2FA_RejectsWhenAlreadyEnabled(t *testing.T) {
 	svc, repo := newTestService()
 	repo.byID["u1"] = User{ID: "u1", TOTPEnabled: true}

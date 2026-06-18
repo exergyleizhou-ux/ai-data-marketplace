@@ -46,6 +46,16 @@ func (r *pgRepo) AddRecoveryCode(ctx context.Context, userID, codeHash string) e
 	return nil
 }
 
+// ClearRecoveryCodes removes all of a user's recovery codes. Used before
+// re-issuing on enrollment so an abandoned enrollment's codes don't stay valid.
+func (r *pgRepo) ClearRecoveryCodes(ctx context.Context, userID string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM totp_recovery_codes WHERE user_id=$1`, userID)
+	if err != nil {
+		return fmt.Errorf("clear recovery codes: %w", err)
+	}
+	return nil
+}
+
 func (r *pgRepo) ConsumeRecoveryCode(ctx context.Context, userID, plaintext string) (bool, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT code_hash FROM totp_recovery_codes WHERE user_id=$1 AND used_at IS NULL`, userID)

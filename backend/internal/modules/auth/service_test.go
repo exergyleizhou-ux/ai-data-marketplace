@@ -463,7 +463,17 @@ func (r *fakeRepo) GetTOTPSecret(_ context.Context, userID string) (string, erro
 	}
 	return r.totpSecrets[userID], nil
 }
-func (r *fakeRepo) AddRecoveryCode(_ context.Context, userID, codeHash string) error { return nil }
+func (r *fakeRepo) AddRecoveryCode(_ context.Context, userID, codeHash string) error {
+	if r.recoveryCodes == nil {
+		r.recoveryCodes = map[string][]string{}
+	}
+	r.recoveryCodes[userID] = append(r.recoveryCodes[userID], codeHash)
+	return nil
+}
+func (r *fakeRepo) ClearRecoveryCodes(_ context.Context, userID string) error {
+	delete(r.recoveryCodes, userID)
+	return nil
+}
 func (r *fakeRepo) ConsumeRecoveryCode(_ context.Context, _, _ string) (bool, error) {
 	return false, nil
 }
