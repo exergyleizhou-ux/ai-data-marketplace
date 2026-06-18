@@ -3,8 +3,10 @@ package qa
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -33,11 +35,19 @@ func (r *pgRepo) CreateQuestion(ctx context.Context, q Question) (Question, erro
 }
 
 func (r *pgRepo) CreateAnswer(ctx context.Context, a Answer) (Answer, error) {
+	// ON CONFLICT closes the read-then-write race in AnswerQuestion: a question
+	// answers at most once, so a duplicate/concurrent submit that slipped past
+	// the q.Answer==nil check inserts nothing and surfaces ErrAlreadyAnswered
+	// (which the handler maps to 409) instead of a second answer row.
 	err := r.pool.QueryRow(ctx,
 		`INSERT INTO dataset_answers (question_id, answerer_id, body)
 		 VALUES ($1,$2,$3)
+		 ON CONFLICT (question_id) DO NOTHING
 		 RETURNING id::text, created_at::text`,
 		a.QuestionID, a.AnswererID, a.Body).Scan(&a.ID, &a.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Answer{}, ErrAlreadyAnswered
+	}
 	if err != nil {
 		return Answer{}, fmt.Errorf("create answer: %w", err)
 	}
