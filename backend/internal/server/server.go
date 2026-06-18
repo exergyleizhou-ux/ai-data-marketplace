@@ -596,7 +596,7 @@ func (a orderDeliveryAdapter) GetSystem(ctx context.Context, id string) (deliver
 	if err != nil {
 		return delivery.OrderInfo{}, err
 	}
-	return delivery.OrderInfo{ID: o.ID, BuyerID: o.BuyerID, Status: o.Status, DatasetID: o.DatasetID}, nil
+	return delivery.OrderInfo{ID: o.ID, BuyerID: o.BuyerID, Status: o.Status, DatasetID: o.DatasetID, VersionID: o.VersionID}, nil
 }
 func (a orderDeliveryAdapter) MarkDelivered(ctx context.Context, id string) error {
 	_, err := a.o.MarkDelivered(ctx, id)
@@ -608,6 +608,9 @@ type datasetDeliveryAdapter struct{ ds *dataset.Service }
 
 func (a datasetDeliveryAdapter) CurrentObjectKey(ctx context.Context, datasetID string) (string, error) {
 	return a.ds.CurrentObjectKey(ctx, datasetID)
+}
+func (a datasetDeliveryAdapter) ObjectKeyForVersion(ctx context.Context, datasetID, versionID string) (string, error) {
+	return a.ds.ObjectKeyForVersion(ctx, datasetID, versionID)
 }
 
 // datasetSearchAdapter bridges dataset.Service to search.DatasetSearcher

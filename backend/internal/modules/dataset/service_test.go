@@ -118,6 +118,12 @@ func (r *fakeRepo) CurrentObjectKey(_ context.Context, datasetID string) (string
 	}
 	return "datasets/" + datasetID + "/data.txt", nil
 }
+func (r *fakeRepo) ObjectKeyForVersion(_ context.Context, datasetID, versionID string) (string, error) {
+	if _, ok := r.items[datasetID]; !ok {
+		return "", ErrNotFound
+	}
+	return "datasets/" + datasetID + "/" + versionID + "/data.txt", nil
+}
 func (r *fakeRepo) SetVersionSimhash(_ context.Context, _, _ string) error { return nil }
 func (r *fakeRepo) ListByStatus(_ context.Context, status string, _, _ int) ([]Dataset, error) {
 	var out []Dataset

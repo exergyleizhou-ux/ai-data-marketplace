@@ -477,6 +477,12 @@ func (s *Service) CurrentObjectKey(ctx context.Context, datasetID string) (strin
 	return s.repo.CurrentObjectKey(ctx, datasetID)
 }
 
+// ObjectKeyForVersion returns the object key of a specific dataset version
+// (consumed by delivery so a buyer downloads the version they purchased).
+func (s *Service) ObjectKeyForVersion(ctx context.Context, datasetID, versionID string) (string, error) {
+	return s.repo.ObjectKeyForVersion(ctx, datasetID, versionID)
+}
+
 // List returns published datasets matching the filter (browse/search).
 func (s *Service) List(ctx context.Context, f ListFilter) ([]Dataset, error) {
 	return s.repo.ListPublished(ctx, f)

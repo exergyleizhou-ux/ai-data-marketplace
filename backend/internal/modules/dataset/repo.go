@@ -51,6 +51,9 @@ type Repository interface {
 	// CurrentObjectKey returns the object key of the dataset's current version
 	// file (single-file MVP) — used by delivery to stream the bytes.
 	CurrentObjectKey(ctx context.Context, datasetID string) (string, error)
+	// ObjectKeyForVersion returns the object key of a SPECIFIC dataset version,
+	// so delivery serves the version the buyer purchased, not the current one.
+	ObjectKeyForVersion(ctx context.Context, datasetID, versionID string) (string, error)
 	// ListPublished returns published datasets matching the filter (browse/search).
 	ListPublished(ctx context.Context, f ListFilter) ([]Dataset, error)
 	// SetVersionSimhash stores the near-dup fingerprint computed by the quality worker.
@@ -569,6 +572,25 @@ func (r *pgRepo) CurrentObjectKey(ctx context.Context, datasetID string) (string
 	}
 	if err != nil {
 		return "", fmt.Errorf("current object key: %w", err)
+	}
+	return key, nil
+}
+
+// ObjectKeyForVersion returns the object key for a SPECIFIC version of a dataset
+// (scoped to the dataset id), so delivery can serve exactly the version the buyer
+// purchased rather than whatever is current now.
+func (r *pgRepo) ObjectKeyForVersion(ctx context.Context, datasetID, versionID string) (string, error) {
+	const q = `
+		SELECT f.object_key
+		FROM dataset_files f JOIN dataset_versions v ON v.id = f.version_id
+		WHERE f.version_id=$2 AND v.dataset_id=$1 LIMIT 1`
+	var key string
+	err := r.pool.QueryRow(ctx, q, datasetID, versionID).Scan(&key)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("object key for version: %w", err)
 	}
 	return key, nil
 }
