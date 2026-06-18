@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 )
 
 // KYCVerifier abstracts the real-name verification backend (实名认证). MVP ships
@@ -94,13 +96,25 @@ func (s *Service) ListPendingKYC(ctx context.Context, limit, offset int) ([]KYCR
 	return s.repo.ListPendingKYC(ctx, limit, offset)
 }
 
-// ReviewKYC is the ops action approving or rejecting a submission.
+// ReviewKYC is the ops action approving or rejecting a submission. The decision
+// is recorded in audit_logs (kyc.approve / kyc.reject) — a high-risk identity
+// action that the anomaly HighRiskActionRule watches and compliance requires.
 func (s *Service) ReviewKYC(ctx context.Context, kycID string, approve bool, reviewerID string) (KYCRecord, error) {
 	status := kycRejected
+	action := "kyc.reject"
 	if approve {
 		status = kycVerified
+		action = "kyc.approve"
 	}
-	return s.repo.ReviewKYC(ctx, kycID, status, reviewerID)
+	rec, err := s.repo.ReviewKYC(ctx, kycID, status, reviewerID)
+	if err != nil {
+		return KYCRecord{}, err
+	}
+	s.audit.Record(ctx, audit.Entry{
+		ActorID: reviewerID, ActorRole: "ops", Action: action,
+		ResourceType: "kyc", ResourceID: kycID,
+	})
+	return rec, nil
 }
 
 // RevealIDNo decrypts a KYC submission's raw ID number for lawful retrieval.

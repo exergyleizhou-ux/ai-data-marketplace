@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 )
 
 // Service holds the auth business logic. It is HTTP-agnostic: it returns the
@@ -20,6 +22,7 @@ type Service struct {
 	denylist   Denylist
 	notifier   Notifier
 	appBaseURL string
+	audit      audit.Recorder
 }
 
 // Option configures optional Service dependencies.
@@ -40,6 +43,12 @@ func WithDenylist(dl Denylist) Option {
 	return func(s *Service) { s.denylist = dl }
 }
 
+// WithAudit wires the audit-log recorder used for ops decisions (e.g. KYC
+// approve/reject). Without it the service defaults to a no-op recorder.
+func WithAudit(rec audit.Recorder) Option {
+	return func(s *Service) { s.audit = rec }
+}
+
 // Notifier is the notification interface used for password reset emails.
 type Notifier interface {
 	NotifyUser(ctx context.Context, userID, kind, title, body, resourceType, resourceID string) error
@@ -55,12 +64,15 @@ func (s *Service) TokenManager() *TokenManager { return s.tokens }
 func (s *Service) SetAppBaseURL(url string) { s.appBaseURL = url }
 
 func NewService(repo Repository, tokens *TokenManager, opts ...Option) *Service {
-	s := &Service{repo: repo, tokens: tokens, verifier: ManualVerifier{}, denylist: noopDenylist{}}
+	s := &Service{repo: repo, tokens: tokens, verifier: ManualVerifier{}, denylist: noopDenylist{}, audit: audit.Noop{}}
 	for _, o := range opts {
 		o(s)
 	}
 	if s.denylist == nil {
 		s.denylist = noopDenylist{}
+	}
+	if s.audit == nil {
+		s.audit = audit.Noop{}
 	}
 	return s
 }
