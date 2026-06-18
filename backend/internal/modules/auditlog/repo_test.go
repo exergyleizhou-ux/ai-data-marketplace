@@ -25,9 +25,31 @@ func testRepo(t *testing.T) (Repository, func()) {
 	if err != nil {
 		t.Fatalf("pool: %v", err)
 	}
-	// audit_logs append-only trigger blocks UPDATE/DELETE, but INSERT + TRUNCATE are allowed.
-	pool.Exec(context.Background(), `TRUNCATE audit_logs`)
+	// audit_logs is append-only: UPDATE/DELETE and (since migration 000030)
+	// TRUNCATE are blocked by triggers. Test cleanup disables the TRUNCATE guard
+	// around the wipe (the test runs as the owner role); production runs the app
+	// as a non-owner that cannot do this.
+	ctx := context.Background()
+	pool.Exec(ctx, `ALTER TABLE audit_logs DISABLE TRIGGER trg_audit_logs_no_truncate`)
+	pool.Exec(ctx, `TRUNCATE audit_logs`)
+	pool.Exec(ctx, `ALTER TABLE audit_logs ENABLE TRIGGER trg_audit_logs_no_truncate`)
 	return NewRepository(pool), func() { pool.Close() }
+}
+
+// TestAuditLogs_TruncateBlocked is the fix for the append-only bypass: a plain
+// TRUNCATE (no trigger-disable) must be rejected by the statement-level trigger.
+func TestAuditLogs_TruncateBlocked(t *testing.T) {
+	_, cleanup := testRepo(t)
+	defer cleanup()
+	dsn := os.Getenv("DATABASE_URL")
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	defer pool.Close()
+	if _, err := pool.Exec(context.Background(), `TRUNCATE audit_logs`); err == nil {
+		t.Fatal("TRUNCATE audit_logs must be blocked by the append-only trigger")
+	}
 }
 
 func insertLog(t *testing.T, pool *pgxpool.Pool, actorID, action, resourceType, resourceID string, createdAt time.Time) {
