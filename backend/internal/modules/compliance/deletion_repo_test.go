@@ -144,11 +144,15 @@ func TestDeletionRepo_ExecuteDeletion_ScrubsPIIPreservesFinancials(t *testing.T)
 	uid := seedDelUser(t, pool)
 
 	// Seed orders, notifications, audit_logs for this user.
-	// Create seller + dataset to satisfy FK constraints.
+	// Create seller + dataset to satisfy FK constraints. The seller account is
+	// unique per run — a fixed account with ON CONFLICT DO NOTHING RETURNING would
+	// yield NO row (empty uuid) on a re-run against a persistent DB, breaking the
+	// order seed (the trigger that bit local re-runs).
 	var sellerUUID, dsUUID string
+	sellerAccount := fmt.Sprintf("ex-seller-%d@x.com", time.Now().UnixNano())
 	pool.QueryRow(ctx, `INSERT INTO users (account, account_type, password_hash, role)
-		VALUES ('ex-seller@x.com','email','x','seller') ON CONFLICT DO NOTHING
-		RETURNING id::text`).Scan(&sellerUUID)
+		VALUES ($1,'email','x','seller')
+		RETURNING id::text`, sellerAccount).Scan(&sellerUUID)
 	pool.QueryRow(ctx, `INSERT INTO datasets (seller_id, title, data_type, license_type, status)
 		VALUES ($1::uuid, 'ex-ds', 'text', 'commercial', 'published')
 		ON CONFLICT (id) DO NOTHING
