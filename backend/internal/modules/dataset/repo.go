@@ -274,8 +274,12 @@ func (r *pgRepo) AddVersion(ctx context.Context, datasetID, contentSHA256, simha
 
 func (r *pgRepo) SaveQualityCheck(ctx context.Context, datasetID, versionID, checkType, result string, report any) error {
 	rep, _ := json.Marshal(report)
+	// Idempotent per (version_id, type): the retry queue is at-least-once, so a
+	// re-run of processQuality must overwrite the prior check, not duplicate it.
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO quality_checks (dataset_id, version_id, type, result, report) VALUES ($1,$2,$3,$4,$5::jsonb)`,
+		`INSERT INTO quality_checks (dataset_id, version_id, type, result, report) VALUES ($1,$2,$3,$4,$5::jsonb)
+		 ON CONFLICT (version_id, type)
+		 DO UPDATE SET result = EXCLUDED.result, report = EXCLUDED.report, created_at = now()`,
 		datasetID, versionID, checkType, result, string(rep))
 	if err != nil {
 		return fmt.Errorf("save quality check: %w", err)
