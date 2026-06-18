@@ -18,6 +18,7 @@ type OrderInfo struct {
 	BuyerID   string
 	Status    string
 	DatasetID string
+	VersionID string // the dataset version pinned at purchase time
 }
 
 // OrderGateway lets delivery read an order and mark it delivered (impl by order).
@@ -26,9 +27,11 @@ type OrderGateway interface {
 	MarkDelivered(ctx context.Context, orderID string) error
 }
 
-// DatasetReader resolves the object key of a dataset's current version (impl by dataset).
+// DatasetReader resolves a dataset's object key, by current version or by a
+// specific (purchased) version (impl by dataset).
 type DatasetReader interface {
 	CurrentObjectKey(ctx context.Context, datasetID string) (string, error)
+	ObjectKeyForVersion(ctx context.Context, datasetID, versionID string) (string, error)
 }
 
 // Service issues download grants and streams delivered objects.
@@ -117,7 +120,16 @@ func (s *Service) Download(ctx context.Context, token, ip string) (DownloadResul
 	default:
 		return DownloadResult{}, ErrTokenInvalid
 	}
-	key, err := s.datasets.CurrentObjectKey(ctx, o.DatasetID)
+	// Serve the EXACT version the buyer purchased (pinned on the order), not
+	// whatever is current now — a seller publishing a new version after the sale
+	// must not swap the bytes under a paid buyer. Pre-version-pin orders (no
+	// VersionID) fall back to the current version.
+	var key string
+	if o.VersionID != "" {
+		key, err = s.datasets.ObjectKeyForVersion(ctx, o.DatasetID, o.VersionID)
+	} else {
+		key, err = s.datasets.CurrentObjectKey(ctx, o.DatasetID)
+	}
 	if err != nil {
 		return DownloadResult{}, err
 	}

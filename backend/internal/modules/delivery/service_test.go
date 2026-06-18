@@ -56,9 +56,18 @@ func (f *fakeOrders) MarkDelivered(_ context.Context, _ string) error {
 	return nil
 }
 
-type fakeDatasets struct{ key string }
+type fakeDatasets struct {
+	key         string            // current-version key
+	versionKeys map[string]string // versionID → object key (purchased version)
+}
 
 func (f fakeDatasets) CurrentObjectKey(_ context.Context, _ string) (string, error) {
+	return f.key, nil
+}
+func (f fakeDatasets) ObjectKeyForVersion(_ context.Context, _, versionID string) (string, error) {
+	if k, ok := f.versionKeys[versionID]; ok {
+		return k, nil
+	}
 	return f.key, nil
 }
 
@@ -128,6 +137,47 @@ func TestDownloadRejectedAfterOrderNoLongerDeliverable(t *testing.T) {
 		if _, err := svc.Download(ctx, token, "1.2.3.4"); !errors.Is(err, ErrTokenInvalid) {
 			t.Fatalf("download on %s order = %v, want ErrTokenInvalid", bad, err)
 		}
+	}
+}
+
+// TestDownloadServesPurchasedVersionNotCurrent: a seller publishing a new
+// version after a sale must not swap the bytes under a paid buyer. Download must
+// serve the version pinned on the order, not the dataset's current version.
+func TestDownloadServesPurchasedVersionNotCurrent(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+	purchasedKey := "datasets/ds1/v-paid/data.txt"
+	up, _ := store.InitMultipart(ctx, purchasedKey)
+	_, _ = store.PutPart(ctx, up, 1, readerOf("PURCHASED v1 data\n"))
+	if _, err := store.CompleteMultipart(ctx, up); err != nil {
+		t.Fatalf("seed purchased: %v", err)
+	}
+	currentKey := "datasets/ds1/current/data.txt"
+	up2, _ := store.InitMultipart(ctx, currentKey)
+	_, _ = store.PutPart(ctx, up2, 1, readerOf("SWAPPED v2 data\n"))
+	if _, err := store.CompleteMultipart(ctx, up2); err != nil {
+		t.Fatalf("seed current: %v", err)
+	}
+
+	orders := &fakeOrders{info: OrderInfo{ID: "o1", BuyerID: "buyer", Status: "paid", DatasetID: "ds1", VersionID: "v-paid"}}
+	ds := fakeDatasets{key: currentKey, versionKeys: map[string]string{"v-paid": purchasedKey}}
+	svc := NewService(newFakeRepo(), orders, ds, store, "fp-secret", nil)
+
+	token, _, err := svc.RequestDownload(ctx, "buyer", "o1", true)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	res, err := svc.Download(ctx, token, "1.2.3.4")
+	if err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	b, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if string(b) != "PURCHASED v1 data\n" {
+		t.Fatalf("served %q, want the PURCHASED version (not the swapped current one)", b)
 	}
 }
 
