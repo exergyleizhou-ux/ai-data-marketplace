@@ -129,7 +129,10 @@ type EarningsByDataset struct {
 }
 
 // platformFee splits an amount into (platformFee, sellerAmount) by basis points.
+// The divide is split so amount*platformFeeBps can't overflow int64 on very
+// large (seller-controlled) amounts; the result is identical to
+// amount*platformFeeBps/10000 for all non-negative amounts.
 func platformFee(amount int64) (fee, seller int64) {
-	fee = amount * platformFeeBps / 10000
+	fee = amount/10000*platformFeeBps + amount%10000*platformFeeBps/10000
 	return fee, amount - fee
 }
