@@ -306,14 +306,30 @@ func (s *Service) UpdateDatasheet(ctx context.Context, userID, id string, ds *Da
 	return s.repo.SetDatasheet(ctx, id, ds)
 }
 
-// Get returns a dataset by id.
-func (s *Service) Get(ctx context.Context, id string) (Dataset, error) {
-	return s.repo.GetByID(ctx, id)
+// getPublished resolves a dataset for a PUBLIC (unauthenticated) read path and
+// hides anything not published — a draft/reviewing/rejected/delisted dataset is
+// invisible to anonymous callers (its seller_id, source declaration, datasheet,
+// etc. must not leak). Mirrors the Preview boundary. Owners read their own
+// non-published datasets via the authed /users/me/datasets path, not these.
+func (s *Service) getPublished(ctx context.Context, id string) (Dataset, error) {
+	d, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return Dataset{}, err
+	}
+	if d.Status != StatusPublished {
+		return Dataset{}, ErrNotFound
+	}
+	return d, nil
 }
 
-// Versions returns a dataset's version history (newest first).
+// Get returns a published dataset by id (public read).
+func (s *Service) Get(ctx context.Context, id string) (Dataset, error) {
+	return s.getPublished(ctx, id)
+}
+
+// Versions returns a published dataset's version history (newest first).
 func (s *Service) Versions(ctx context.Context, id string) ([]VersionInfo, error) {
-	if _, err := s.repo.GetByID(ctx, id); err != nil {
+	if _, err := s.getPublished(ctx, id); err != nil {
 		return nil, err
 	}
 	vs, err := s.repo.ListVersions(ctx, id)
@@ -330,7 +346,7 @@ func (s *Service) Versions(ctx context.Context, id string) ([]VersionInfo, error
 // version. Read-only and transparency-oriented: the persisted reports carry only
 // counts/scores/metadata (no raw personal data), so they are safe to surface.
 func (s *Service) QualityReport(ctx context.Context, id string) ([]QualityCheck, error) {
-	if _, err := s.repo.GetByID(ctx, id); err != nil {
+	if _, err := s.getPublished(ctx, id); err != nil {
 		return nil, err
 	}
 	checks, err := s.repo.ListQualityChecks(ctx, id)
@@ -345,7 +361,7 @@ func (s *Service) QualityReport(ctx context.Context, id string) ([]QualityCheck,
 
 // Certificate returns the dataset's integrity & registration certificate.
 func (s *Service) Certificate(ctx context.Context, id string) (map[string]any, error) {
-	d, err := s.repo.GetByID(ctx, id)
+	d, err := s.getPublished(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +387,7 @@ func (s *Service) Certificate(ctx context.Context, id string) (map[string]any, e
 // machine-readable description usable by Croissant-aware ML loaders and dataset
 // search. baseURL is the public site origin (e.g. https://host).
 func (s *Service) CroissantMetadata(ctx context.Context, id, baseURL string) (map[string]any, error) {
-	d, err := s.repo.GetByID(ctx, id)
+	d, err := s.getPublished(ctx, id)
 	if err != nil {
 		return nil, err
 	}
