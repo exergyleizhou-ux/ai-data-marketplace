@@ -82,14 +82,21 @@ func (s *ExportService) PurgeUser(ctx context.Context, userID string) error {
 }
 
 // OpenExport returns a reader for the stored export zip, or io.EOF if not found.
+// It reads the in-memory cache first (no-store fallback) and otherwise the object
+// store — so exports survive a process restart and are not pinned in memory.
 func (s *ExportService) OpenExport(ctx context.Context, key string) (io.ReadCloser, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	data, ok := s.cache[key]
-	if !ok {
-		return nil, io.EOF
+	s.mu.RUnlock()
+	if ok {
+		return io.NopCloser(bytes.NewReader(data)), nil
 	}
-	return io.NopCloser(bytes.NewReader(data)), nil
+	if s.store != nil {
+		if rc, _, err := s.store.Open(ctx, key); err == nil {
+			return rc, nil
+		}
+	}
+	return nil, io.EOF
 }
 
 func (s *ExportService) generateJob(ctx context.Context, jobID, userID string) {
@@ -124,17 +131,26 @@ func (s *ExportService) generateJob(ctx context.Context, jobID, userID string) {
 	objectKey := fmt.Sprintf("exports/%s/%s.zip", userID, jobID)
 	zipBytes := make([]byte, buf.Len())
 	copy(zipBytes, buf.Bytes())
-	s.mu.Lock()
-	s.cache[objectKey] = zipBytes
-	s.mu.Unlock()
 
-	// Also persist to object storage if available (production path).
+	// Persist to object storage (production path). OpenExport serves from here, so
+	// we do NOT also retain the zip in the in-memory cache when a store is
+	// configured — otherwise the process accumulates every export ever generated
+	// (unbounded memory). The in-memory cache is only the no-store fallback
+	// (tests / single-process dev without object storage).
+	stored := false
 	if s.store != nil {
-		uploadID, err := s.store.InitMultipart(ctx, objectKey)
-		if err == nil {
-			_, _ = s.store.PutPart(ctx, uploadID, 1, bytes.NewReader(zipBytes))
-			_, _ = s.store.CompleteMultipart(ctx, uploadID)
+		if uploadID, err := s.store.InitMultipart(ctx, objectKey); err == nil {
+			if _, perr := s.store.PutPart(ctx, uploadID, 1, bytes.NewReader(zipBytes)); perr == nil {
+				if _, cerr := s.store.CompleteMultipart(ctx, uploadID); cerr == nil {
+					stored = true
+				}
+			}
 		}
+	}
+	if !stored {
+		s.mu.Lock()
+		s.cache[objectKey] = zipBytes
+		s.mu.Unlock()
 	}
 
 	if err := s.repo.SetReady(ctx, jobID, objectKey, int64(buf.Len()), time.Now().Add(24*time.Hour)); err != nil {

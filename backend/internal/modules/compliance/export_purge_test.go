@@ -3,6 +3,7 @@ package compliance
 import (
 	"bytes"
 	"context"
+	"io"
 	"testing"
 	"time"
 
@@ -26,6 +27,34 @@ func (r *purgeFakeRepo) SetFailed(context.Context, string, string) error { retur
 func (r *purgeFakeRepo) ExpireOldJobs(context.Context) error             { return nil }
 func (r *purgeFakeRepo) PurgeByUser(_ context.Context, _ string) ([]string, error) {
 	return r.keys, nil
+}
+
+// TestExportService_OpenExportFallsBackToStore: with an empty in-memory cache
+// (e.g. after a process restart, or because store-backed exports aren't cached),
+// OpenExport must serve the zip from the object store, not return io.EOF.
+func TestExportService_OpenExportFallsBackToStore(t *testing.T) {
+	ctx := context.Background()
+	store, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatalf("storage: %v", err)
+	}
+	key := "exports/u1/j1.zip"
+	up, _ := store.InitMultipart(ctx, key)
+	_, _ = store.PutPart(ctx, up, 1, bytes.NewReader([]byte("export-zip-bytes")))
+	if _, err := store.CompleteMultipart(ctx, up); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	svc := NewExportService(&purgeFakeRepo{}, nil, nil, store) // cache is empty
+
+	rc, err := svc.OpenExport(ctx, key)
+	if err != nil {
+		t.Fatalf("OpenExport should fall back to store, got %v", err)
+	}
+	defer rc.Close()
+	b, _ := io.ReadAll(rc)
+	if string(b) != "export-zip-bytes" {
+		t.Fatalf("served %q, want the stored zip bytes", b)
+	}
 }
 
 // TestExportService_PurgeUser: PurgeUser deletes the backing object-store zips
