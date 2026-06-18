@@ -26,15 +26,17 @@ func NewService(repo Repository, notifier Notifier, ds DatasetReader) *Service {
 	return &Service{repo: repo, notifier: notifier, ds: ds}
 }
 
-// Add creates a watch. The dataset must be published or reviewing;
-// otherwise ErrNotFound is returned (status is not disclosed to the caller).
+// Add creates a watch. Only PUBLISHED datasets are watchable; anything else
+// (draft/uploading/checking/reviewing/rejected/delisted) returns ErrNotFound
+// without disclosing the status — a non-public dataset must not have its
+// existence or (via ListByUser) its title revealed to an arbitrary user.
 // Idempotent (ON CONFLICT DO NOTHING).
 func (s *Service) Add(ctx context.Context, userID, datasetID string) error {
 	status, err := s.ds.StatusOf(ctx, datasetID)
 	if err != nil {
 		return ErrNotFound
 	}
-	if status != "reviewing" && status != "published" {
+	if status != "published" {
 		return ErrNotFound
 	}
 	return s.repo.Add(ctx, userID, datasetID)

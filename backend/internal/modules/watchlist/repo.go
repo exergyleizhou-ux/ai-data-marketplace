@@ -50,7 +50,7 @@ func (r *pgRepo) ListByUser(ctx context.Context, userID string) ([]Watch, error)
 			COALESCE(w.last_notified_version_id::text, ''),
 			w.created_at::text
 		 FROM dataset_watches w
-		 LEFT JOIN datasets d ON d.id = w.dataset_id
+		 LEFT JOIN datasets d ON d.id = w.dataset_id AND d.status = 'published'
 		 WHERE w.user_id = $1
 		 ORDER BY w.created_at DESC
 		 LIMIT 100`, userID)

@@ -131,3 +131,15 @@ func TestAdd_RejectsDraftDataset(t *testing.T) {
 		t.Fatalf("published dataset must succeed, got %v", err)
 	}
 }
+
+// TestAdd_RejectsReviewingDataset: a still-private "reviewing" dataset is not
+// public (it's only in the ops queue). Allowing any authenticated user to watch
+// it confirmed its existence and, via ListByUser, leaked its title. Only
+// published datasets are watchable.
+func TestAdd_RejectsReviewingDataset(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newFakeRepo(), nil, &fakeDSReader{statuses: map[string]string{"ds-rev": "reviewing"}})
+	if err := svc.Add(ctx, "u1", "ds-rev"); err != ErrNotFound {
+		t.Fatalf("reviewing dataset must return ErrNotFound, got %v", err)
+	}
+}
