@@ -378,7 +378,7 @@ func (s *Server) routes() {
 		qa.Register(api, qaSvc, authMW, lim)
 
 		// Content moderation: users report abusive questions/reviews, ops resolve.
-		moderation.Register(api, moderation.NewService(moderation.NewRepository(s.db)),
+		moderation.Register(api, moderation.NewService(moderation.NewRepository(s.db), rec),
 			authMW, auth.RequireRole("ops", "admin"), lim)
 
 		// Withdrawal: seller requests + ops approves (book-keeping only, P module).
