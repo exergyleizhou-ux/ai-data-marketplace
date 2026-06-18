@@ -58,6 +58,14 @@ type Service struct {
 	// WatchersNotifier is injected by the server so the dataset module can
 	// notify watchers on publish without importing watchlist.
 	watchersNotifier WatchersNotifier
+
+	// Quality-retry scanner lifecycle. cancelRetry stops the loop and retryWG
+	// waits for it to exit; Close() must do this BEFORE closing qCh so the loop
+	// can never send on a closed channel. retryInterval is the scan cadence
+	// (overridable in tests).
+	cancelRetry   context.CancelFunc
+	retryWG       sync.WaitGroup
+	retryInterval time.Duration
 }
 
 // WatchersNotifier is called (async) when a dataset is published.
@@ -137,13 +145,27 @@ func NewService(repo Repository, identity IdentityChecker, rec audit.Recorder, o
 	if rec == nil {
 		rec = audit.Noop{}
 	}
-	s := &Service{repo: repo, identity: identity, audit: rec}
+	s := &Service{repo: repo, identity: identity, audit: rec, retryInterval: 10 * time.Second}
 	for _, o := range opts {
 		o(s)
 	}
-	// Start the background quality retry scanner (PR-J).
-	go s.qualityRetryLoop(context.Background())
+	// Start the background quality retry scanner (PR-J). Close() cancels this
+	// context and waits for the loop to exit BEFORE closing qCh, so the loop can
+	// never send on a closed channel.
+	retryCtx, cancel := context.WithCancel(context.Background())
+	s.cancelRetry = cancel
+	s.retryWG.Add(1)
+	go func() {
+		defer s.retryWG.Done()
+		s.qualityRetryLoop(retryCtx)
+	}()
 	return s
+}
+
+// withRetryInterval overrides the quality-retry scan cadence. Used by tests to
+// exercise the scanner deterministically without waiting on the 10s tick.
+func withRetryInterval(d time.Duration) Option {
+	return func(s *Service) { s.retryInterval = d }
 }
 
 // enqueueQuality dispatches a quality job: to the worker pool if async is
@@ -181,8 +203,14 @@ func (s *Service) SetCertRegistrar(r CertRegistrar) { s.certReg = r }
 // SetWatchersNotifier wires the watchlist notification emitter.
 func (s *Service) SetWatchersNotifier(w WatchersNotifier) { s.watchersNotifier = w }
 
-// Close drains and stops the quality workers (no-op if async wasn't enabled).
+// Close stops the background quality-retry scanner and drains the quality
+// workers. The retry loop is stopped (and waited on) FIRST so it cannot send on
+// qCh after the channel is closed, then the workers drain.
 func (s *Service) Close() {
+	if s.cancelRetry != nil {
+		s.cancelRetry()
+		s.retryWG.Wait()
+	}
 	if s.qCh != nil {
 		close(s.qCh)
 		s.wg.Wait()
@@ -195,7 +223,7 @@ func (s *Service) Close() {
 // s.qCh — that channel carries real quality jobs; reading it here would steal
 // work from the worker pool.
 func (s *Service) qualityRetryLoop(ctx context.Context) {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(s.retryInterval)
 	defer ticker.Stop()
 	for {
 		select {
