@@ -106,6 +106,7 @@ func (FedAvgAggregator) Aggregate(partials []Partial) ([]byte, error) {
 //     (orchestration wiring — until then secAggParty is a verified primitive);
 //   - fixed-point modular arithmetic for exact (not ~1e-9) cancellation;
 //   - dropout recovery via Shamir shares of the masks (阶段3).
+//
 // See docs/superpowers/specs/2026-06-04-direction-c-*.
 type MaskedSumAggregator struct{}
 

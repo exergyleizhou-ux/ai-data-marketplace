@@ -172,6 +172,20 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 		s.failJob(ctx, jobID, "trust_l2_runner_mismatch")
 		return
 	}
+
+	// Output-gate config: prefer the values SNAPSHOTTED on the job at submit time
+	// over the offer's LIVE config, so a seller edit after submit can't change a
+	// queued job's review/size behavior (config TOCTOU; audit #6/#7). Jobs created
+	// before migration 000028 have nil snapshots → fall back to the live offer.
+	reviewOutput := offer.ReviewOutput
+	if job.ReviewOutput != nil {
+		reviewOutput = *job.ReviewOutput
+	}
+	maxOutputBytes := offer.MaxOutputBytes
+	if job.MaxOutputBytes != nil {
+		maxOutputBytes = *job.MaxOutputBytes
+	}
+
 	dataKey := ""
 	if s.data != nil {
 		dataKey, _ = s.data.CurrentObjectKey(ctx, job.DatasetID) // best-effort; mock ignores
@@ -200,7 +214,7 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 	res, err := s.runner.Run(ctx, RunRequest{
 		Job: job, Algorithm: algo, DataKey: dataKey, DataPath: dataPath,
 		Params:         effectiveParams(job),
-		MaxOutputBytes: offer.MaxOutputBytes, MaxOutputFiles: offer.MaxOutputFiles,
+		MaxOutputBytes: maxOutputBytes, MaxOutputFiles: offer.MaxOutputFiles,
 		MaxRuntimeSecs: offer.MaxRuntimeSecs,
 	})
 	if err != nil {
@@ -212,7 +226,7 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 	// Output gate: size cap (design §7/§8). A real runner enforces this during
 	// write; the mock returns in memory so we check here. A gate rejection
 	// refunds the buyer's credit (§21: rejected output isn't billed).
-	if offer.MaxOutputBytes > 0 && int64(len(res.Output)) > offer.MaxOutputBytes {
+	if maxOutputBytes > 0 && int64(len(res.Output)) > maxOutputBytes {
 		s.rejectJob(ctx, jobID, job.EntitlementID, "output_exceeds_max_bytes")
 		return
 	}
@@ -270,7 +284,7 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 
 	// High-sensitivity offers park the output for ops human review before it is
 	// released to the buyer (design §8 gate ⑤). Otherwise release directly.
-	if offer.ReviewOutput {
+	if reviewOutput {
 		if _, err := s.repo.StageForReview(ctx, jobID, key, res.OutputKind, size, logsKey); err != nil {
 			slog.Error("compute: stage-for-review failed", "job_id", jobID, "err", err)
 			return

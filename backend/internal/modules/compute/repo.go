@@ -137,6 +137,36 @@ func ptrF(n sql.NullFloat64) *float64 {
 	return &v
 }
 
+func nullB(p *bool) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+func ptrB(n sql.NullBool) *bool {
+	if !n.Valid {
+		return nil
+	}
+	v := n.Bool
+	return &v
+}
+
+func nullI64(p *int64) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+func ptrI64(n sql.NullInt64) *int64 {
+	if !n.Valid {
+		return nil
+	}
+	v := n.Int64
+	return &v
+}
+
 // --- algorithms ---
 
 const algoCols = `id, COALESCE(owner_id::text,''), name, runtime, image, image_digest,
@@ -449,19 +479,24 @@ const jobCols = `id, dataset_id, COALESCE(version_id::text,''), buyer_id, entitl
 	COALESCE(algorithm_id::text,''), COALESCE(algorithm_version,0), params, status, attempts,
 	dp_epsilon, COALESCE(output_key,''), COALESCE(output_bytes,0), COALESCE(output_kind,''),
 	COALESCE(logs_key,''), COALESCE(error,''), attestation, COALESCE(federated_job_id::text,''), created_at::text,
-	COALESCE(started_at::text,''), COALESCE(finished_at::text,'')`
+	COALESCE(started_at::text,''), COALESCE(finished_at::text,''), review_output, max_output_bytes`
 
 func scanJob(row pgx.Row) (Job, error) {
 	var j Job
 	var params, attestation []byte
 	var eps sql.NullFloat64
+	var reviewOutput sql.NullBool
+	var maxOutputBytes sql.NullInt64
 	err := row.Scan(&j.ID, &j.DatasetID, &j.VersionID, &j.BuyerID, &j.EntitlementID,
 		&j.AlgorithmID, &j.AlgorithmVersion, &params, &j.Status, &j.Attempts,
 		&eps, &j.OutputKey, &j.OutputBytes, &j.OutputKind,
-		&j.LogsKey, &j.Error, &attestation, &j.FederatedJobID, &j.CreatedAt, &j.StartedAt, &j.FinishedAt)
+		&j.LogsKey, &j.Error, &attestation, &j.FederatedJobID, &j.CreatedAt, &j.StartedAt, &j.FinishedAt,
+		&reviewOutput, &maxOutputBytes)
 	j.Params = fromJSONB(params)
 	j.Attestation = fromJSONB(attestation)
 	j.DPEpsilon = ptrF(eps)
+	j.ReviewOutput = ptrB(reviewOutput)
+	j.MaxOutputBytes = ptrI64(maxOutputBytes)
 	return j, err
 }
 
@@ -481,9 +516,10 @@ func (r *pgRepo) CreateJob(ctx context.Context, j Job) (Job, error) {
 	}
 	const q = `
 		INSERT INTO compute_jobs (dataset_id, version_id, buyer_id, entitlement_id,
-			algorithm_id, algorithm_version, params, idempotency_key, status, dp_epsilon, federated_job_id)
+			algorithm_id, algorithm_version, params, idempotency_key, status, dp_epsilon, federated_job_id,
+			review_output, max_output_bytes)
 		VALUES ($1, NULLIF($2,'')::uuid, $3, $4, NULLIF($5,'')::uuid, NULLIF($6,0), $7,
-			NULLIF($8,''), $9, $10, NULLIF($11,'')::uuid)
+			NULLIF($8,''), $9, $10, NULLIF($11,'')::uuid, $12, $13)
 		RETURNING ` + jobCols
 	status := j.Status
 	if status == "" {
@@ -491,7 +527,8 @@ func (r *pgRepo) CreateJob(ctx context.Context, j Job) (Job, error) {
 	}
 	out, err := scanJob(r.pool.QueryRow(ctx, q,
 		j.DatasetID, j.VersionID, j.BuyerID, j.EntitlementID,
-		j.AlgorithmID, j.AlgorithmVersion, params, j.idemKey, status, nullF(j.DPEpsilon), j.FederatedJobID))
+		j.AlgorithmID, j.AlgorithmVersion, params, j.idemKey, status, nullF(j.DPEpsilon), j.FederatedJobID,
+		nullB(j.ReviewOutput), nullI64(j.MaxOutputBytes)))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {

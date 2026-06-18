@@ -1147,6 +1147,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/Envelope"
 
+  /compute/algorithm-requests:
+    post:
+      tags: [compute]
+      summary: Request a custom algorithm (forced pending + untrusted until ops approve)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, runtime, image, output_kind]
+              properties:
+                name:          { type: string }
+                runtime:       { type: string }
+                image:         { type: string }
+                image_digest:  { type: string }
+                version:       { type: integer }
+                source_ref:    { type: string }
+                entrypoint:    { type: string }
+                output_kind:   { type: string }
+                params_schema: { type: object }
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
+  /users/me/compute/algorithm-requests:
+    get:
+      tags: [compute]
+      summary: List the caller's submitted algorithm requests
+      responses:
+        "200": { $ref: "#/components/schemas/Envelope" }
+
   /compute/jobs:
     post:
       tags: [compute]

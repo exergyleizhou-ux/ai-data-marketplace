@@ -115,16 +115,22 @@ type Job struct {
 	Status           string         `json:"status"`
 	Attempts         int            `json:"attempts"`
 	DPEpsilon        *float64       `json:"dp_epsilon,omitempty"`
-	OutputKey        string         `json:"output_key,omitempty"`
-	OutputBytes      int64          `json:"output_bytes,omitempty"`
-	OutputKind       string         `json:"output_kind,omitempty"`
-	LogsKey          string         `json:"logs_key,omitempty"`
-	Error            string         `json:"error,omitempty"`
-	Attestation      map[string]any `json:"attestation,omitempty"`      // L2 TEE remote-attestation report (design P3)
-	FederatedJobID   string         `json:"federated_job_id,omitempty"` // P4-a: set on federated sub-jobs; partials are internal-only
-	CreatedAt        string         `json:"created_at,omitempty"`
-	StartedAt        string         `json:"started_at,omitempty"`
-	FinishedAt       string         `json:"finished_at,omitempty"`
+	// ReviewOutput and MaxOutputBytes snapshot the offer's output-gate config at
+	// submit time, so a later seller edit can't change a queued job's behavior
+	// (config TOCTOU). Nil on jobs created before migration 000028 → the worker
+	// falls back to the live offer. Mirrors the DPEpsilon snapshot precedent.
+	ReviewOutput   *bool          `json:"review_output,omitempty"`
+	MaxOutputBytes *int64         `json:"max_output_bytes,omitempty"`
+	OutputKey      string         `json:"output_key,omitempty"`
+	OutputBytes    int64          `json:"output_bytes,omitempty"`
+	OutputKind     string         `json:"output_kind,omitempty"`
+	LogsKey        string         `json:"logs_key,omitempty"`
+	Error          string         `json:"error,omitempty"`
+	Attestation    map[string]any `json:"attestation,omitempty"`      // L2 TEE remote-attestation report (design P3)
+	FederatedJobID string         `json:"federated_job_id,omitempty"` // P4-a: set on federated sub-jobs; partials are internal-only
+	CreatedAt      string         `json:"created_at,omitempty"`
+	StartedAt      string         `json:"started_at,omitempty"`
+	FinishedAt     string         `json:"finished_at,omitempty"`
 
 	// idemKey is the idempotency key for submit dedupe. Unexported: it is a
 	// submit-time concern, not part of the wire DTO; the service sets it.

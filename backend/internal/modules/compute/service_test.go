@@ -719,6 +719,30 @@ func TestSubmitJob_Idempotent(t *testing.T) {
 	}
 }
 
+// TestSubmitJob_SnapshotsOfferGates pins the offer's output-gate config onto the
+// job at submit time (config-TOCTOU fix #6/#7). A later seller edit of the offer
+// must not retroactively change a queued job's review/size behavior. Mirrors the
+// DPEpsilon snapshot precedent.
+func TestSubmitJob_SnapshotsOfferGates(t *testing.T) {
+	fx := newFixture(t)
+	if _, err := fx.repo.UpsertOffer(context.Background(), Offer{
+		DatasetID: fx.dsID, Enabled: true, TrustLevel: TrustL1,
+		ReviewOutput: true, MaxOutputBytes: 4242,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	j, err := fx.submit()
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if j.ReviewOutput == nil || *j.ReviewOutput != true {
+		t.Fatalf("ReviewOutput snapshot = %v, want &true", j.ReviewOutput)
+	}
+	if j.MaxOutputBytes == nil || *j.MaxOutputBytes != 4242 {
+		t.Fatalf("MaxOutputBytes snapshot = %v, want &4242", j.MaxOutputBytes)
+	}
+}
+
 func TestCancelJob_RefundsQuota(t *testing.T) {
 	fx := newFixture(t)
 	j, err := fx.submit()
