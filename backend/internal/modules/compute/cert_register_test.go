@@ -35,7 +35,7 @@ func (blobStore) PutPart(context.Context, string, int, io.Reader) (int64, error)
 func (blobStore) CompleteMultipart(context.Context, string) (storage.Object, error) {
 	return storage.Object{}, nil
 }
-func (blobStore) Abort(context.Context, string) error                  { return nil }
+func (blobStore) Abort(context.Context, string) error { return nil }
 func (blobStore) Stat(context.Context, string) (storage.UploadStat, error) {
 	return storage.UploadStat{}, nil
 }

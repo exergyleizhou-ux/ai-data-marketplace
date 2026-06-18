@@ -95,7 +95,7 @@ func dockerRunArgs(req RunRequest, res DockerResources, dataDir, outDir, paramsF
 		args = append(args, "--runtime="+res.Runtime) // P2: gVisor (runsc) / Kata kernel boundary (§7.2)
 	}
 	args = append(args,
-		"--name=c2d-"+req.Job.ID,            // deterministic name so a timed-out container can be reaped
+		"--name=c2d-"+req.Job.ID,           // deterministic name so a timed-out container can be reaped
 		"--network=none",                   // no network: the only exfil path is the gated output
 		"--read-only",                      // immutable rootfs
 		"--security-opt=no-new-privileges", // no privilege escalation
@@ -104,7 +104,7 @@ func dockerRunArgs(req RunRequest, res DockerResources, dataDir, outDir, paramsF
 		"--memory="+res.Memory,
 		"--cpus="+res.CPUs,
 		"--tmpfs=/tmp:rw,size="+res.TmpfsSize+",nodev,nosuid,noexec",
-		"--user=65534:65534", // non-root nobody, even if the image declares USER root
+		"--user=65534:65534",      // non-root nobody, even if the image declares USER root
 		"-v", dataDir+":/data:ro", // dataset, read-only
 		"-v", outDir+":/out", // output collection
 		"-v", paramsFile+":/params.json:ro", // job params, read-only
