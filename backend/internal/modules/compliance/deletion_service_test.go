@@ -133,6 +133,28 @@ func TestApproveDeletion_RejectsBeforeCoolingElapsed(t *testing.T) {
 	}
 }
 
+// Approve must SUCCEED once the cooling window has elapsed. The cooling_until
+// the repo returns is a Postgres timestamptz rendered via ::text (e.g.
+// "2026-06-25 11:03:49.281982+00") — a space separator and a "+00" offset, NOT
+// RFC3339. Parsing it with time.RFC3339 fails, which previously short-circuited
+// to ErrCoolingNotElapsed and made account-deletion approval permanently
+// non-functional in production. The old mock fed RFC3339, hiding the bug.
+func TestApproveDeletion_SucceedsAfterCoolingElapses_PostgresTextFormat(t *testing.T) {
+	pgPast := time.Now().Add(-time.Hour).UTC().Format("2006-01-02 15:04:05.999999-07")
+	repo := &fakeDeletionRepo{reqs: map[string]DeletionRequest{
+		"d-1": {ID: "d-1", UserID: "u1", Status: DeletionCooling, CoolingUntil: pgPast},
+	}}
+	svc := NewDeletionService(repo, nil, nil)
+
+	d, err := svc.Approve(context.Background(), "ops-1", "d-1", "ok")
+	if err != nil {
+		t.Fatalf("approve after cooling elapsed must succeed, got %v", err)
+	}
+	if d.Status != DeletionApproved {
+		t.Fatalf("status = %q, want %q", d.Status, DeletionApproved)
+	}
+}
+
 func TestExecuteDeletion_OnlyAcceptsApproved(t *testing.T) {
 	repo := &fakeDeletionRepo{}
 	svc := NewDeletionService(repo, nil, nil)
