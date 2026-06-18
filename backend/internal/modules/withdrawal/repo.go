@@ -15,6 +15,10 @@ type Repository interface {
 	AdminList(ctx context.Context, status string, limit, offset int) ([]Request, error)
 	Transition(ctx context.Context, id, from, to, opsID, note string) (Request, error)
 	SumApprovedAndPending(ctx context.Context, sellerID string) (int64, error)
+	// CreateWithinBudget atomically inserts a withdrawal only if it fits the
+	// seller's remaining settled balance (settled minus ALL non-rejected requests,
+	// INCLUDING completed payouts), serialized per seller against concurrent races.
+	CreateWithinBudget(ctx context.Context, r Request, settledCents int64) (Request, error)
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }
@@ -157,4 +161,41 @@ func (r *pgRepo) SumApprovedAndPending(ctx context.Context, sellerID string) (in
 		return 0, fmt.Errorf("sum withdrawals: %w", err)
 	}
 	return sum, nil
+}
+
+func (r *pgRepo) CreateWithinBudget(ctx context.Context, req Request, settledCents int64) (Request, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return Request{}, fmt.Errorf("create withdrawal: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	// Serialize per seller so two concurrent requests can't both read the same
+	// balance and both insert (TOCTOU double-withdrawal).
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "withdrawal:"+req.SellerID); err != nil {
+		return Request{}, fmt.Errorf("create withdrawal lock: %w", err)
+	}
+	// Outstanding = every non-rejected request, INCLUDING completed payouts. A
+	// completed payout has already left the treasury, so it must keep consuming the
+	// balance — otherwise the seller could re-withdraw the same earnings forever.
+	var outstanding int64
+	if err := tx.QueryRow(ctx,
+		`SELECT COALESCE(SUM(amount_cents),0) FROM withdrawal_requests
+		 WHERE seller_id=$1 AND status IN ('pending','approved','completed')`, req.SellerID).Scan(&outstanding); err != nil {
+		return Request{}, fmt.Errorf("sum withdrawals: %w", err)
+	}
+	if req.AmountCents > settledCents-outstanding {
+		return Request{}, ErrInsufficientBalance
+	}
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO withdrawal_requests (seller_id, amount_cents, channel, account_label)
+		 VALUES ($1,$2,$3,$4)
+		 RETURNING id::text, status, requested_at::text`,
+		req.SellerID, req.AmountCents, req.Channel, req.AccountLabel).
+		Scan(&req.ID, &req.Status, &req.RequestedAt); err != nil {
+		return Request{}, fmt.Errorf("create withdrawal: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Request{}, fmt.Errorf("create withdrawal commit: %w", err)
+	}
+	return req, nil
 }
