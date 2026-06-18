@@ -91,6 +91,36 @@ func hashPassword(pw string) string {
 // Test2FALoginFlow is a full integration test of the 2FA TOTP flow:
 // 1. Register user → enroll 2FA → verify enrollment → totp_enabled=true
 // 2. Login → need_2fa + challenge_token (no real tokens)
+// TestVerify2FAChallenge_RejectsFrozenUser: a frozen/banned account must not
+// obtain tokens via the 2FA completion step (Login/Refresh already reject it).
+func TestVerify2FAChallenge_RejectsFrozenUser(t *testing.T) {
+	svc, repo := newTestService()
+	ctx := context.Background()
+
+	res, err := svc.Register(ctx, "frozen2fa@test.com", accountTypeEmail, "password123")
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	userID := res.User.ID
+	repo.byID[userID] = res.User
+	enroll, _ := svc.Enroll2FA(ctx, userID)
+	code, _ := totp.GenerateCode(enroll.Secret, time.Now())
+	if err := svc.Verify2FAEnrollment(ctx, userID, code); err != nil {
+		t.Fatalf("verify enrollment: %v", err)
+	}
+	loginRes, _ := svc.Login(ctx, "frozen2fa@test.com", "password123")
+
+	// Freeze the account after the challenge was issued.
+	u := repo.byID[userID]
+	u.Status = statusFrozen
+	repo.byID[userID] = u
+
+	code2, _ := totp.GenerateCode(enroll.Secret, time.Now())
+	if _, _, err := svc.Verify2FAChallenge(ctx, loginRes.ChallengeToken, code2); err != ErrUserFrozen {
+		t.Fatalf("frozen user via 2FA = %v, want ErrUserFrozen", err)
+	}
+}
+
 // 3. Verify2FAChallenge with valid TOTP code → real access+refresh tokens
 // 4. Wrong password → ErrInvalidCredentials
 // 5. Wrong TOTP code → ErrInvalid2FACode
