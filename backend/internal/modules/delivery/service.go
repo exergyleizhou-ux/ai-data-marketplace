@@ -108,6 +108,15 @@ func (s *Service) Download(ctx context.Context, token, ip string) (DownloadResul
 	if err != nil {
 		return DownloadResult{}, err
 	}
+	// Re-assert the order is still deliverable at download time, not just at
+	// token-mint time. A token minted while paid must stop working the moment the
+	// order moves to disputed/cancelled/refunded (otherwise a buyer can mint a
+	// token, file a dispute/refund, and keep pulling data for the token window).
+	switch o.Status {
+	case "paid", "delivered", "confirmed":
+	default:
+		return DownloadResult{}, ErrTokenInvalid
+	}
 	key, err := s.datasets.CurrentObjectKey(ctx, o.DatasetID)
 	if err != nil {
 		return DownloadResult{}, err

@@ -112,6 +112,25 @@ func TestRequestDownloadGuards(t *testing.T) {
 	}
 }
 
+// TestDownloadRejectedAfterOrderNoLongerDeliverable: a buyer who minted a token
+// while the order was paid must NOT keep downloading once the order moves to a
+// non-deliverable state (disputed / cancelled / refunded) within the token window.
+// Download must re-check order status, not just token expiry/quota.
+func TestDownloadRejectedAfterOrderNoLongerDeliverable(t *testing.T) {
+	ctx := context.Background()
+	svc, orders, _, _ := setup(t, "paid")
+	token, _, err := svc.RequestDownload(ctx, "buyer", "o1", true)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	for _, bad := range []string{"disputed", "cancelled", "refunded"} {
+		orders.info.Status = bad
+		if _, err := svc.Download(ctx, token, "1.2.3.4"); !errors.Is(err, ErrTokenInvalid) {
+			t.Fatalf("download on %s order = %v, want ErrTokenInvalid", bad, err)
+		}
+	}
+}
+
 func TestDownloadFlow(t *testing.T) {
 	ctx := context.Background()
 	svc, orders, _, _ := setup(t, "paid")
