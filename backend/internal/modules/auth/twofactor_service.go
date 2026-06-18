@@ -107,6 +107,11 @@ func (s *Service) Verify2FAChallenge(ctx context.Context, challengeToken, code s
 	if err != nil {
 		return Tokens{}, User{}, err
 	}
+	// A frozen/banned account must not obtain tokens via the 2FA step either —
+	// Login and Refresh both reject frozen users; this completion path did not.
+	if u.Status == statusFrozen {
+		return Tokens{}, User{}, ErrUserFrozen
+	}
 	secret, _ := s.repo.GetTOTPSecret(ctx, userID)
 	if secret != "" && totp.Validate(code, secret) {
 		tokens, err := s.tokens.Issue(u.ID, u.Role)
