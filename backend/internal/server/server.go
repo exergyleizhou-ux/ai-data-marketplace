@@ -111,6 +111,16 @@ func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	engine := gin.New()
+	// Pin trusted proxies so c.ClientIP() (the per-IP rate-limit key) reflects
+	// the real peer. gin's default trusts ALL proxies and echoes a
+	// client-supplied X-Forwarded-For, which would let anyone forge their
+	// source IP and bypass per-IP rate limits (credential stuffing /
+	// enumeration). An invalid override degrades to trusting no proxy (the
+	// direct peer IP) rather than trusting everything.
+	if err := engine.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		slog.Warn("invalid TrustedProxies; falling back to direct peer IP", "err", err)
+		_ = engine.SetTrustedProxies(nil)
+	}
 	// CORS first (handles preflight); RequestID so logger/recovery correlate;
 	// metrics times the whole handler stack.
 	engine.Use(
