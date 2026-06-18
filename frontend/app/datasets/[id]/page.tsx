@@ -20,6 +20,7 @@ import { DatasetQA } from "@/components/DatasetQA";
 import { DatasheetView } from "@/components/Datasheet";
 import { SchemaTable, hasSchema } from "@/components/SchemaTable";
 import { ComputeBuyer } from "@/components/Compute";
+import { CertStatement } from "@/components/CertStatement";
 
 export default function DatasetDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -237,9 +238,12 @@ export default function DatasetDetailPage({ params }: { params: Promise<{ id: st
                   ))}
                 </div>
               )}
-              <p className="border-t border-neutral-100 pt-2 text-[11px] leading-relaxed text-neutral-400">
-                {cert.statement_zh}
-              </p>
+              <CertStatement
+                zh={cert.statement_zh}
+                en={cert.statement_en}
+                className="border-t border-neutral-100 pt-2 text-[11px] leading-relaxed text-neutral-400"
+                showSecondary={false}
+              />
             </div>
           </Card>
         )}
