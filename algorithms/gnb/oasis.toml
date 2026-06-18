@@ -1,0 +1,14 @@
+# oasis.toml — C2D algorithm manifest
+# See docs/superpowers/specs/P4-oasis-c2d.md
+
+version = 1
+source_ref = ""
+params_schema = "{\"label\":{\"type\":\"string\",\"default\":\"label\"},\"features\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}}"
+dockerfile = "Dockerfile"
+runtime = "docker"
+image_digest = ""
+output_kind = "model"
+builder = "docker"
+name = "gnb"
+image = "127.0.0.1:5000/vo-gnb"
+entrypoint = ""
