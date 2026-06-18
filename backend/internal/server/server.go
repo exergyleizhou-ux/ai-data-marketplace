@@ -339,14 +339,15 @@ func (s *Server) routes() {
 		if s.cfg.KYCAutoApprove {
 			verifier = auth.AutoApproveVerifier{}
 		}
+		rec := audit.New(s.db)
 		authSvc := auth.NewService(auth.NewRepository(s.db), tm,
 			auth.WithKYC(verifier, s.cfg.PIISecret),
-			auth.WithDenylist(s.denylist()))
+			auth.WithDenylist(s.denylist()),
+			auth.WithAudit(rec))
 		lim := s.limiter() // shared rate limiter (auth credential routes + dataset preview)
 		auth.Register(api, authSvc, tm, lim)
 
 		authMW := auth.Middleware(tm)
-		rec := audit.New(s.db)
 		store := s.objectStorage() // shared by dataset (upload) and delivery (download)
 
 		dsOpts := []dataset.Option{dataset.WithAsyncQuality(2, 128)}
@@ -419,6 +420,7 @@ func (s *Server) routes() {
 		// Withdrawal: seller requests + ops approves (book-keeping only, P module).
 		withdrawRepo := withdrawal.NewRepository(s.db)
 		withdrawSvc := withdrawal.NewService(withdrawRepo, withdrawEarningsAdapter{order: orderSvc}, notifySvc)
+		withdrawSvc.SetAudit(rec)
 		withdrawal.Register(api, withdrawSvc, authMW, auth.RequireRole("ops", "admin"), lim)
 
 		// Anomaly scanner: periodic audit pattern detection (PR-Q).

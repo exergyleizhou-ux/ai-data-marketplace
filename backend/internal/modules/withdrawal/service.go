@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 )
 
 type EarningsReader interface {
@@ -19,10 +21,29 @@ type Service struct {
 	repo     Repository
 	earnings EarningsReader
 	notifier Notifier
+	audit    audit.Recorder
 }
 
 func NewService(repo Repository, earnings EarningsReader, notifier Notifier) *Service {
-	return &Service{repo: repo, earnings: earnings, notifier: notifier}
+	return &Service{repo: repo, earnings: earnings, notifier: notifier, audit: audit.Noop{}}
+}
+
+// SetAudit wires the audit-log recorder for ops decisions (approve/reject/
+// complete). Without it the service defaults to a no-op recorder.
+func (s *Service) SetAudit(rec audit.Recorder) {
+	if rec != nil {
+		s.audit = rec
+	}
+}
+
+// auditDecision records an ops withdrawal decision in audit_logs. These are
+// high-risk financial admin actions (withdrawal.reject is watched by the
+// anomaly HighRiskActionRule); approve/complete round out the trail.
+func (s *Service) auditDecision(ctx context.Context, action, opsID, reqID string, detail any) {
+	s.audit.Record(ctx, audit.Entry{
+		ActorID: opsID, ActorRole: "ops", Action: action,
+		ResourceType: "withdrawal", ResourceID: reqID, Detail: detail,
+	})
 }
 
 func (s *Service) Request(ctx context.Context, sellerID string, amountCents int64, channel, accountLabel string) (Request, error) {
@@ -55,6 +76,7 @@ func (s *Service) Approve(ctx context.Context, opsID, id, note string) (Request,
 	if err != nil {
 		return Request{}, err
 	}
+	s.auditDecision(ctx, "withdrawal.approve", opsID, r.ID, map[string]any{"note": note})
 	s.notify(ctx, r, "withdrawal_approved", "提现申请已批准", "您的提现申请已批准,等待打款。")
 	return r, nil
 }
@@ -67,6 +89,7 @@ func (s *Service) Reject(ctx context.Context, opsID, id, reason string) (Request
 	if err != nil {
 		return Request{}, err
 	}
+	s.auditDecision(ctx, "withdrawal.reject", opsID, r.ID, map[string]any{"reason": reason})
 	s.notify(ctx, r, "withdrawal_rejected", "提现申请被拒", reason)
 	return r, nil
 }
@@ -76,6 +99,7 @@ func (s *Service) Complete(ctx context.Context, opsID, id, note string) (Request
 	if err != nil {
 		return Request{}, err
 	}
+	s.auditDecision(ctx, "withdrawal.complete", opsID, r.ID, map[string]any{"note": note})
 	s.notify(ctx, r, "withdrawal_completed", "提现已到账",
 		fmt.Sprintf("提现 ¥%.2f 已到账。", float64(r.AmountCents)/100.0))
 	return r, nil
