@@ -16,11 +16,35 @@ type ExportRepository interface {
 	SetReady(ctx context.Context, id string, objectKey string, objectBytes int64, expiresAt time.Time) error
 	SetFailed(ctx context.Context, id, errMsg string) error
 	ExpireOldJobs(ctx context.Context) error
+	// PurgeByUser deletes all of a user's export job rows and returns the object
+	// keys that were set, so the caller can delete the backing objects too
+	// (right-to-erasure: the export zip is a full PII snapshot).
+	PurgeByUser(ctx context.Context, userID string) ([]string, error)
 }
 
 type pgExportRepo struct{ pool *pgxpool.Pool }
 
 func NewExportRepository(pool *pgxpool.Pool) ExportRepository { return &pgExportRepo{pool: pool} }
+
+func (r *pgExportRepo) PurgeByUser(ctx context.Context, userID string) ([]string, error) {
+	rows, err := r.pool.Query(ctx,
+		`DELETE FROM data_export_jobs WHERE user_id=$1 RETURNING object_key`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("purge export jobs: %w", err)
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var k *string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		if k != nil && *k != "" {
+			keys = append(keys, *k)
+		}
+	}
+	return keys, rows.Err()
+}
 
 func (r *pgExportRepo) Create(ctx context.Context, userID string) (ExportJob, error) {
 	var j ExportJob

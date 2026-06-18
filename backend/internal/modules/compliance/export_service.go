@@ -58,6 +58,29 @@ func (s *ExportService) GetExportStatus(ctx context.Context, userID string) (Exp
 	return s.repo.FindRecentByUser(ctx, userID)
 }
 
+// PurgeUser deletes all of a user's data-export jobs, the backing object-store
+// zips (each a full PII snapshot), and the in-memory cache entries. Called from
+// the account-deletion flow so erasure does not leave a PII archive behind.
+func (s *ExportService) PurgeUser(ctx context.Context, userID string) error {
+	keys, err := s.repo.PurgeByUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	for _, k := range keys {
+		delete(s.cache, k)
+	}
+	s.mu.Unlock()
+	if s.store != nil {
+		for _, k := range keys {
+			if derr := s.store.Delete(ctx, k); derr != nil {
+				return fmt.Errorf("delete export object %s: %w", k, derr)
+			}
+		}
+	}
+	return nil
+}
+
 // OpenExport returns a reader for the stored export zip, or io.EOF if not found.
 func (s *ExportService) OpenExport(ctx context.Context, key string) (io.ReadCloser, error) {
 	s.mu.RLock()

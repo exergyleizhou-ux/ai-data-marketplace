@@ -6,13 +6,21 @@ import (
 	"time"
 )
 
+// ExportPurger erases a user's data-export jobs + their backing PII zips, so
+// account deletion doesn't leave an export archive behind. Implemented by
+// *ExportService; optional (nil = no export purge, e.g. in tests).
+type ExportPurger interface {
+	PurgeUser(ctx context.Context, userID string) error
+}
+
 type DeletionService struct {
 	repo     DeletionRepository
 	notifier Notifier
+	exports  ExportPurger
 }
 
-func NewDeletionService(repo DeletionRepository, notifier Notifier) *DeletionService {
-	return &DeletionService{repo: repo, notifier: notifier}
+func NewDeletionService(repo DeletionRepository, notifier Notifier, exports ExportPurger) *DeletionService {
+	return &DeletionService{repo: repo, notifier: notifier, exports: exports}
 }
 
 func (s *DeletionService) RequestDeletion(ctx context.Context, userID, reason string) (DeletionRequest, error) {
@@ -91,6 +99,15 @@ func (s *DeletionService) Execute(ctx context.Context, opsID, id string) error {
 	}
 	if d.Status != DeletionApproved {
 		return ErrBadTransition
+	}
+	// Erase data-export archives FIRST: each export zip is a full PII snapshot,
+	// and the job rows otherwise survive the scrub indefinitely. Done before the
+	// scrub so a purge failure aborts (and is retried) rather than leaving an
+	// orphaned archive after the user is already scrubbed.
+	if s.exports != nil {
+		if err := s.exports.PurgeUser(ctx, d.UserID); err != nil {
+			return err
+		}
 	}
 	if err := s.repo.ExecuteDeletion(ctx, id, d.UserID, opsID); err != nil {
 		return err

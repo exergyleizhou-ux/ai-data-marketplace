@@ -68,6 +68,30 @@ func TestLocalMultipartRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLocalDelete(t *testing.T) {
+	ctx := context.Background()
+	l, _ := NewLocal(t.TempDir())
+	key := "exports/u1/job1.zip"
+	up, _ := l.InitMultipart(ctx, key)
+	_, _ = l.PutPart(ctx, up, 1, strings.NewReader("secret pii archive"))
+	if _, err := l.CompleteMultipart(ctx, up); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if _, _, err := l.Open(ctx, key); err != nil {
+		t.Fatalf("object should exist before delete: %v", err)
+	}
+	if err := l.Delete(ctx, key); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, _, err := l.Open(ctx, key); err == nil {
+		t.Fatal("object must be gone after delete")
+	}
+	// Idempotent: deleting a missing object is not an error.
+	if err := l.Delete(ctx, key); err != nil {
+		t.Fatalf("delete of missing object must be nil, got %v", err)
+	}
+}
+
 func TestLocalRejectsTraversal(t *testing.T) {
 	l, _ := NewLocal(t.TempDir())
 	if _, err := l.InitMultipart(context.Background(), "../../etc/passwd"); err == nil {
