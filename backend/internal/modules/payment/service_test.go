@@ -241,6 +241,35 @@ func TestRefundUnsettledHasNoSplitToReverse(t *testing.T) {
 	}
 }
 
+// recordingSplit counts ExecuteSplit calls so we can assert money does NOT move.
+type recordingSplit struct {
+	MockProvider
+	splitCalls int
+}
+
+func (r *recordingSplit) ExecuteSplit(ctx context.Context, orderID, sellerRef string, sellerAmt, fee int64) (string, error) {
+	r.splitCalls++
+	return r.MockProvider.ExecuteSplit(ctx, orderID, sellerRef, sellerAmt, fee)
+}
+
+// Escrow invariant: a pending settlement row from a prior failed attempt must NOT
+// let an outbox retry pay the seller out once the order has been disputed.
+func TestSettleOnce_RefusesDisputedOrderWithPendingSettlement(t *testing.T) {
+	ctx := context.Background()
+	o := &fakeOrders{info: OrderInfo{ID: "o1", Status: "disputed", PlatformFeeCents: 10000, SellerAmountCents: 90000}}
+	repo := newFakeRepo()
+	repo.settleStatus["o1"] = "pending" // a prior attempt left a pending settlement row
+	rs := &recordingSplit{MockProvider: MockProvider{Secret: secret}}
+	svc := NewService(repo, o, rs, rs, nil)
+
+	if err := svc.settleOnce(ctx, "o1"); !errors.Is(err, ErrNotConfirmed) {
+		t.Fatalf("settling a disputed order must be refused, got %v", err)
+	}
+	if rs.splitCalls != 0 {
+		t.Fatalf("ExecuteSplit must NOT run for a disputed order, got %d calls", rs.splitCalls)
+	}
+}
+
 func TestSettleIdempotent(t *testing.T) {
 	ctx := context.Background()
 	o := &fakeOrders{info: OrderInfo{ID: "o1", Status: "confirmed", PlatformFeeCents: 10000, SellerAmountCents: 90000}}

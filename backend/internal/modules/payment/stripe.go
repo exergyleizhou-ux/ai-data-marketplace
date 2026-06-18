@@ -132,6 +132,9 @@ func (p *StripeProvider) Refund(ctx context.Context, channelTxnID, splitTxnID st
 	if splitTxnID != "" {
 		rp := &stripe.TransferReversalParams{ID: stripe.String(splitTxnID)}
 		rp.Context = ctx
+		// Idempotency key so a retried dispute-refund returns the original reversal
+		// instead of erroring on an already-fully-reversed transfer (cf. ExecuteSplit).
+		rp.SetIdempotencyKey("reverse:" + splitTxnID)
 		if _, err := transferreversal.New(rp); err != nil {
 			return "", fmt.Errorf("stripe transfer reversal: %w", err)
 		}
@@ -141,6 +144,8 @@ func (p *StripeProvider) Refund(ctx context.Context, channelTxnID, splitTxnID st
 		params.Amount = stripe.Int64(amountCents)
 	}
 	params.Context = ctx
+	// Idempotency key so a retried refund returns the original instead of a second.
+	params.SetIdempotencyKey("refund:" + channelTxnID)
 	rf, err := refund.New(params)
 	if err != nil {
 		return "", fmt.Errorf("stripe refund: %w", err)
