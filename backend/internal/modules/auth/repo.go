@@ -68,7 +68,9 @@ type Repository interface {
 	CreatePasswordResetToken(ctx context.Context, tokenHash, userID string, expiresAt time.Time) error
 	ConsumePasswordResetToken(ctx context.Context, tokenHash string) (userID string, err error)
 	UpdatePassword(ctx context.Context, userID, passwordHash string) error
-	RevokeAllRefreshTokens(ctx context.Context, userID string) error
+	// InvalidateSessions stamps tokens_valid_after=now() so every refresh token
+	// issued before this instant is rejected (used on password reset).
+	InvalidateSessions(ctx context.Context, userID string) error
 }
 
 type passwordResetTokenRow struct {
@@ -122,11 +124,11 @@ func (r *pgRepo) GetUserByAccount(ctx context.Context, account string) (User, st
 
 func (r *pgRepo) GetUserByID(ctx context.Context, id string) (User, error) {
 	const q = `
-		SELECT id, account, account_type, role, kyc_status, status, COALESCE(totp_enabled, false)
+		SELECT id, account, account_type, role, kyc_status, status, COALESCE(totp_enabled, false), tokens_valid_after
 		FROM users WHERE id = $1`
 	var u User
 	err := r.pool.QueryRow(ctx, q, id).
-		Scan(&u.ID, &u.Account, &u.AccountType, &u.Role, &u.KYCStatus, &u.Status, &u.TOTPEnabled)
+		Scan(&u.ID, &u.Account, &u.AccountType, &u.Role, &u.KYCStatus, &u.Status, &u.TOTPEnabled, &u.TokensValidAfter)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrUserNotFound
 	}

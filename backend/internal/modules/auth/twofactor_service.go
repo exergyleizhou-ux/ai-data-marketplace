@@ -166,7 +166,12 @@ func (s *Service) CompletePasswordReset(ctx context.Context, rawToken, newPasswo
 	if err := s.repo.UpdatePassword(ctx, userID, string(hash)); err != nil {
 		return err
 	}
-	_ = s.repo.RevokeAllRefreshTokens(ctx, userID)
+	// Terminate existing sessions: a reset that doesn't invalidate outstanding
+	// refresh tokens leaves a thief who phished/stole a token still logged in.
+	// Errors are NOT swallowed — if we can't invalidate, the reset fails.
+	if err := s.repo.InvalidateSessions(ctx, userID); err != nil {
+		return fmt.Errorf("invalidate sessions on reset: %w", err)
+	}
 	return nil
 }
 

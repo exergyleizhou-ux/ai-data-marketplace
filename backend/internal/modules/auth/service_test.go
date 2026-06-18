@@ -507,7 +507,14 @@ func (r *fakeRepo) UpdatePassword(_ context.Context, userID, hash string) error 
 	}
 	return nil
 }
-func (r *fakeRepo) RevokeAllRefreshTokens(_ context.Context, _ string) error { return nil }
+func (r *fakeRepo) InvalidateSessions(_ context.Context, userID string) error {
+	if u, ok := r.byID[userID]; ok {
+		now := time.Now()
+		u.TokensValidAfter = &now
+		r.byID[userID] = u
+	}
+	return nil
+}
 
 func TestKYCIDNoEncryptRevealRoundTrip(t *testing.T) {
 	repo := newFakeRepo()

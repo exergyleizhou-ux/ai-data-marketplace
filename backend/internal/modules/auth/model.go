@@ -1,6 +1,9 @@
 package auth
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 // User is the auth module's view of an account. Other modules receive identity
 // through this type (or the middleware-injected id/role), never by reading the
@@ -14,6 +17,10 @@ type User struct {
 	Status      string `json:"status"`
 	TOTPEnabled bool   `json:"totp_enabled,omitempty"`
 	TOTPSecret  string `json:"-"` // never serialised
+	// TokensValidAfter is the session-invalidation epoch: a refresh token issued
+	// before this instant is rejected (set on password reset). Nil = never
+	// invalidated.
+	TokensValidAfter *time.Time `json:"-"`
 }
 
 // Enroll2FAResult is returned when a user starts 2FA enrollment.
