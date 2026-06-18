@@ -14,6 +14,7 @@ import (
 func TestDockerRunArgs_SecurityFlags(t *testing.T) {
 	req := RunRequest{
 		Algorithm:      Algorithm{Image: "reg/vo-logreg:1", ImageDigest: "sha256:abc123", OutputKind: OutputModel},
+		Job:            Job{ID: "job-1"},
 		MaxRuntimeSecs: 60,
 	}
 	args := dockerRunArgs(req, DefaultDockerResources, "/stage/data", "/stage/out", "/stage/params.json")
@@ -25,6 +26,7 @@ func TestDockerRunArgs_SecurityFlags(t *testing.T) {
 		"--security-opt=no-new-privileges",
 		"--cap-drop=ALL",
 		"--user=65534:65534",
+		"--name=c2d-job-1",
 		"--pids-limit=128",
 		"--memory=512m",
 		"--cpus=1",
