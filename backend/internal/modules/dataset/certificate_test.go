@@ -47,7 +47,7 @@ func TestBuildCertificatePending(t *testing.T) {
 
 func TestCertificateService(t *testing.T) {
 	repo := newFakeRepo()
-	repo.items["ds-1"] = Dataset{ID: "ds-1", Title: "T", CreatedAt: "2026-06-02T00:00:00Z"}
+	repo.items["ds-1"] = Dataset{ID: "ds-1", Title: "T", Status: StatusPublished, CreatedAt: "2026-06-02T00:00:00Z"}
 	svc := NewService(repo, fakeIdentity{status: map[string]string{}}, nil)
 
 	cert, err := svc.Certificate(context.Background(), "ds-1")

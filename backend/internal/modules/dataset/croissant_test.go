@@ -122,7 +122,7 @@ func TestBuildCroissantOmitsNonApplicableAuthenticity(t *testing.T) {
 
 func TestCroissantMetadataService(t *testing.T) {
 	repo := newFakeRepo()
-	repo.items["ds-1"] = Dataset{ID: "ds-1", Title: "T", DataType: "text", LicenseType: licenseResearch}
+	repo.items["ds-1"] = Dataset{ID: "ds-1", Title: "T", Status: StatusPublished, DataType: "text", LicenseType: licenseResearch}
 	svc := NewService(repo, fakeIdentity{status: map[string]string{}}, nil)
 
 	doc, err := svc.CroissantMetadata(context.Background(), "ds-1", "https://oasis.example")

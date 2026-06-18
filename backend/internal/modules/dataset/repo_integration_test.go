@@ -151,6 +151,11 @@ func TestCroissantMetadataIntegration(t *testing.T) {
 		t.Fatalf("savecheck: %v", err)
 	}
 
+	// Croissant is a public, published-dataset feature; publish before reading.
+	if err := repo.SetStatus(ctx, d.ID, StatusPublished); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
 	svc := NewService(repo, fakeIdentity{status: map[string]string{}}, nil)
 	doc, err := svc.CroissantMetadata(ctx, d.ID, "https://oasis.example")
 	if err != nil {

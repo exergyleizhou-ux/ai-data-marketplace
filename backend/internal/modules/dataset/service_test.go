@@ -341,6 +341,33 @@ func TestListAndPreview(t *testing.T) {
 	}
 }
 
+// TestPublicGettersHideUnpublished pins the visibility boundary: the public,
+// unauthenticated by-id endpoints (Get/Versions/QualityReport/Certificate/
+// CroissantMetadata) must NOT serve a non-published dataset's metadata — a
+// draft/reviewing/delisted dataset leaks seller_id, source declaration (PII flag,
+// provenance), datasheet, etc. Mirrors the Preview boundary (TestPreviewUnpublished).
+func TestPublicGettersHideUnpublished(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(newFakeRepo(), fakeIdentity{status: map[string]string{"owner": kycVerified}}, nil)
+	d, _ := svc.Create(ctx, "owner", CreateInput{Title: "draft", DataType: "text", LicenseType: "commercial", SourceDeclaration: validDecl()})
+
+	if _, err := svc.Get(ctx, d.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Get(unpublished) = %v, want ErrNotFound", err)
+	}
+	if _, err := svc.Versions(ctx, d.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Versions(unpublished) = %v, want ErrNotFound", err)
+	}
+	if _, err := svc.QualityReport(ctx, d.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("QualityReport(unpublished) = %v, want ErrNotFound", err)
+	}
+	if _, err := svc.Certificate(ctx, d.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Certificate(unpublished) = %v, want ErrNotFound", err)
+	}
+	if _, err := svc.CroissantMetadata(ctx, d.ID, "https://x"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("CroissantMetadata(unpublished) = %v, want ErrNotFound", err)
+	}
+}
+
 func TestPreviewUnpublished(t *testing.T) {
 	ctx := context.Background()
 	store, _ := storage.NewLocal(t.TempDir())
@@ -410,7 +437,7 @@ func TestSignSourceFlow(t *testing.T) {
 
 func TestQualityReport(t *testing.T) {
 	repo := newFakeRepo()
-	repo.items["ds-1"] = Dataset{ID: "ds-1"}
+	repo.items["ds-1"] = Dataset{ID: "ds-1", Status: StatusPublished}
 	repo.qchecks["ds-1"] = []QualityCheck{
 		{Type: "authenticity", Result: "warn", Report: map[string]any{"score": 72, "band": "review"}},
 		{Type: "pii_redaction", Result: "pass", Report: map[string]any{"verified": true}},
@@ -432,7 +459,7 @@ func TestQualityReport(t *testing.T) {
 	}
 
 	// Known dataset with no checks yet -> empty (non-nil) slice, no error.
-	repo.items["ds-2"] = Dataset{ID: "ds-2"}
+	repo.items["ds-2"] = Dataset{ID: "ds-2", Status: StatusPublished}
 	c2, err := svc.QualityReport(ctx, "ds-2")
 	if err != nil || c2 == nil || len(c2) != 0 {
 		t.Fatalf("empty report should be [] not nil: err=%v checks=%v", err, c2)
