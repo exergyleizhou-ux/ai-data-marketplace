@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -44,6 +45,24 @@ type Config struct {
 	CORSAllowOrigin string // browser origin allowed to call the API ("*" in dev)
 	AppBaseURL      string // frontend base URL for email links (e.g. https://app.example.com)
 	MetricsToken    string // optional bearer token to protect /metrics (empty = open, dev only)
+
+	// TrustedProxies are the networks whose X-Forwarded-For header is honored
+	// when resolving the client IP (used as the per-IP rate-limit key). A
+	// request arriving from outside these ranges cannot forge its source IP.
+	TrustedProxies []string
+}
+
+// DefaultTrustedProxies are the networks a reverse proxy (Caddy/nginx/LB)
+// typically occupies: loopback, RFC1918 private ranges, and the IPv6
+// loopback/unique-local ranges. Trusting only these means gin resolves the
+// real client from X-Forwarded-For ONLY when the request actually transited a
+// proxy on one of these networks, and ignores a client-forged XFF arriving
+// from the public internet. Override with TRUSTED_PROXIES for other topologies.
+func DefaultTrustedProxies() []string {
+	return []string{
+		"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+		"::1/128", "fc00::/7",
+	}
 }
 
 // Load reads configuration from the environment, applying sane local-dev
@@ -84,6 +103,7 @@ func Load() (*Config, error) {
 		CORSAllowOrigin: getenv("CORS_ALLOW_ORIGIN", "*"),
 		AppBaseURL:      getenv("APP_BASE_URL", "http://localhost:3000"),
 		MetricsToken:    getenv("METRICS_TOKEN", ""),
+		TrustedProxies:  trustedProxiesFromEnv(),
 	}
 	// Validate that any provided PORT-style override parses, to fail fast.
 	if v := os.Getenv("HTTP_PORT"); v != "" {
@@ -110,6 +130,27 @@ func getenv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// trustedProxiesFromEnv returns the TRUSTED_PROXIES override (comma-separated
+// IPs/CIDRs) or the safe default when unset.
+func trustedProxiesFromEnv() []string {
+	if v := os.Getenv("TRUSTED_PROXIES"); v != "" {
+		return splitCSV(v)
+	}
+	return DefaultTrustedProxies()
+}
+
+// splitCSV splits a comma-separated list, trimming whitespace and dropping
+// empty entries.
+func splitCSV(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // randomHex returns n random bytes hex-encoded, or panics (crypto/rand is
