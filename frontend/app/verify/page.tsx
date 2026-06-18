@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Alert, Badge, Button, Card, Input, PageHeader } from "@/components/ui";
+import { CertStatement } from "@/components/CertStatement";
 
 export default function VerifyPage() {
   const { t } = useT();
@@ -80,8 +81,7 @@ export default function VerifyPage() {
               </div>
             </div>
             <div className="border-t border-rule pt-3">
-              <p className="text-xs leading-relaxed text-ink/70">{result.statement_zh}</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-muted">{result.statement_en}</p>
+              <CertStatement zh={result.statement_zh} en={result.statement_en} />
             </div>
           </div>
         </Card>
