@@ -3,13 +3,23 @@ package moderation
 import (
 	"context"
 	"strings"
+
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 )
 
 // Service holds the moderation business rules: validate reports on the way in,
 // and gate resolutions to the legal set.
-type Service struct{ repo Repository }
+type Service struct {
+	repo  Repository
+	audit audit.Recorder
+}
 
-func NewService(repo Repository) *Service { return &Service{repo: repo} }
+func NewService(repo Repository, rec audit.Recorder) *Service {
+	if rec == nil {
+		rec = audit.Noop{}
+	}
+	return &Service{repo: repo, audit: rec}
+}
 
 // Report files a user report against a question or review.
 func (s *Service) Report(ctx context.Context, reporterID, targetType, targetID, reason string) (Report, error) {
@@ -39,5 +49,17 @@ func (s *Service) Resolve(ctx context.Context, id, resolution, opsID string) (Re
 	if !validResolution(resolution) {
 		return Report{}, ErrInvalidResolution
 	}
-	return s.repo.Resolve(ctx, id, resolution, opsID)
+	out, err := s.repo.Resolve(ctx, id, resolution, opsID)
+	if err != nil {
+		return Report{}, err
+	}
+	// A content takedown/dismissal is a privileged, dispute-ruling-class action
+	// (audit §6.8) — record it in the append-only trail so it isn't invisible
+	// (the only other trace is the mutable resolved_by column).
+	s.audit.Record(ctx, audit.Entry{
+		ActorID: opsID, Action: "moderation.resolve",
+		ResourceType: out.TargetType, ResourceID: out.TargetID,
+		Detail: map[string]any{"resolution": resolution, "report_id": id},
+	})
+	return out, nil
 }
