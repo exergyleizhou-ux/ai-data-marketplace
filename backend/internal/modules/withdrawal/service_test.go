@@ -2,6 +2,7 @@ package withdrawal
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 )
@@ -48,6 +49,24 @@ func (r *fakeRepo) Transition(_ context.Context, id, from, to, opsID, note strin
 func (r *fakeRepo) SumApprovedAndPending(_ context.Context, _ string) (int64, error) {
 	return 500, nil // default: 500 pending
 }
+func (r *fakeRepo) CreateWithinBudget(_ context.Context, req Request, settledCents int64) (Request, error) {
+	if r.reqs == nil {
+		r.reqs = map[string]Request{}
+	}
+	var outstanding int64
+	for _, x := range r.reqs {
+		if x.SellerID == req.SellerID && x.Status != StatusRejected {
+			outstanding += x.AmountCents // pending + approved + completed all consume the balance
+		}
+	}
+	if req.AmountCents > settledCents-outstanding {
+		return Request{}, ErrInsufficientBalance
+	}
+	req.ID = fmt.Sprintf("wd-%d", len(r.reqs))
+	req.Status = StatusPending
+	r.reqs[req.ID] = req
+	return req, nil
+}
 
 type fakeEarnings struct{ settled int64 }
 
@@ -71,7 +90,7 @@ func (f *fakeWDNotifier) NotifyUser(_ context.Context, userID, kind, _, _, _, _ 
 // --- tests ---
 
 func TestRequest_RejectsAmountExceedingAvailable(t *testing.T) {
-	svc := NewService(&fakeRepo{}, &fakeEarnings{settled: 1000}, nil)
+	svc := NewService(&fakeRepo{}, &fakeEarnings{settled: 500}, nil)
 	_, err := svc.Request(context.Background(), "s1", 700, "bank", "label")
 	if err != ErrInsufficientBalance {
 		t.Fatalf("available=500, request=700 must exceed, got %v", err)
@@ -79,7 +98,7 @@ func TestRequest_RejectsAmountExceedingAvailable(t *testing.T) {
 }
 
 func TestRequest_AcceptsAmountAtAvailable(t *testing.T) {
-	svc := NewService(&fakeRepo{}, &fakeEarnings{settled: 1000}, nil)
+	svc := NewService(&fakeRepo{}, &fakeEarnings{settled: 500}, nil)
 	_, err := svc.Request(context.Background(), "s1", 500, "bank", "label")
 	if err != nil {
 		t.Fatalf("request at available must succeed, got %v", err)
@@ -121,5 +140,19 @@ func TestApprove_NotifiesSellerAndNotOps(t *testing.T) {
 	}
 	if notifier.calls[0].Kind != "withdrawal_approved" {
 		t.Fatalf("kind = %q, want withdrawal_approved", notifier.calls[0].Kind)
+	}
+}
+
+// Regression: a COMPLETED payout must keep consuming the balance. The old code
+// subtracted only pending+approved, so a paid-out withdrawal freed the balance and
+// let the seller re-withdraw the same earnings indefinitely.
+func TestRequest_CompletedWithdrawalsReduceAvailable(t *testing.T) {
+	repo := &fakeRepo{reqs: map[string]Request{
+		"old": {ID: "old", SellerID: "s1", AmountCents: 1000, Status: StatusCompleted},
+	}}
+	svc := NewService(repo, &fakeEarnings{settled: 1000}, nil)
+	// The full 1000 settled has already been paid out → available is 0.
+	if _, err := svc.Request(context.Background(), "s1", 1, "bank", "label"); err != ErrInsufficientBalance {
+		t.Fatalf("a completed payout must keep consuming the balance; got %v", err)
 	}
 }

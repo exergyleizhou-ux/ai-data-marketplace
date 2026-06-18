@@ -40,19 +40,14 @@ func (s *Service) Request(ctx context.Context, sellerID string, amountCents int6
 	if err != nil {
 		return Request{}, err
 	}
-	pending, err := s.repo.SumApprovedAndPending(ctx, sellerID)
-	if err != nil {
-		return Request{}, err
-	}
-	available := settled - pending
-	if amountCents > available {
-		return Request{}, ErrInsufficientBalance
-	}
-	r, err := s.repo.Create(ctx, Request{
+	// Atomic, balance-correct insert: the repo locks the seller, subtracts ALL
+	// non-rejected withdrawals (including completed payouts) from settled, and
+	// inserts only if the amount fits — closing both the completed-payouts-free-
+	// the-balance drain and the concurrent-request TOCTOU.
+	return s.repo.CreateWithinBudget(ctx, Request{
 		SellerID: sellerID, AmountCents: amountCents, Channel: channel,
 		AccountLabel: accountLabel, Status: StatusPending,
-	})
-	return r, err
+	}, settled)
 }
 
 func (s *Service) Approve(ctx context.Context, opsID, id, note string) (Request, error) {
