@@ -127,6 +127,40 @@ func TestPIIRedactionCheck(t *testing.T) {
 	}
 }
 
+// TestFlankedPIIStillDetected is the fix for the CRITICAL flank-bypass: a
+// validated phone/ID/card glued to extra digits (a leading 0, a country code, a
+// concatenated record id) must NOT become invisible to detection + masking. The
+// old isFlanked rule silently dropped these, so MaskPII returned the input
+// unchanged and PIIRedaction reported verified=true with zero residual.
+func TestFlankedPIIStillDetected(t *testing.T) {
+	// The security property: each blob must be DETECTED (so contains_pii can't be
+	// falsely "none") and MASKED to zero residual. Exact class labels can shift
+	// when digits are concatenated (a 16-digit Luhn window may match before the
+	// phone), which is fine — masking the span is what protects the data.
+	cases := []struct{ name, content string }{
+		{"leading zero + phone", "0" + validPhone},
+		{"phone + phone (no separator)", validPhone + validPhone},
+		{"id + trailing digits", validID + "999"},
+		{"card + phone concatenated", validCard + validPhone},
+		{"id + phone concatenated", validID + validPhone},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if len(scan(c.content)) == 0 {
+				t.Errorf("%s: %q produced ZERO detections — PII leak", c.name, c.content)
+			}
+			if residual := scan(MaskPII(c.content)); len(residual) != 0 {
+				t.Errorf("%s: residual PII after masking %q: %v", c.name, c.content, residual)
+			}
+		})
+	}
+	// The greedy-regex case specifically: a Luhn-valid card immediately followed
+	// by a phone must still surface the card (the old code swallowed it).
+	if piiCounts(validCard + validPhone)["bank_card"] == 0 {
+		t.Errorf("card concatenated with phone: card not detected (counts=%v)", piiCounts(validCard+validPhone))
+	}
+}
+
 func TestOverlapCountedOnce(t *testing.T) {
 	// A valid ID is also a long digit run; it must count once, not as id+card.
 	counts := piiCounts("证件 " + validID + " 完")

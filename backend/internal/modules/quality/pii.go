@@ -44,10 +44,14 @@ func isAlnum(r rune) bool {
 // ToS §5.1 de-identification warranty). Order matters: on overlap, earlier
 // (more specific) detectors win. Numeric detectors use flank rules instead of
 // regex boundaries so adjacent values are all caught.
+// detectors holds the regex-based (non-numeric) classes. The high-confidence
+// numeric classes (id_card, bank_card, phone) are handled by scanNumeric instead
+// of a single greedy regex + flank rule: that old approach silently MISSED any
+// validated token glued to extra digits (a leading 0, a country code, a
+// concatenated record id), defeating the §5.1 redaction warranty. scanNumeric
+// slides validating windows over each maximal digit run so adjacent digits can
+// never hide PII (over-masking a non-PII number is safe; leaking real PII is not).
 var detectors = []detector{
-	{"id_card", confHigh, regexp.MustCompile(`\d{17}[\dXx]`), isDigitOrX, validIDCard},
-	{"bank_card", confHigh, regexp.MustCompile(`\d{16,19}`), isDigit, validLuhn},
-	{"phone", confHigh, regexp.MustCompile(`1[3-9]\d{9}`), isDigit, nil},
 	{"email", confHigh, regexp.MustCompile(`[\w.+-]+@[\w-]+\.[\w.-]+`), nil, nil},
 	{"ipv4", confHigh, regexp.MustCompile(`(?:\d{1,3}\.){3}\d{1,3}`), isDigitOrDot, validIPv4},
 	{"passport", confHeuristic, regexp.MustCompile(`[EeGgDdSsPpHh]\d{8}`), isAlnum, nil},
@@ -67,7 +71,7 @@ type match struct {
 // position. It is the single source of truth shared by PII, MaskPII, and
 // PIIRedaction.
 func scan(s string) []match {
-	var all []match
+	all := scanNumeric(s)
 	for _, d := range detectors {
 		for _, loc := range d.re.FindAllStringIndex(s, -1) {
 			st, en := loc[0], loc[1]
@@ -81,6 +85,65 @@ func scan(s string) []match {
 		}
 	}
 	return resolveOverlaps(all)
+}
+
+// scanNumeric finds the high-confidence numeric PII (id_card, bank_card, phone)
+// by sliding a validating window over the string. Unlike a greedy regex + flank
+// rule, a token surrounded by other digits is still found: at each digit start
+// we accept the first matching class (id → card → phone, preserving the old
+// precedence) and advance past it. Over-matching a non-PII digit run is the safe
+// direction for a redaction warranty; silently leaking real PII is not.
+func scanNumeric(s string) []match {
+	var out []match
+	n := len(s)
+	for i := 0; i < n; {
+		if !isASCIIDigit(s[i]) {
+			i++
+			continue
+		}
+		// id_card: 17 digits + a final digit/X (checksum-validated).
+		if i+18 <= n && allASCIIDigits(s[i:i+17]) && isDigitOrX(rune(s[i+17])) && validIDCard(s[i:i+18]) {
+			out = append(out, match{"id_card", confHigh, i, i + 18})
+			i += 18
+			continue
+		}
+		// bank_card: longest Luhn-valid window of 19..16 digits.
+		if end, ok := luhnWindow(s, i, n); ok {
+			out = append(out, match{"bank_card", confHigh, i, end})
+			i = end
+			continue
+		}
+		// phone: 1[3-9] followed by 9 digits.
+		if i+11 <= n && s[i] == '1' && s[i+1] >= '3' && s[i+1] <= '9' && allASCIIDigits(s[i+1:i+11]) {
+			out = append(out, match{"phone", confHigh, i, i + 11})
+			i += 11
+			continue
+		}
+		i++
+	}
+	return out
+}
+
+func isASCIIDigit(b byte) bool { return b >= '0' && b <= '9' }
+
+func allASCIIDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if !isASCIIDigit(s[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// luhnWindow returns the end index of the longest (19→16) all-digit, Luhn-valid
+// window starting at i, if any.
+func luhnWindow(s string, i, n int) (int, bool) {
+	for l := 19; l >= 16; l-- {
+		if i+l <= n && allASCIIDigits(s[i:i+l]) && validLuhn(s[i:i+l]) {
+			return i + l, true
+		}
+	}
+	return 0, false
 }
 
 // isFlanked reports whether the rune immediately before start or after end
