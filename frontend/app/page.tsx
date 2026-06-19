@@ -78,6 +78,9 @@ export default function Home() {
             </Link>
           </p>
           <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2">
+            <Link href="/c2d" className="text-sm font-medium text-forest-700 cue-underline">
+              {t("四个旗舰算法与真实存证 →", "The four flagship algorithms & live certs →")}
+            </Link>
             <Link href="/datasets" className="text-sm font-medium text-ink cue-underline hover:text-forest-700">
               {t("看支持沙箱计算的数据", "Browse compute-enabled data")}
             </Link>
@@ -101,8 +104,8 @@ export default function Home() {
             {
               h: t("结果存证", "Result certificate"),
               d: t("每次输出绑定算法镜像 digest,凭证号可独立核验。", "Every output binds to the audited algorithm's image digest; the certificate ID verifies independently."),
-              mono: "VO-7a3f9c2e",
-              monoLabel: t("示例凭证号", "sample certificate"),
+              mono: "VO-795A4D76D4FE",
+              monoLabel: t("真实凭证号 · 可验真", "live certificate · verifiable"),
               accent: "gold",
             },
             {

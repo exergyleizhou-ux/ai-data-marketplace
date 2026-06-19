@@ -11,6 +11,7 @@ import { Badge } from "./ui";
 
 const LINKS = [
   { href: "/datasets", zh: "数据市场", en: "Marketplace" },
+  { href: "/c2d", zh: "可信计算", en: "Compute-to-data" },
   { href: "/sell", zh: "我要卖", en: "Sell", auth: true },
   { href: "/compute", zh: "隐私计算", en: "Compute", auth: true },
   { href: "/orders", zh: "我的订单", en: "Orders", auth: true },
