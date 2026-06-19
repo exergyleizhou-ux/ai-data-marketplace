@@ -223,6 +223,7 @@ function ReviewBox({ orderId }: { orderId: string }) {
   const [score, setScore] = useState(5);
   const [comment, setComment] = useState("");
   const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
   if (done) return <Alert kind="success">{t("感谢评价！", "Thanks for your review!")}</Alert>;
@@ -248,17 +249,20 @@ function ReviewBox({ orderId }: { orderId: string }) {
       <Textarea rows={2} placeholder={t("说点什么（可选）", "Say something (optional)")} value={comment} onChange={(e) => setComment(e.target.value)} />
       <div className="mt-2">
         <Button
+          disabled={busy}
           onClick={async () => {
             setErr("");
+            setBusy(true);
             try {
               await api.review(orderId, score, comment, score <= 2);
               setDone(true);
             } catch (e) {
               setErr((e as Error).message);
+              setBusy(false);
             }
           }}
         >
-          {t("提交评价", "Submit review")}
+          {busy ? t("提交中…", "Submitting…") : t("提交评价", "Submit review")}
         </Button>
       </div>
     </div>
@@ -269,6 +273,7 @@ function DisputeBox({ orderId, onDone }: { orderId: string; onDone: () => Promis
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   if (!open)
     return (
@@ -285,19 +290,22 @@ function DisputeBox({ orderId, onDone }: { orderId: string; onDone: () => Promis
       <div className="mt-2 flex gap-2">
         <Button
           variant="danger"
+          disabled={busy}
           onClick={async () => {
             setErr("");
+            setBusy(true);
             try {
               await api.dispute(orderId, reason);
               await onDone();
             } catch (e) {
               setErr((e as Error).message);
+              setBusy(false);
             }
           }}
         >
-          {t("提交纠纷", "Submit dispute")}
+          {busy ? t("提交中…", "Submitting…") : t("提交纠纷", "Submit dispute")}
         </Button>
-        <Button variant="ghost" onClick={() => setOpen(false)}>
+        <Button variant="ghost" disabled={busy} onClick={() => setOpen(false)}>
           {t("取消", "Cancel")}
         </Button>
       </div>
