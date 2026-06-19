@@ -5,7 +5,8 @@ import Link from "next/link";
 import { api, yuan, type Dataset } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
-import { Alert, Badge, Button, Card, Empty, Field, Input, PageHeader, Select, Spinner, Textarea } from "@/components/ui";
+import { Alert, Badge, Button, Card, Empty, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
+import { Reveal } from "@/components/Reveal";
 import { DatasheetEditor } from "@/components/Datasheet";
 import { ComputeOfferEditor } from "@/components/Compute";
 
@@ -42,15 +43,21 @@ function SellInner() {
       <CreateForm onCreated={reload} />
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">{t("我的数据集", "My datasets")}</h2>
+        <h2 className="font-display text-xl text-ink">{t("我的数据集", "My datasets")}</h2>
         {items === null ? (
-          <Spinner />
+          <div className="space-y-3" aria-hidden>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="skeleton h-20 w-full rounded-2xl" />
+            ))}
+          </div>
         ) : items.length === 0 ? (
           <Empty>{t("还没有数据集，先在上方创建一个", "No datasets yet — create one above")}</Empty>
         ) : (
           <div className="space-y-3">
-            {items.map((d) => (
-              <DatasetRow key={d.id} d={d} onChange={reload} />
+            {items.map((d, i) => (
+              <Reveal key={d.id} delay={Math.min(i, 8) * 40}>
+                <DatasetRow d={d} onChange={reload} />
+              </Reveal>
             ))}
           </div>
         )}

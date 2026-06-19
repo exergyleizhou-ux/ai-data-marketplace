@@ -99,10 +99,10 @@ function EarningsInner() {
 
 function Stat({ label, value, sub, highlight }: { label: string; value: string; sub: string; highlight?: boolean }) {
   return (
-    <Card className={highlight ? "border-green-200 bg-green-50" : ""}>
-      <div className="text-sm text-neutral-500">{label}</div>
-      <div className="mt-1 text-3xl font-semibold">{value}</div>
-      <div className="mt-1 text-xs text-neutral-400">{sub}</div>
+    <Card className={highlight ? "border-forest-200 bg-forest-50" : ""}>
+      <div className="text-sm text-muted">{label}</div>
+      <div className="mt-1 font-display text-3xl text-ink">{value}</div>
+      <div className="mt-1 text-xs text-muted">{sub}</div>
     </Card>
   );
 }

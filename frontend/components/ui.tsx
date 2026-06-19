@@ -57,7 +57,13 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 }
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-2xl border border-rule bg-white p-6 ${className}`}>{children}</div>;
+  // A soft resting shadow gives every card consistent paper-depth (vs. the old
+  // flat thin-border look); interactive cards add `lift` on top for hover.
+  return (
+    <div className={`rounded-2xl border border-rule bg-white p-6 shadow-[0_1px_2px_rgba(24,24,27,0.03),0_8px_24px_-16px_rgba(24,24,27,0.10)] ${className}`}>
+      {children}
+    </div>
+  );
 }
 
 // PageHeader is the editorial title block shared by every destination/tool page
@@ -129,7 +135,7 @@ const STATUS_COLORS: Record<string, string> = {
   uploading: "bg-blue-50 text-blue-600",
   checking: "bg-amber-50 text-amber-700",
   reviewing: "bg-purple-50 text-purple-700",
-  published: "bg-green-50 text-green-700",
+  published: "bg-forest-50 text-forest-700",
   rejected: "bg-red-50 text-red-700",
   delisted: "bg-neutral-200 text-neutral-500",
   // orders
@@ -137,17 +143,27 @@ const STATUS_COLORS: Record<string, string> = {
   paid: "bg-blue-50 text-blue-700",
   delivered: "bg-indigo-50 text-indigo-700",
   confirmed: "bg-teal-50 text-teal-700",
-  settled: "bg-green-50 text-green-700",
+  settled: "bg-forest-50 text-forest-700",
   disputed: "bg-orange-50 text-orange-700",
   refunded: "bg-red-50 text-red-700",
   cancelled: "bg-neutral-200 text-neutral-500",
   // kyc
   none: "bg-neutral-100 text-neutral-600",
   pending: "bg-amber-50 text-amber-700",
-  verified: "bg-green-50 text-green-700",
+  verified: "bg-forest-50 text-forest-700",
   // withdrawals (rejected already mapped under datasets)
   approved: "bg-blue-50 text-blue-700",
-  completed: "bg-green-50 text-green-700",
+  completed: "bg-forest-50 text-forest-700",
+  // compute jobs / entitlements
+  released: "bg-forest-50 text-forest-700",
+  active: "bg-forest-50 text-forest-700",
+  running: "bg-blue-50 text-blue-700",
+  queued: "bg-amber-50 text-amber-700",
+  output_reviewing: "bg-purple-50 text-purple-700",
+  failed: "bg-red-50 text-red-700",
+  canceled: "bg-neutral-200 text-neutral-500",
+  exhausted: "bg-neutral-200 text-neutral-500",
+  expired: "bg-neutral-200 text-neutral-500",
 };
 
 export function Badge({ children }: { children: string }) {
@@ -158,7 +174,7 @@ export function Badge({ children }: { children: string }) {
 export function Alert({ kind = "error", children }: { kind?: "error" | "success" | "info"; children: ReactNode }) {
   const cls = {
     error: "border-red-200 bg-red-50 text-red-700",
-    success: "border-green-200 bg-green-50 text-green-700",
+    success: "border-forest-200 bg-forest-50 text-forest-700",
     info: "border-blue-200 bg-blue-50 text-blue-700",
   }[kind];
   return <div className={`rounded-md border px-3 py-2 text-sm ${cls}`}>{children}</div>;
@@ -186,6 +202,28 @@ export function Spinner({ label }: { label?: string }) {
 
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="rounded-2xl border border-dashed border-rule py-12 text-center text-sm text-muted">{children}</div>;
+}
+
+// Warm skeleton placeholders for loading states (paper-toned, reduced-motion safe
+// via the .skeleton class in globals.css).
+export function CardSkeleton() {
+  return (
+    <div className="space-y-3 rounded-2xl border border-rule bg-white p-6">
+      <div className="skeleton h-4 w-2/3" />
+      <div className="skeleton h-3 w-full" />
+      <div className="skeleton h-3 w-4/5" />
+    </div>
+  );
+}
+
+export function SkeletonGrid({ count = 6, className = "grid gap-3 sm:grid-cols-2 lg:grid-cols-3" }: { count?: number; className?: string }) {
+  return (
+    <div className={className} aria-hidden>
+      {Array.from({ length: count }, (_, i) => (
+        <CardSkeleton key={i} />
+      ))}
+    </div>
+  );
 }
 
 export function LinkButton({ href, children }: { href: string; children: ReactNode }) {

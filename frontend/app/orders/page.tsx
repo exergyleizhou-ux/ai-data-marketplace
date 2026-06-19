@@ -5,7 +5,8 @@ import Link from "next/link";
 import { api, yuan, type Order } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
-import { Alert, Badge, Button, Card, Empty, PageHeader, Spinner, Tabs } from "@/components/ui";
+import { Alert, Badge, Button, Card, Empty, PageHeader, Tabs } from "@/components/ui";
+import { Reveal } from "@/components/Reveal";
 
 export default function OrdersPage() {
   return (
@@ -72,7 +73,11 @@ function OrdersInner() {
       />
 
       {items === null ? (
-        <Spinner />
+        <div className="space-y-3" aria-hidden>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="skeleton h-16 w-full rounded-2xl" />
+          ))}
+        </div>
       ) : items.length === 0 ? (
         <Empty>{t("暂无订单", "No orders yet")}</Empty>
       ) : (
@@ -93,30 +98,30 @@ function OrdersInner() {
             </div>
           )}
           {bundleErr && <Alert>{bundleErr}</Alert>}
-          {items.map((o) => {
+          {items.map((o, i) => {
             const canSelect = tab === "buyer" && o.status === "settled" && o.product_type !== "compute";
             return (
-              <div key={o.id} className="flex items-center gap-3">
+              <Reveal key={o.id} delay={Math.min(i, 8) * 40} className="flex items-center gap-3">
                 {canSelect && (
                   <input
                     type="checkbox"
                     checked={selected.has(o.id)}
                     onChange={() => toggle(o.id)}
-                    className="h-4 w-4"
+                    className="h-4 w-4 accent-forest-600"
                     aria-label={t(`选择订单 #${o.id.slice(0, 8)} 用于打包下载`, `Select order #${o.id.slice(0, 8)} for bundle download`)}
                     disabled={!selected.has(o.id) && selected.size >= 20}
                   />
                 )}
-                <Link href={`/orders/${o.id}`} className="flex-1">
-                  <Card className="flex items-center justify-between transition hover:shadow-md">
+                <Link href={`/orders/${o.id}`} className="block flex-1 rounded-2xl">
+                  <Card className="lift flex items-center justify-between">
                     <div>
-                      <div className="font-mono text-xs text-neutral-400">#{o.id.slice(0, 8)}</div>
-                      <div className="mt-1 text-sm text-neutral-600">{o.license_type} · {yuan(o.amount_cents)}</div>
+                      <div className="font-mono text-xs text-muted">#{o.id.slice(0, 8)}</div>
+                      <div className="mt-1 text-sm text-ink/70">{o.license_type} · {yuan(o.amount_cents)}</div>
                     </div>
                     <Badge>{o.status}</Badge>
                   </Card>
                 </Link>
-              </div>
+              </Reveal>
             );
           })}
         </div>

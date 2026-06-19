@@ -14,7 +14,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
-import { Alert, Badge, Button, Card, Empty, Spinner } from "@/components/ui";
+import { Alert, Badge, Button, Card, Empty } from "@/components/ui";
 import { QualityReport } from "@/components/QualityReport";
 import { DatasetQA } from "@/components/DatasetQA";
 import { DatasheetView } from "@/components/Datasheet";
@@ -85,7 +85,17 @@ export default function DatasetDetailPage({ params }: { params: Promise<{ id: st
   }
 
   if (notFound) return <Empty>{t("数据集不存在", "Dataset not found")}</Empty>;
-  if (!ds) return <Spinner />;
+  if (!ds)
+    return (
+      <div className="grid gap-6 lg:grid-cols-3" aria-hidden>
+        <div className="space-y-4 lg:col-span-2">
+          <div className="skeleton h-9 w-2/3 rounded-lg" />
+          <div className="skeleton h-24 w-full rounded-2xl" />
+          <div className="skeleton h-40 w-full rounded-2xl" />
+        </div>
+        <div className="skeleton h-64 w-full rounded-2xl" />
+      </div>
+    );
 
   const price = ds.final_price_cents ?? ds.suggested_price_cents;
   const isSeller = user?.id === ds.seller_id;
@@ -97,9 +107,9 @@ export default function DatasetDetailPage({ params }: { params: Promise<{ id: st
           <div className="flex items-center gap-2">
             <Badge>{ds.data_type}</Badge>
             <Badge>{ds.status}</Badge>
-            {ds.domain && <span className="text-xs text-neutral-400">{ds.domain}</span>}
+            {ds.domain && <span className="text-xs text-muted">{ds.domain}</span>}
           </div>
-          <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold">
+          <h1 className="mt-2 flex items-center gap-2 font-display text-3xl leading-tight text-ink">
             {ds.title}
             <button
               onClick={toggleWatch}
@@ -112,7 +122,7 @@ export default function DatasetDetailPage({ params }: { params: Promise<{ id: st
               {watching ? "⭐" : "☆"}
             </button>
           </h1>
-          <p className="mt-2 whitespace-pre-wrap text-neutral-600">{ds.description || t("（无描述）", "(no description)")}</p>
+          <p className="mt-2 whitespace-pre-wrap text-ink/70">{ds.description || t("（无描述）", "(no description)")}</p>
         </div>
 
         <Card>
@@ -180,7 +190,7 @@ export default function DatasetDetailPage({ params }: { params: Promise<{ id: st
           <h2 className="mb-3 font-semibold">
             {t("数据质量", "Data Quality")} <span className="font-normal text-neutral-400">/ Data Quality</span>
           </h2>
-          {quality === null ? <Spinner /> : <QualityReport checks={quality} />}
+          {quality === null ? <div className="skeleton h-24 w-full rounded-lg" aria-hidden /> : <QualityReport checks={quality} />}
           <div className="mt-4 border-t border-neutral-100 pt-3">
             <a
               href={api.croissantUrl(id)}
