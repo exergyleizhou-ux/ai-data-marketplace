@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { useBackoffPoll } from "@/lib/usePoll";
 import { Alert, Badge, Button, Card, Field, Input, Select } from "@/components/ui";
+import { ComputeCertificateModal } from "@/components/ComputeCertificate";
 
 const TERMINAL = new Set(["released", "failed", "rejected", "canceled"]);
 
@@ -1345,38 +1346,51 @@ function AttestationChip({ jobId }: { jobId: string }) {
 // ---------------------------------------------------------------------------
 function JobCertificate({ jobId, federated }: { jobId: string; federated?: boolean }) {
   const { t } = useT();
-  const [certId, setCertId] = useState("");
+  const [cert, setCert] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
 
   async function load() {
+    if (cert) {
+      setOpen(true);
+      return;
+    }
     setLoading(true);
     try {
-      const cert = federated ? await api.getFederatedCertificate(jobId) : await api.getComputeJobCertificate(jobId);
-      setCertId((cert["certificate_id"] as string) || "—");
+      const c = federated ? await api.getFederatedCertificate(jobId) : await api.getComputeJobCertificate(jobId);
+      setCert(c);
+      setOpen(true);
     } catch {
-      setCertId("—");
+      /* leave the button in its idle state so the buyer can retry */
     } finally {
       setLoading(false);
     }
   }
 
-  if (certId) {
-    return (
-      <span
-        title={t("计算结果存证：输出 SHA-256 绑定已审核算法镜像 digest", "Result provenance: output SHA-256 bound to the audited algorithm image digest")}
-        className="rounded-full bg-emerald-50 px-2 py-0.5 font-mono text-[11px] text-emerald-700"
-      >
-        {certId}
-      </span>
-    );
-  }
+  const certId = cert ? ((cert["certificate_id"] as string) || "") : "";
+
   return (
-    <button
-      onClick={() => void load()}
-      disabled={loading}
-      className="rounded-full border border-neutral-200 px-2 py-0.5 text-[11px] text-neutral-500 hover:bg-neutral-50"
-    >
-      {loading ? t("出具中…", "Issuing…") : t("存证凭证", "Certificate")}
-    </button>
+    <>
+      {certId ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title={t("查看计算结果存证", "View the result certificate")}
+          className="rounded-full bg-emerald-50 px-2 py-0.5 font-mono text-[11px] text-emerald-700 transition hover:bg-emerald-100"
+        >
+          {certId}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={loading}
+          className="rounded-full border border-neutral-200 px-2 py-0.5 text-[11px] text-neutral-500 transition hover:bg-neutral-50 disabled:opacity-50"
+        >
+          {loading ? t("出具中…", "Issuing…") : t("存证凭证", "Certificate")}
+        </button>
+      )}
+      {open && cert && <ComputeCertificateModal cert={cert} onClose={() => setOpen(false)} />}
+    </>
   );
 }

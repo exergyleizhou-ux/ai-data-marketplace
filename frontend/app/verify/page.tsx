@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Alert, Badge, Button, Card, Input, PageHeader } from "@/components/ui";
@@ -17,20 +17,34 @@ export default function VerifyPage() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function lookup(e: React.FormEvent) {
-    e.preventDefault();
-    if (!certId.trim()) return;
+  const doLookup = useCallback(async (id: string) => {
+    if (!id) return;
     setErr("");
     setBusy(true);
     setResult(null);
     try {
-      setResult(await api.verifyCertificate(certId.trim()));
+      setResult(await api.verifyCertificate(id));
     } catch (ex) {
       setErr((ex as Error).message);
     } finally {
       setBusy(false);
     }
+  }, []);
+
+  function lookup(e: React.FormEvent) {
+    e.preventDefault();
+    void doLookup(certId.trim());
   }
+
+  // Deep-link: /verify?cert=VO-... pre-fills and verifies automatically (e.g. the
+  // "Verify publicly" link on a compute-result certificate card).
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get("cert");
+    if (c) {
+      setCertId(c);
+      void doLookup(c.trim());
+    }
+  }, [doLookup]);
 
   return (
     <div className="max-w-2xl space-y-8 pb-16">
