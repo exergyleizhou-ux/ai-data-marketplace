@@ -450,7 +450,7 @@ function TwoFactorCard() {
 
       {enrolled ? (
         <div className="space-y-2">
-          <p className="text-sm text-green-700">{t("已启用", "Enabled")}</p>
+          <p className="text-sm font-medium text-forest-700">{t("已启用", "Enabled")}</p>
           {remaining >= 0 && (
             <p className="text-xs text-neutral-500">
               {t(`剩余恢复码：${remaining} 个`, `Recovery codes remaining: ${remaining}`)}

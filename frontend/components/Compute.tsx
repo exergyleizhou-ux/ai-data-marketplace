@@ -18,6 +18,7 @@ import { useT } from "@/lib/i18n";
 import { useBackoffPoll } from "@/lib/usePoll";
 import { Alert, Badge, Button, Card, Field, Input, Select } from "@/components/ui";
 import { ComputeCertificateModal } from "@/components/ComputeCertificate";
+import { Reveal } from "@/components/Reveal";
 
 const TERMINAL = new Set(["released", "failed", "rejected", "canceled"]);
 
@@ -1101,8 +1102,8 @@ export function MyComputeJobsPanel() {
 
   return (
     <Card>
-      <h2 className="text-lg font-semibold">{t("我的计算作业", "My compute jobs")}</h2>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h2 className="font-display text-xl text-ink">{t("我的计算作业", "My compute jobs")}</h2>
+      <p className="mt-1 text-sm text-ink/65">
         {t(
           "你在各数据集沙箱内发起的常规计算作业。完成后可下载结果(模型 / 指标)并查看存证。",
           "Regular sandbox-compute jobs you started across datasets. Download the result (model / metrics) and view its provenance once released.",
@@ -1114,7 +1115,11 @@ export function MyComputeJobsPanel() {
         </div>
       )}
       {jobs === null ? (
-        <p className="mt-3 text-sm text-neutral-400">{t("加载中…", "Loading…")}</p>
+        <div className="mt-4 space-y-2" aria-hidden>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="skeleton h-9 w-full rounded-lg" />
+          ))}
+        </div>
       ) : jobs.length === 0 ? (
         <ComputeFunnelCTA
           message={t(
@@ -1123,16 +1128,16 @@ export function MyComputeJobsPanel() {
           )}
         />
       ) : (
-        <ul className="mt-3 space-y-2">
-          {jobs.map((j) => (
-            <li key={j.id} className="flex items-center justify-between gap-2 text-sm">
+        <ul className="mt-4 divide-y divide-rule/70">
+          {jobs.map((j, i) => (
+            <Reveal as="li" key={j.id} delay={Math.min(i, 8) * 40} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
               <div className="min-w-0">
-                <Link href={`/datasets/${j.dataset_id}`} className="font-medium text-neutral-800 hover:underline">
+                <Link href={`/datasets/${j.dataset_id}`} className="rounded font-medium text-ink transition hover:text-forest-700 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ink">
                   {name(j.dataset_id)}
                 </Link>{" "}
-                <span className="font-mono text-xs text-neutral-400">{j.id.slice(0, 8)}</span>{" "}
+                <span className="font-mono text-xs text-muted">{j.id.slice(0, 8)}</span>{" "}
                 <Badge>{j.status}</Badge>
-                {j.error && <span className="ml-1 text-xs text-red-500">{j.error}</span>}
+                {j.error && <span className="ml-1 text-xs text-red-600">{j.error}</span>}
                 {j.status === "released" && <AttestationChip jobId={j.id} />}
               </div>
               {j.status === "released" ? (
@@ -1143,13 +1148,13 @@ export function MyComputeJobsPanel() {
                   </Button>
                 </div>
               ) : TERMINAL.has(j.status) ? (
-                <span className="text-xs text-neutral-400">—</span>
+                <span className="text-xs text-muted">—</span>
               ) : j.status === "output_reviewing" ? (
-                <span className="text-xs text-amber-600">{t("运营审核中…", "Under review…")}</span>
+                <span className="text-xs text-amber-700">{t("运营审核中…", "Under review…")}</span>
               ) : (
-                <span className="text-xs text-neutral-400">{t("运行中…", "Running…")}</span>
+                <span className="text-xs text-muted">{t("运行中…", "Running…")}</span>
               )}
-            </li>
+            </Reveal>
           ))}
         </ul>
       )}
