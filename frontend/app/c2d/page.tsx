@@ -34,6 +34,31 @@ const ALGOS = [
     zh: { name: "生长动力学 (Logistic/Gompertz)", desc: "对生物量时间序列拟合生长曲线,回传承载力、生长率、滞后期等参数与拟合优度;不回传原始测量。" },
     en: { name: "Growth kinetics (Logistic/Gompertz)", desc: "Fits growth curves to a biomass time-series; returns carrying capacity, growth rate, lag and goodness-of-fit — not the raw measurements." },
   },
+  {
+    cert: "VO-817B868978BB", origin: "bos-platform",
+    zh: { name: "处理效应估计 (ATE)", desc: "估计一个处理对结果的平均因果效应(OLS + 交叉拟合 DML);只回传效应量与置信区间。" },
+    en: { name: "Effect estimation (ATE)", desc: "The average causal effect of a treatment on an outcome (OLS + cross-fitted DML); returns effect sizes + CIs only." },
+  },
+  {
+    cert: "VO-D9342583F9B4", origin: "bos-platform",
+    zh: { name: "因果证伪", desc: "用安慰剂处理 / 随机共因 / 数据子集三重 refuter 校验效应是否稳健;只回传校验结论。" },
+    en: { name: "Causal refutation", desc: "Stress-tests an effect with placebo / random-common-cause / data-subset refuters; returns the validity verdict only." },
+  },
+  {
+    cert: "VO-885746636F33", origin: "bos-platform",
+    zh: { name: "物料平衡", desc: "对一批转化运行检查物料闭合率与残差 ε;只回传聚合闭合统计。" },
+    en: { name: "Mass balance", desc: "Checks mass closure + residual ε across a process run log; returns aggregate closure statistics only." },
+  },
+  {
+    cert: "VO-1410D25DB7E2", origin: "bos-platform",
+    zh: { name: "过程经济", desc: "对一批生产批次聚合收入/成本/毛利/单位成本;不回传单批数据。" },
+    en: { name: "Process economics", desc: "Aggregates revenue/cost/margin/unit-cost across production batches; never the per-batch figures." },
+  },
+  {
+    cert: "VO-6FC497AD7987", origin: "bos-platform",
+    zh: { name: "碳足迹 (LCA)", desc: "对一批运行聚合温室气体足迹(GWP);不回传单次运行的能耗/物流数据。" },
+    en: { name: "GHG footprint (LCA)", desc: "Aggregates the greenhouse-gas footprint (GWP) across a run log; never the per-run energy/logistics data." },
+  },
 ];
 
 const STEPS = [
@@ -96,8 +121,8 @@ export default function C2DShowcasePage() {
         kicker={t("绿洲 · 隐私计算 · 可信证据", "Verdant Oasis · compute-to-data · verifiable evidence")}
         title={t("可验证、隐私保护的科研计算", "Verifiable, privacy-preserving research compute")}
         subtitle={t(
-          "把科研分析做成「可用不可见」的算法:在沙箱内对你看不到的数据计算,只产出聚合结果,并签发可独立核验的溯源存证。下面四个旗舰算法都已在本平台真实跑通、各自签发了一张真证书。",
-          "Research analyses as compute-to-data algorithms: they run over data you never see, emit only aggregates, and issue an independently verifiable provenance certificate. All four flagship algorithms below have run for real on this platform — each with a live certificate.",
+          "把科研分析做成「可用不可见」的算法:在沙箱内对你看不到的数据计算,只产出聚合结果,并签发可独立核验的溯源存证。下面九个算法都已在本平台真实跑通、各自签发了一张真证书。",
+          "Research analyses as compute-to-data algorithms: they run over data you never see, emit only aggregates, and issue an independently verifiable provenance certificate. All nine algorithms below have run for real on this platform — each with a live certificate.",
         )}
       />
 
@@ -149,6 +174,22 @@ export default function C2DShowcasePage() {
         <div className="max-w-md">
           <ComputeCertificateCard cert={EXAMPLE_CERT} />
         </div>
+      </section>
+
+      {/* Deeper surfaces */}
+      <section className="grid gap-3 sm:grid-cols-2">
+        <Link href="/c2d/dossier" className="group">
+          <Card className="h-full transition group-hover:border-forest-700">
+            <div className="font-medium text-ink">{t("可验证研究档案 →", "A verifiable research dossier →")}</div>
+            <p className="mt-1 text-xs leading-relaxed text-ink/70">{t("对同一个数据集做的全部分析,五张证书串成一条完整证据链。", "Every analysis on one dataset — five certificates forming a complete evidence chain.")}</p>
+          </Card>
+        </Link>
+        <Link href="/c2d/honesty" className="group">
+          <Card className="h-full transition group-hover:border-forest-700">
+            <div className="font-medium text-ink">{t("诚实分级:什么已验证,什么受限 →", "Honest status: what's verified, what's gated →")}</div>
+            <p className="mt-1 text-xs leading-relaxed text-ink/70">{t("逐条标明每项能力的真实状态——我们不 over-claim。", "The real status of each capability, item by item — we don't over-claim.")}</p>
+          </Card>
+        </Link>
       </section>
 
       <section>
