@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useT } from "@/lib/i18n";
 import { ComputeFlowDiagram } from "@/components/ComputeFlowDiagram";
+import { Seal } from "@/components/Seal";
 
 // Homepage. Editorial-technical aesthetic (see DESIGN.md). Hierarchy:
 //   1. KICKER → giant serif claim → quiet subhead → 2 CTAs (the page's center of gravity)
@@ -42,7 +43,7 @@ export default function Home() {
       </section>
 
       {/* SIGNATURE — C2D ─────────────────────────────────────────────── */}
-      <section className="rounded-2xl border border-rule bg-white">
+      <section className="elev rounded-2xl border border-rule bg-white">
         <div className="border-b border-rule px-6 py-5 sm:px-10">
           <div className="flex items-baseline gap-3">
             <p className="font-mono text-kicker uppercase text-forest-700">
@@ -79,7 +80,7 @@ export default function Home() {
           </p>
           <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2">
             <Link href="/c2d" className="text-sm font-medium text-forest-700 cue-underline">
-              {t("四个旗舰算法与真实存证 →", "The four flagship algorithms & live certs →")}
+              {t("九个旗舰算法与真实存证 →", "Nine flagship algorithms & live certs →")}
             </Link>
             <Link href="/datasets" className="text-sm font-medium text-ink cue-underline hover:text-forest-700">
               {t("看支持沙箱计算的数据", "Browse compute-enabled data")}
@@ -99,7 +100,7 @@ export default function Home() {
         <p className="font-mono text-kicker uppercase text-muted">
           {t("证据,不是承诺", "Evidence, not promises")}
         </p>
-        <div className="mt-5 grid gap-px overflow-hidden rounded-2xl border border-rule bg-rule sm:grid-cols-3">
+        <div className="elev mt-5 grid gap-px overflow-hidden rounded-2xl border border-rule bg-rule sm:grid-cols-3">
           {[
             {
               h: t("结果存证", "Result certificate"),
@@ -126,15 +127,22 @@ export default function Home() {
             <article key={c.mono} className="bg-white p-6">
               <h3 className="font-display text-2xl leading-snug tracking-tight">{c.h}</h3>
               <p className="mt-2 text-sm leading-relaxed text-ink/70">{c.d}</p>
-              <div className="mt-5 border-t border-rule pt-4">
-                <p className="font-mono text-[10px] uppercase tracking-wider text-muted">{c.monoLabel}</p>
-                <p
-                  className={`mt-1 font-mono text-sm ${
-                    c.accent === "gold" ? "text-gold-700" : c.accent === "forest" ? "text-forest-700" : "text-ink"
-                  }`}
-                >
-                  {c.mono}
-                </p>
+              <div className="mt-5 flex items-end justify-between gap-2 border-t border-rule pt-4">
+                <div className="min-w-0">
+                  <p className="font-mono text-[10px] uppercase tracking-wider text-muted">{c.monoLabel}</p>
+                  <p
+                    className={`mt-1 truncate font-mono text-sm ${
+                      c.accent === "gold" ? "text-gold-700" : c.accent === "forest" ? "text-forest-700" : "text-ink"
+                    }`}
+                  >
+                    {c.mono}
+                  </p>
+                </div>
+                {c.accent === "gold" && (
+                  <div className="shrink-0" title={t("已验证封缄", "verified seal")}>
+                    <Seal size={42} label={t("已验证封缄", "verified seal")} />
+                  </div>
+                )}
               </div>
             </article>
           ))}

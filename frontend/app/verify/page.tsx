@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { Alert, Badge, Button, Card, Input, PageHeader } from "@/components/ui";
+import { Alert, Button, Input, PageHeader } from "@/components/ui";
 import { CertStatement } from "@/components/CertStatement";
+import { Reveal } from "@/components/Reveal";
+import { Seal } from "@/components/Seal";
 
 export default function VerifyPage() {
   const { t } = useT();
@@ -68,37 +70,71 @@ export default function VerifyPage() {
           {busy ? t("核验中…", "Verifying…") : t("验真", "Verify")}
         </Button>
       </form>
-      {err && <Alert>{err}</Alert>}
-      {result && (
-        <Card>
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Badge>{result.status === "registered" ? t("已登记", "Registered") : result.status}</Badge>
-              {result.verifiable && <Badge>{t("可验证", "Verifiable")}</Badge>}
-            </div>
-            <div className="grid gap-2.5 text-sm">
-              <div className="flex justify-between gap-4">
-                <span className="text-muted">{t("存证编号", "Cert ID")}</span>
-                <span className="font-mono text-forest-700">{result.cert_id}</span>
+      {busy && (
+        <div className="space-y-3 rounded-2xl border border-rule bg-white p-6">
+          <div className="skeleton h-5 w-44" />
+          <div className="skeleton h-4 w-full" />
+          <div className="skeleton h-4 w-2/3" />
+        </div>
+      )}
+      {err && (
+        <Alert>
+          {err}{" "}
+          <button type="button" onClick={() => doLookup(certId.trim())} className="font-medium underline hover:text-ink">
+            {t("重试", "retry")}
+          </button>
+        </Alert>
+      )}
+      {result && !busy && (
+        <Reveal>
+          <div className="elev overflow-hidden rounded-2xl border border-rule bg-white" aria-live="polite">
+            <div className="h-1 bg-gradient-to-r from-gold-700 via-gold to-gold-700" />
+            <div className={`relative border-b border-rule bg-paper px-6 py-5 ${result.verifiable ? "sheen" : ""}`}>
+              {result.verifiable && (
+                <div
+                  className="pointer-events-none absolute -top-1 right-4"
+                  style={{ background: "radial-gradient(closest-side, rgba(180,83,9,0.12), transparent)" }}
+                >
+                  <Seal size={68} label={t(`已验证封缄 · 证书 ${result.cert_id}`, `verified seal · certificate ${result.cert_id}`)} />
+                </div>
+              )}
+              <div className={result.verifiable ? "pr-16 sm:pr-20" : ""}>
+                <p className="font-mono text-kicker uppercase tracking-widest text-forest-700">{t("验真结果", "Verification result")}</p>
+                <p className="mt-1 break-all font-mono text-lg font-semibold text-ink sm:text-xl">{result.cert_id}</p>
+                <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  {result.verifiable && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-gold-100 bg-gold-50 px-2.5 py-0.5 text-xs font-medium text-gold-700">
+                      <span className="inline-block h-2 w-2 rounded-full bg-gold" aria-hidden />
+                      {t("可验证", "Verifiable")}
+                    </span>
+                  )}
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted">
+                    {result.status === "registered" ? t("已登记", "registered") : result.status}
+                  </span>
+                </div>
               </div>
+            </div>
+            <div className="space-y-2.5 px-6 py-5 text-sm">
               <div className="flex justify-between gap-4">
                 <span className="text-muted">{t("资源类型", "Resource type")}</span>
-                <span>{result.resource_type}</span>
+                <span className="font-mono text-xs">{result.resource_type}</span>
               </div>
-              <div className="flex justify-between gap-4">
-                <span className="text-muted">{t("资源ID", "Resource ID")}</span>
-                <span className="truncate font-mono text-xs">{result.resource_id}</span>
-              </div>
+              {result.resource_id && (
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted">{t("资源ID", "Resource ID")}</span>
+                  <span className="truncate font-mono text-xs">{result.resource_id}</span>
+                </div>
+              )}
               <div className="flex justify-between gap-4">
                 <span className="text-muted">{t("登记时间", "Registered at")}</span>
                 <span className="font-mono text-xs">{result.registered_at?.slice(0, 19)}</span>
               </div>
-            </div>
-            <div className="border-t border-rule pt-3">
-              <CertStatement zh={result.statement_zh} en={result.statement_en} />
+              <div className="border-t border-rule pt-3">
+                <CertStatement zh={result.statement_zh} en={result.statement_en} />
+              </div>
             </div>
           </div>
-        </Card>
+        </Reveal>
       )}
       <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
         {t(

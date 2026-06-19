@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
-import { Badge } from "@/components/ui";
 import { CertStatement } from "@/components/CertStatement";
+import { Seal } from "@/components/Seal";
 
 type CertData = Record<string, unknown>;
 const s = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
@@ -23,15 +23,16 @@ function CertField({ label, value, mono, wrap }: { label: string; value: string;
   }
   if (!value) return null;
   return (
-    <div className="flex items-start justify-between gap-3 py-1">
-      <span className="shrink-0 text-xs text-muted">{label}</span>
+    <div className="flex flex-col gap-0.5 py-1.5 sm:flex-row sm:items-start sm:gap-3">
+      <span className="shrink-0 text-xs text-muted sm:w-28">{label}</span>
       <button
         type="button"
         onClick={copy}
         title={`${t("点击复制", "click to copy")} · ${value}`}
-        className={`text-right text-xs text-ink/80 transition hover:text-forest-700 ${mono ? "font-mono" : ""} ${
-          wrap ? "break-all" : "max-w-[62%] truncate"
-        }`}
+        aria-label={`${label}: ${value} — ${t("点击复制", "click to copy")}`}
+        className={`min-w-0 rounded text-left text-xs text-ink/80 transition hover:text-gold-700 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ink ${
+          mono ? "font-mono" : ""
+        } ${wrap ? "break-all" : "truncate"}`}
       >
         {copied ? t("已复制 ✓", "copied ✓") : value}
       </button>
@@ -54,26 +55,37 @@ export function ComputeCertificateCard({ cert }: { cert: CertData }) {
   const outBytes = s(cert["output_bytes"]);
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-rule bg-white shadow-sm">
-      <div className="border-b border-rule bg-paper px-5 py-4">
-        <p className="font-mono text-kicker uppercase tracking-widest text-forest-700">
-          {t("计算结果存证 · 可用不可见", "Compute-to-data certificate")}
-        </p>
-        <p className="mt-1 break-all font-mono text-lg font-semibold text-ink">{certId || "—"}</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          <Badge>{s(cert["status"]) || "registered"}</Badge>
-          {verifiable && (
-            <span className="inline-block rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-              {t("可验证", "Verifiable")}
-            </span>
-          )}
-          <span className="inline-block rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-600">
-            {hashAlgo}
-          </span>
+    <div className="elev overflow-hidden rounded-2xl border border-rule bg-white">
+      {/* gold foil top edge — the seal accent */}
+      <div className="h-1 bg-gradient-to-r from-gold-700 via-gold to-gold-700" />
+      <div className={`relative border-b border-rule bg-paper px-6 py-5 ${verifiable ? "sheen" : ""}`}>
+        {verifiable && (
+          <div
+            className="pointer-events-none absolute -top-1 right-3 sm:right-4"
+            style={{ background: "radial-gradient(closest-side, rgba(180,83,9,0.12), transparent)" }}
+          >
+            <Seal size={72} label={t(`已验证封缄 · 证书 ${certId}`, `verified seal · certificate ${certId}`)} />
+          </div>
+        )}
+        <div className={verifiable ? "pr-16 sm:pr-20" : ""}>
+          <p className="font-mono text-kicker uppercase tracking-widest text-forest-700">
+            {t("计算结果存证 · 可用不可见", "Compute-to-data certificate")}
+          </p>
+          <p className="mt-1 break-all font-mono text-lg font-semibold text-ink sm:text-xl">{certId || "—"}</p>
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            {verifiable && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-gold-100 bg-gold-50 px-2.5 py-0.5 text-xs font-medium text-gold-700">
+                <span className="inline-block h-2 w-2 rounded-full bg-gold" aria-hidden />
+                {t("可验证", "Verifiable")}
+              </span>
+            )}
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted">{s(cert["status"]) || "registered"}</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted">{hashAlgo}</span>
+          </div>
         </div>
       </div>
 
-      <div className="space-y-3 px-5 py-4">
+      <div className="space-y-3 px-6 py-5">
         <p className="text-xs leading-relaxed text-muted">
           {t(
             "本凭证把计算结果的内容指纹绑定到产出它的已审核算法(镜像 digest 钉死)与源数据集——结果可用,原始数据不可见。",
@@ -125,22 +137,34 @@ export function ComputeCertificateCard({ cert }: { cert: CertData }) {
 // Close button, or Escape all dismiss it.
 export function ComputeCertificateModal({ cert, onClose }: { cert: CertData; onClose: () => void }) {
   const { t } = useT();
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    ref.current?.focus();
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      prev?.focus?.();
+    };
   }, [onClose]);
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
       onClick={onClose}
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 sm:items-center"
     >
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md">
+      <div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t(`计算结果存证 ${s(cert["certificate_id"])}`, `Compute-to-data certificate ${s(cert["certificate_id"])}`)}
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md outline-none"
+      >
         <ComputeCertificateCard cert={cert} />
         <div className="mt-2 text-center">
           <button

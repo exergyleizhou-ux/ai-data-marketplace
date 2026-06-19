@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useT } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui";
+import { Reveal } from "@/components/Reveal";
 
 type Status = "verified" | "partial" | "gated" | "none";
 const ITEMS: { status: Status; zh: { c: string; d: string }; en: { c: string; d: string } }[] = [
@@ -18,7 +19,7 @@ const ITEMS: { status: Status; zh: { c: string; d: string }; en: { c: string; d:
 ];
 
 const BADGE: Record<Status, { cls: string; zh: string; en: string }> = {
-  verified: { cls: "bg-emerald-50 text-emerald-700", zh: "已验证", en: "verified" },
+  verified: { cls: "bg-forest-50 text-forest-700", zh: "已验证", en: "verified" },
   partial: { cls: "bg-gold-50 text-gold-700", zh: "部分", en: "partial" },
   gated: { cls: "bg-neutral-100 text-neutral-600", zh: "受限", en: "gated" },
   none: { cls: "bg-neutral-100 text-neutral-500", zh: "未做", en: "not built" },
@@ -38,16 +39,16 @@ export default function HonestyPage() {
         )}
       />
       <ul className="space-y-2.5">
-        {ITEMS.map((it) => {
+        {ITEMS.map((it, i) => {
           const b = BADGE[it.status];
           return (
-            <li key={it.zh.c} className="rounded-xl border border-rule bg-white p-4">
+            <Reveal as="li" key={it.zh.c} delay={i * 45} className="lift rounded-xl border border-rule bg-white p-4">
               <div className="flex items-center justify-between gap-3">
                 <span className="font-medium text-ink">{L(it).c}</span>
                 <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${b.cls}`}>{L(b)}</span>
               </div>
               <p className="mt-1 text-xs leading-relaxed text-ink/70">{L(it).d}</p>
-            </li>
+            </Reveal>
           );
         })}
       </ul>

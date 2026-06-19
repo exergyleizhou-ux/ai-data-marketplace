@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { Badge, Card, PageHeader } from "@/components/ui";
+import { Card, PageHeader } from "@/components/ui";
 import { ComputeCertificateCard } from "@/components/ComputeCertificate";
+import { Reveal } from "@/components/Reveal";
+import { VerifyChip } from "@/components/VerifyChip";
 
 // The four flagship compute-to-data algorithms, each with a REAL certificate
 // issued on this platform (verified live below).
@@ -83,34 +83,6 @@ const EXAMPLE_CERT: Record<string, unknown> = {
   statement_en: "Platform-issued provenance & integrity record for a compute-to-data result: it binds the output fingerprint (SHA-256) to the audited algorithm (pinned image digest) that produced it and the source dataset. Buyers can re-hash the downloaded result and compare.",
 };
 
-// Live verification chip: hits the public /verify endpoint to prove the cert is
-// real and registered right now.
-function VerifyChip({ certId }: { certId: string }) {
-  const { t } = useT();
-  const [st, setSt] = useState<"loading" | "ok" | "err">("loading");
-  useEffect(() => {
-    let on = true;
-    api
-      .verifyCertificate(certId)
-      .then((r) => on && setSt(r.verifiable ? "ok" : "err"))
-      .catch(() => on && setSt("err"));
-    return () => {
-      on = false;
-    };
-  }, [certId]);
-  const cls =
-    st === "ok"
-      ? "bg-emerald-50 text-emerald-700"
-      : st === "err"
-        ? "bg-neutral-100 text-neutral-500"
-        : "bg-neutral-100 text-neutral-400";
-  return (
-    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}>
-      {st === "loading" ? t("核验中…", "checking…") : st === "ok" ? t("实时可验证 ✓", "live · verifiable ✓") : t("不可用", "unavailable")}
-    </span>
-  );
-}
-
 export default function C2DShowcasePage() {
   const { t, lang } = useT();
   const L = <T,>(o: { zh: T; en: T }) => (lang === "en" ? o.en : o.zh);
@@ -144,20 +116,22 @@ export default function C2DShowcasePage() {
       <section className="space-y-4">
         <h2 className="font-display text-xl tracking-tight text-ink">{t("旗舰算法", "Flagship algorithms")}</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          {ALGOS.map((a) => (
-            <Card key={a.cert} className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium text-ink">{L(a)?.name}</span>
-                <Badge>{a.origin}</Badge>
-              </div>
-              <p className="text-xs leading-relaxed text-ink/70">{L(a)?.desc}</p>
-              <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-                <Link href={`/verify?cert=${a.cert}`} className="font-mono text-xs text-forest-700 hover:underline">
-                  {a.cert}
-                </Link>
-                <VerifyChip certId={a.cert} />
-              </div>
-            </Card>
+          {ALGOS.map((a, i) => (
+            <Reveal key={a.cert} delay={(i % 2) * 80}>
+              <Card className="lift flex h-full flex-col gap-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-display text-lg leading-snug text-ink">{L(a)?.name}</span>
+                  <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted">{a.origin}</span>
+                </div>
+                <p className="text-xs leading-relaxed text-ink/70">{L(a)?.desc}</p>
+                <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+                  <Link href={`/verify?cert=${a.cert}`} className="font-mono text-xs text-forest-700 hover:underline">
+                    {a.cert}
+                  </Link>
+                  <VerifyChip certId={a.cert} />
+                </div>
+              </Card>
+            </Reveal>
           ))}
         </div>
       </section>
@@ -179,13 +153,13 @@ export default function C2DShowcasePage() {
       {/* Deeper surfaces */}
       <section className="grid gap-3 sm:grid-cols-2">
         <Link href="/c2d/dossier" className="group">
-          <Card className="h-full transition group-hover:border-forest-700">
+          <Card className="lift h-full group-hover:border-forest-700">
             <div className="font-medium text-ink">{t("可验证研究档案 →", "A verifiable research dossier →")}</div>
             <p className="mt-1 text-xs leading-relaxed text-ink/70">{t("对同一个数据集做的全部分析,五张证书串成一条完整证据链。", "Every analysis on one dataset — five certificates forming a complete evidence chain.")}</p>
           </Card>
         </Link>
         <Link href="/c2d/honesty" className="group">
-          <Card className="h-full transition group-hover:border-forest-700">
+          <Card className="lift h-full group-hover:border-forest-700">
             <div className="font-medium text-ink">{t("诚实分级:什么已验证,什么受限 →", "Honest status: what's verified, what's gated →")}</div>
             <p className="mt-1 text-xs leading-relaxed text-ink/70">{t("逐条标明每项能力的真实状态——我们不 over-claim。", "The real status of each capability, item by item — we don't over-claim.")}</p>
           </Card>
