@@ -324,6 +324,10 @@ func (s *Service) aggregateAndRelease(ctx context.Context, fed FederatedJob, sub
 		slog.Error("compute: release federated failed", "federated_job_id", fed.ID, "err", err)
 		return
 	}
+	// Make the joint result publicly verifiable at /verify/<cert_id>, like a
+	// regular released job (the buyer-facing federated certificate already exposes
+	// this id; without this it was absent from the public index).
+	s.registerFederatedResultCert(ctx, fed.ID, joint)
 	metrics.ObserveFederatedAggregation(time.Since(aggStart).Seconds())
 	metrics.RecordFederatedJob("released")
 	// Record DP spend per participating dataset (ledger keys on the sub-job id,
@@ -389,6 +393,7 @@ func (s *Service) aggregatePSIAndRelease(ctx context.Context, fed FederatedJob, 
 		slog.Error("compute: release psi failed", "federated_job_id", fed.ID, "err", err)
 		return
 	}
+	s.registerFederatedResultCert(ctx, fed.ID, joint) // publicly verifiable, like the FedAvg path
 	metrics.ObserveFederatedAggregation(time.Since(aggStart).Seconds())
 	metrics.RecordFederatedJob("released")
 	s.audit.Record(ctx, audit.Entry{Action: "compute.federated.psi.release", ResourceType: "compute_federated_job",

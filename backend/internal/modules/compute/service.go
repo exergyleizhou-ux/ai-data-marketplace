@@ -442,6 +442,22 @@ func (s *Service) registerResultCert(ctx context.Context, j Job) {
 	}
 }
 
+// registerFederatedResultCert records a released federated job's joint-model
+// certificate into the public certificates table, under the SAME id the
+// buyer-facing federated certificate uses (jobCertificateID over the joint-model
+// fingerprint). Mirrors registerResultCert; best-effort. The joint bytes are
+// passed directly (we already have them at aggregation time — no store re-read).
+func (s *Service) registerFederatedResultCert(ctx context.Context, fedID string, joint []byte) {
+	if s.certReg == nil {
+		return
+	}
+	sum := sha256.Sum256(joint)
+	certID := jobCertificateID(fedID, hex.EncodeToString(sum[:]))
+	if err := s.certReg.Register(ctx, certID, "compute_result", fedID); err != nil {
+		slog.Error("compute: federated cert register", "federated_job_id", fedID, "err", err)
+	}
+}
+
 func (s *Service) OpsReleaseOutput(ctx context.Context, opsID, jobID string) (Job, error) {
 	j, err := s.repo.GetJob(ctx, jobID)
 	if err != nil {

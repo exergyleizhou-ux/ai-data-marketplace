@@ -64,6 +64,36 @@ func TestReleasedJobCertRegisteredForPublicVerify(t *testing.T) {
 	}
 }
 
+// A released FEDERATED job's joint-model certificate must likewise be registered
+// for public verify, under the SAME id GetFederatedCertificate exposes
+// (jobCertificateID over the joint-model fingerprint, resource_type=compute_result,
+// resource_id=federated_job_id).
+func TestFederatedReleaseCertRegisteredForPublicVerify(t *testing.T) {
+	joint := []byte(`{"_format":"fedmodel-v1","weights":[0.1,-0.2],"intercept":0.0,"n_total":300,"participants":3}`)
+	sum := sha256.Sum256(joint)
+	want := jobCertificateID("fed-1", hex.EncodeToString(sum[:]))
+
+	reg := &fakeCertReg{}
+	s := &Service{certReg: reg}
+	s.registerFederatedResultCert(context.Background(), "fed-1", joint)
+
+	if reg.n != 1 {
+		t.Fatalf("expected exactly 1 federated registration, got %d", reg.n)
+	}
+	if reg.certID != want {
+		t.Fatalf("federated cert id = %q, want %q (must match the buyer-facing cert)", reg.certID, want)
+	}
+	if reg.rtype != "compute_result" || reg.rid != "fed-1" {
+		t.Fatalf("resource = %s/%s, want compute_result/fed-1", reg.rtype, reg.rid)
+	}
+}
+
+// No registrar wired ⇒ no panic, no-op.
+func TestFederatedCertNoRegistrarIsNoop(t *testing.T) {
+	s := &Service{}
+	s.registerFederatedResultCert(context.Background(), "fed-x", []byte("{}"))
+}
+
 // Only released jobs register a cert (no leaking a pending/failed job).
 func TestUnreleasedJobNotRegistered(t *testing.T) {
 	reg := &fakeCertReg{}
