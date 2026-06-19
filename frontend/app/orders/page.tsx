@@ -103,6 +103,7 @@ function OrdersInner() {
                     checked={selected.has(o.id)}
                     onChange={() => toggle(o.id)}
                     className="h-4 w-4"
+                    aria-label={t(`选择订单 #${o.id.slice(0, 8)} 用于打包下载`, `Select order #${o.id.slice(0, 8)} for bundle download`)}
                     disabled={!selected.has(o.id) && selected.size >= 20}
                   />
                 )}

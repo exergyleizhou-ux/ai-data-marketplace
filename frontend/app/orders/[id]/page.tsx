@@ -230,9 +230,17 @@ function ReviewBox({ orderId }: { orderId: string }) {
     <div className="rounded-lg border border-neutral-200 p-4">
       <div className="mb-2 font-medium">{t("评价这单数据", "Review this purchase")}</div>
       {err && <div className="mb-2"><Alert>{err}</Alert></div>}
-      <div className="mb-2 flex gap-1 text-2xl">
+      <div className="mb-2 flex gap-1 text-2xl" role="radiogroup" aria-label={t("评分", "Rating")}>
         {[1, 2, 3, 4, 5].map((s) => (
-          <button key={s} onClick={() => setScore(s)} className={s <= score ? "text-amber-500" : "text-neutral-300"}>
+          <button
+            key={s}
+            type="button"
+            onClick={() => setScore(s)}
+            role="radio"
+            aria-checked={s === score}
+            aria-label={t(`${s} 星`, `${s} star${s > 1 ? "s" : ""}`)}
+            className={s <= score ? "text-amber-500" : "text-neutral-300"}
+          >
             ★
           </button>
         ))}

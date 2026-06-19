@@ -66,7 +66,12 @@ export function Nav() {
         {/* Desktop links */}
         <nav className="hidden flex-1 items-center gap-1 sm:flex">
           {visibleLinks.map((l) => (
-            <Link key={l.href} href={l.href} className={linkClass(l.href)}>
+            <Link
+              key={l.href}
+              href={l.href}
+              className={linkClass(l.href)}
+              aria-current={pathname.startsWith(l.href) ? "page" : undefined}
+            >
               {t(l.zh, l.en)}
             </Link>
           ))}
@@ -138,7 +143,12 @@ export function Nav() {
         <div className="border-t border-neutral-200 bg-white px-4 py-2 sm:hidden">
           <nav className="flex flex-col gap-1">
             {visibleLinks.map((l) => (
-              <Link key={l.href} href={l.href} className={linkClass(l.href)}>
+              <Link
+                key={l.href}
+                href={l.href}
+                className={linkClass(l.href)}
+                aria-current={pathname.startsWith(l.href) ? "page" : undefined}
+              >
                 {t(l.zh, l.en)}
               </Link>
             ))}

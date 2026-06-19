@@ -66,6 +66,7 @@ export function DatasetQA({ datasetId, sellerId }: { datasetId: string; sellerId
             rows={2}
             value={askBody}
             onChange={(e) => setAskBody(e.target.value)}
+            aria-label={t("向卖家提问", "Ask the seller a question") as string}
             placeholder={t("有问题想问卖家?", "Ask the seller a question...") as string}
           />
           <Button onClick={submitAsk} disabled={busy || !askBody.trim()}>
@@ -103,6 +104,7 @@ export function DatasetQA({ datasetId, sellerId }: { datasetId: string; sellerId
                     rows={2}
                     value={answerBodies[q.id] || ""}
                     onChange={(e) => setAnswerBodies((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                    aria-label={t("回答这个问题", "Answer this question") as string}
                     placeholder={t("回答这个问题...", "Answer this question...") as string}
                   />
                   <Button onClick={() => submitAnswer(q.id)} disabled={busy || !(answerBodies[q.id] || "").trim()}>
