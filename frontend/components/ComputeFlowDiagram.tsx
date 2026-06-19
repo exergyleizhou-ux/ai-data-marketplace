@@ -1,6 +1,7 @@
 "use client";
 
 import { useT } from "@/lib/i18n";
+import { Seal } from "@/components/Seal";
 
 // Signature C2D flow, redrawn as a schematic plate, not a flowchart:
 //   - Stage numbers in mono (technical authority, like a paper figure)
@@ -40,8 +41,8 @@ export function ComputeFlowDiagram() {
   ];
 
   return (
-    <div className="relative">
-      <div className="overflow-x-auto">
+    <div>
+      <div className="hidden overflow-x-auto sm:block">
         <svg
           viewBox="0 0 720 260"
           width="720"
@@ -163,10 +164,45 @@ export function ComputeFlowDiagram() {
           </text>
         </svg>
       </div>
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute right-0 top-0 h-full w-8 bg-gradient-to-l from-white sm:hidden"
-      />
+
+      {/* Mobile: the same schematic plate reflowed vertically — fully legible,
+          no horizontal scroll (this is the most-shared viewport). */}
+      <div className="relative sm:hidden">
+        <span className="absolute bottom-3 left-[9px] top-3 w-px bg-rule" aria-hidden />
+        <ol className="space-y-5 pl-7">
+          {STAGES.map((s, i) => (
+            <li key={s.n} className="relative">
+              <span
+                className="absolute -left-7 top-1.5 flex h-4 w-4 items-center justify-center rounded-full border-2 border-ink bg-paper"
+                aria-hidden
+              >
+                {i === 1 && <span className="h-1.5 w-1.5 rounded-full bg-forest" />}
+                {i === 2 && <span className="h-1.5 w-1.5 rounded-full bg-gold" />}
+              </span>
+              <div className={i === 1 ? "-ml-3 border-l-2 border-dashed border-forest pl-3" : ""}>
+                <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
+                  STAGE {s.n}
+                  {i === 1 ? ` · ${t("沙箱", "SANDBOX")}` : ""}
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="font-display text-xl leading-tight" style={{ color: s.titleColor }}>
+                    {s.title}
+                  </span>
+                  {i === 2 && <Seal size={26} animate={false} label={t("可验证封缄", "verified seal")} />}
+                </div>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-muted">{s.role.toUpperCase()}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-ink/70">{s.caption}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-5 font-mono text-[10px] leading-relaxed tracking-wide text-muted">
+          {t(
+            "L1 沙箱 · L2 TEE 连平台也不可见 · L3 数据不出域(联邦 / PSI)",
+            "L1 SANDBOX · L2 TEE INVISIBLE TO PLATFORM · L3 DATA-STAYS-HOME (FED / PSI)",
+          )}
+        </p>
+      </div>
     </div>
   );
 }
