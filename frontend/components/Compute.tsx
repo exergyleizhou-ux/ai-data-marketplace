@@ -411,6 +411,10 @@ export function FederatedComputePanel() {
   const [feds, setFeds] = useState<FederatedJob[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Raw items fetched from the shared fed+psi endpoint so far. Pagination
+  // offsets are over the RAW result set, not the psi-filtered `feds` list — so
+  // load-more must advance by this count, never by feds.length.
+  const fedRawCountRef = useRef(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [dsNames, setDsNames] = useState<Map<string, string>>(new Map());
@@ -425,6 +429,7 @@ export function FederatedComputePanel() {
     try {
       const r = await api.listMyFederatedJobs(FED_PAGE_SIZE, 0);
       // PSI jobs share the federated endpoints but have their own panel.
+      fedRawCountRef.current = r.items.length;
       setFeds(r.items.filter((f) => f.mode !== "psi"));
       setHasMore(r.items.length >= FED_PAGE_SIZE);
     } catch {
@@ -519,8 +524,17 @@ export function FederatedComputePanel() {
   async function loadMore() {
     setLoadingMore(true);
     try {
-      const r = await api.listMyFederatedJobs(FED_PAGE_SIZE, feds.length);
-      setFeds((prev) => [...prev, ...r.items]);
+      // Offset is over the RAW shared result set (fed + psi). Using feds.length
+      // (psi-filtered, so smaller when psi jobs are interleaved) would request a
+      // window overlapping rows already shown → duplicate rows / duplicate keys.
+      const r = await api.listMyFederatedJobs(FED_PAGE_SIZE, fedRawCountRef.current);
+      fedRawCountRef.current += r.items.length;
+      setFeds((prev) => {
+        // Drop psi (it has its own panel) and dedup by id as a belt-and-suspenders
+        // guard against rows shifting between the refresh and this fetch.
+        const seen = new Set(prev.map((f) => f.id));
+        return [...prev, ...r.items.filter((f) => f.mode !== "psi" && !seen.has(f.id))];
+      });
       setHasMore(r.items.length >= FED_PAGE_SIZE);
     } catch {
       /* ignore */
