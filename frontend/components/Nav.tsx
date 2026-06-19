@@ -42,6 +42,11 @@ export function Nav() {
     `rounded-md px-3 py-1.5 text-sm ${
       pathname.startsWith(href) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-600 hover:bg-neutral-50"
     }`;
+  // Mobile drawer rows get a comfortable ≥44px touch target.
+  const drawerLinkClass = (href: string) =>
+    `flex min-h-[44px] items-center rounded-md px-3 text-sm ${
+      pathname.startsWith(href) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-700 hover:bg-neutral-50"
+    }`;
 
   return (
     <header className="sticky top-0 z-10 border-b border-rule bg-paper/85 backdrop-blur">
@@ -52,7 +57,7 @@ export function Nav() {
           onClick={() => setMenuOpen((v) => !v)}
           aria-label={t("菜单", "Menu")}
           aria-expanded={menuOpen}
-          className="sm:hidden -ml-1 inline-flex h-9 w-9 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100"
+          className="sm:hidden -ml-1.5 inline-flex h-11 w-11 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             {menuOpen ? <path d="M18 6L6 18M6 6l12 12" /> : <><path d="M3 6h18" /><path d="M3 12h18" /><path d="M3 18h18" /></>}
@@ -141,20 +146,20 @@ export function Nav() {
       </div>
       {/* Mobile drawer: shows when hamburger is open, hidden on sm+. */}
       {menuOpen && (
-        <div className="border-t border-neutral-200 bg-white px-4 py-2 sm:hidden">
-          <nav className="flex flex-col gap-1">
+        <div className="border-t border-neutral-200 bg-white px-2 py-1 sm:hidden">
+          <nav className="flex flex-col divide-y divide-rule/70">
             {visibleLinks.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
-                className={linkClass(l.href)}
+                className={drawerLinkClass(l.href)}
                 aria-current={pathname.startsWith(l.href) ? "page" : undefined}
               >
                 {t(l.zh, l.en)}
               </Link>
             ))}
             {isOps && (
-              <Link href="/admin" className={linkClass("/admin")}>
+              <Link href="/admin" className={drawerLinkClass("/admin")}>
                 {t("运营后台", "Ops")}
               </Link>
             )}

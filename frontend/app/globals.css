@@ -89,3 +89,8 @@ a:focus-visible > .lift, .lift:focus-visible { outline: 2px solid #065f46; outli
   }
   .lift:hover { transform: none; }
 }
+
+/* Hero plate: the audited-algorithm token travels into the sandbox once. */
+@keyframes hero-travel { 0% { opacity: 0; transform: translateX(-22px); } 100% { opacity: 1; transform: none; } }
+.hero-travel { animation: hero-travel 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) 0.5s both; }
+@media (prefers-reduced-motion: reduce) { .hero-travel { animation: none !important; opacity: 1 !important; transform: none !important; } }

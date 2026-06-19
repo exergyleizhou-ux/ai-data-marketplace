@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useT } from "@/lib/i18n";
 import { ComputeFlowDiagram } from "@/components/ComputeFlowDiagram";
 import { Seal } from "@/components/Seal";
+import { HeroPlate } from "@/components/HeroPlate";
+import { CountUp } from "@/components/CountUp";
 
 // Homepage. Editorial-technical aesthetic (see DESIGN.md). Hierarchy:
 //   1. KICKER → giant serif claim → quiet subhead → 2 CTAs (the page's center of gravity)
@@ -15,30 +17,35 @@ export default function Home() {
   return (
     <div className="space-y-24 pb-20 pt-10 sm:space-y-32">
       {/* HERO ─────────────────────────────────────────────────────────── */}
-      <section>
-        <p className="font-mono text-kicker uppercase text-muted">
-          {t("数据基础设施 · 自 2026", "Data infrastructure · est. 2026")}
-        </p>
-        <h1 className="mt-4 font-display text-display-md leading-[1.02] tracking-tight sm:text-display-lg lg:text-display-xl">
-          {t("可用,不可见。", "Available, never visible.")}
-        </h1>
-        <p className="mt-6 max-w-2xl text-base leading-relaxed text-ink/80 sm:text-lg">
-          {t(
-            "训练数据流通的高信任基础设施。卖方的数据从不离开它的沙箱;买方拿走的只有经审核算法跑出的结果——附密码学存证。",
-            "High-trust infrastructure for AI training data. The seller's raw data never leaves its sandbox; the buyer takes only the result of an audited algorithm — with a cryptographic certificate.",
-          )}
-        </p>
-        <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
-          <Link
-            href="/datasets"
-            className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper hover:bg-ink/85"
-          >
-            {t("浏览数据市场", "Browse the marketplace")}
-            <span aria-hidden>→</span>
-          </Link>
-          <Link href="/sell" className="text-sm font-medium text-ink cue-underline hover:text-forest-700">
-            {t("上架我的数据", "List my data")}
-          </Link>
+      <section className="lg:grid lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:gap-12">
+        <div>
+          <p className="font-mono text-kicker uppercase text-muted">
+            {t("数据基础设施 · 自 2026", "Data infrastructure · est. 2026")}
+          </p>
+          <h1 className="mt-4 font-display text-display-md leading-[1.02] tracking-tight sm:text-display-lg">
+            {t("可用,不可见。", "Available, never visible.")}
+          </h1>
+          <p className="mt-6 max-w-2xl text-base leading-relaxed text-ink/80 sm:text-lg">
+            {t(
+              "训练数据流通的高信任基础设施。卖方的数据从不离开它的沙箱;买方拿走的只有经审核算法跑出的结果——附密码学存证。",
+              "High-trust infrastructure for AI training data. The seller's raw data never leaves its sandbox; the buyer takes only the result of an audited algorithm — with a cryptographic certificate.",
+            )}
+          </p>
+          <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <Link
+              href="/datasets"
+              className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper hover:bg-ink/85"
+            >
+              {t("浏览数据市场", "Browse the marketplace")}
+              <span aria-hidden>→</span>
+            </Link>
+            <Link href="/sell" className="text-sm font-medium text-ink cue-underline hover:text-forest-700">
+              {t("上架我的数据", "List my data")}
+            </Link>
+          </div>
+        </div>
+        <div className="mt-12 hidden lg:mt-0 lg:block">
+          <HeroPlate />
         </div>
       </section>
 
@@ -135,7 +142,7 @@ export default function Home() {
                       c.accent === "gold" ? "text-gold-700" : c.accent === "forest" ? "text-forest-700" : "text-ink"
                     }`}
                   >
-                    {c.mono}
+                    {c.accent === "ink" ? <><CountUp to={1247} /> events / day</> : c.mono}
                   </p>
                 </div>
                 {c.accent === "gold" && (

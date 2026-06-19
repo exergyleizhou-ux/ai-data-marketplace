@@ -61,6 +61,14 @@ const ALGOS = [
   },
 ];
 
+// The nine algorithms group into three families, so the grid tells a story
+// (integrity → causal inference → bioprocess) instead of being a uniform wall.
+const FAMILIES = [
+  { key: "integrity", zh: "完整性", en: "Integrity", certs: ["VO-795A4D76D4FE"] },
+  { key: "causal", zh: "因果推断", en: "Causal inference", certs: ["VO-817B868978BB", "VO-1DFD9CBEFFAB", "VO-639F1C2A367C", "VO-D9342583F9B4"] },
+  { key: "process", zh: "生物过程", en: "Bioprocess", certs: ["VO-6B9E6ACC8A5F", "VO-885746636F33", "VO-1410D25DB7E2", "VO-6FC497AD7987"] },
+];
+
 const STEPS = [
   { zh: "算法上架", en: "Publish", dzh: "算法打包为镜像,按 SHA-256 digest 钉死,经平台审核 + 信任后上架货架。", den: "Each algorithm is a digest-pinned image, audited and trusted before it reaches the shelf." },
   { zh: "沙箱计算", en: "Compute", dzh: "在 --network=none、只读、非特权沙箱内对数据计算;数据可用不可见,只产出聚合结果。", den: "Runs over the data in a no-network, read-only, unprivileged sandbox — data usable but unseen; only aggregates leave." },
@@ -112,28 +120,38 @@ export default function C2DShowcasePage() {
         </div>
       </section>
 
-      {/* Flagship algorithms */}
-      <section className="space-y-4">
+      {/* Flagship algorithms — grouped into families so the grid tells a story */}
+      <section className="space-y-6">
         <h2 className="font-display text-xl tracking-tight text-ink">{t("旗舰算法", "Flagship algorithms")}</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {ALGOS.map((a, i) => (
-            <Reveal key={a.cert} delay={(i % 2) * 80}>
-              <Card className="lift flex h-full flex-col gap-2">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-display text-lg leading-snug text-ink">{L(a)?.name}</span>
-                  <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted">{a.origin}</span>
-                </div>
-                <p className="text-xs leading-relaxed text-ink/70">{L(a)?.desc}</p>
-                <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-                  <Link href={`/verify?cert=${a.cert}`} className="font-mono text-xs text-forest-700 hover:underline">
-                    {a.cert}
-                  </Link>
-                  <VerifyChip certId={a.cert} />
-                </div>
-              </Card>
-            </Reveal>
-          ))}
-        </div>
+        {FAMILIES.map((fam) => {
+          const items = ALGOS.filter((a) => fam.certs.includes(a.cert));
+          return (
+            <div key={fam.key} className="space-y-3">
+              <p className="font-mono text-kicker uppercase tracking-widest text-muted">
+                {L({ zh: fam.zh, en: fam.en })} · {items.length}
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {items.map((a, i) => (
+                  <Reveal key={a.cert} delay={(i % 2) * 80}>
+                    <Card className="lift flex h-full flex-col gap-2">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="font-display text-lg leading-snug text-ink">{L(a)?.name}</span>
+                        <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted">{a.origin}</span>
+                      </div>
+                      <p className="text-xs leading-relaxed text-ink/70">{L(a)?.desc}</p>
+                      <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+                        <Link href={`/verify?cert=${a.cert}`} className="rounded font-mono text-xs text-forest-700 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ink">
+                          {a.cert}
+                        </Link>
+                        <VerifyChip certId={a.cert} />
+                      </div>
+                    </Card>
+                  </Reveal>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </section>
 
       {/* Example credential */}
@@ -145,8 +163,10 @@ export default function C2DShowcasePage() {
             "This is the credential a buyer receives after every computation — it binds the result fingerprint to the producing algorithm's image digest and the source dataset, and is independently re-hashable.",
           )}
         </p>
-        <div className="max-w-md">
-          <ComputeCertificateCard cert={EXAMPLE_CERT} />
+        <div className="rounded-2xl border border-rule bg-paper/60 px-4 py-8 sm:px-8">
+          <div className="mx-auto max-w-md">
+            <ComputeCertificateCard cert={EXAMPLE_CERT} />
+          </div>
         </div>
       </section>
 
