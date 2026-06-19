@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Card, PageHeader } from "@/components/ui";
+import { Reveal } from "@/components/Reveal";
+import { VerifyChip } from "@/components/VerifyChip";
+import { Seal } from "@/components/Seal";
 
 // A real dossier: five analyses run on ONE BSF bioconversion study dataset
 // (feed_rate → larval_density → protein_yield), each yielding a signed certificate.
@@ -16,22 +17,6 @@ const STEPS = [
   { cert: "VO-C0F0FA7D4147", n: 4, zh: { name: "敏感性", what: "效应对未观测混杂的稳健性(Cinelli-Hazlett 稳健性值)" }, en: { name: "Sensitivity", what: "robustness of the effect to unobserved confounding (Cinelli-Hazlett robustness value)" } },
   { cert: "VO-F912F3BE1073", n: 5, zh: { name: "证伪", what: "安慰剂处理 / 随机共因 / 数据子集 三重有效性校验" }, en: { name: "Refutation", what: "placebo-treatment / random-common-cause / data-subset validity checks" } },
 ];
-
-function VerifyChip({ certId }: { certId: string }) {
-  const { t } = useT();
-  const [st, setSt] = useState<"loading" | "ok" | "err">("loading");
-  useEffect(() => {
-    let on = true;
-    api.verifyCertificate(certId).then((r) => on && setSt(r.verifiable ? "ok" : "err")).catch(() => on && setSt("err"));
-    return () => { on = false; };
-  }, [certId]);
-  const cls = st === "ok" ? "bg-emerald-50 text-emerald-700" : "bg-neutral-100 text-neutral-500";
-  return (
-    <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}>
-      {st === "loading" ? t("核验中…", "checking…") : st === "ok" ? t("实时可验证 ✓", "live · verifiable ✓") : t("不可用", "unavailable")}
-    </span>
-  );
-}
 
 export default function DossierPage() {
   const { t, lang } = useT();
@@ -54,22 +39,26 @@ export default function DossierPage() {
       </Card>
 
       <ol className="space-y-3">
-        {STEPS.map((s) => (
-          <li key={s.cert}>
-            <Card className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-forest-50 font-mono text-xs text-forest-700">{s.n}</span>
-                  <span className="font-medium text-ink">{L(s).name}</span>
+        {STEPS.map((s, i) => (
+          <Reveal as="li" key={s.cert} delay={i * 70}>
+            <Card className="lift relative overflow-hidden">
+              <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-gold-700 via-gold to-gold-700" />
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-forest-50 font-mono text-xs text-forest-700">{s.n}</span>
+                  <div className="min-w-0">
+                    <span className="font-display text-lg leading-snug text-ink">{L(s).name}</span>
+                    <p className="mt-1 text-xs leading-relaxed text-ink/70">{L(s).what}</p>
+                    <Link href={`/verify?cert=${s.cert}`} className="mt-1.5 inline-block rounded font-mono text-xs text-forest-700 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ink">{s.cert}</Link>
+                  </div>
                 </div>
-                <VerifyChip certId={s.cert} />
-              </div>
-              <p className="pl-9 text-xs leading-relaxed text-ink/70">{L(s).what}</p>
-              <div className="pl-9">
-                <Link href={`/verify?cert=${s.cert}`} className="font-mono text-xs text-forest-700 hover:underline">{s.cert}</Link>
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <Seal size={32} label={t(`已验证 · ${s.cert}`, `verified · ${s.cert}`)} />
+                  <VerifyChip certId={s.cert} />
+                </div>
               </div>
             </Card>
-          </li>
+          </Reveal>
         ))}
       </ol>
 

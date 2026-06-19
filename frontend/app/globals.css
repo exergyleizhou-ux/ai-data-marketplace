@@ -34,3 +34,58 @@ body {
 /* Subtle dotted underline that's visually quieter than the default underline,
    used for inline tooltip cues without screaming for attention. */
 .cue-underline { text-decoration: underline dotted; text-underline-offset: 4px; text-decoration-color: rgb(212 211 207); }
+
+/* ─────────── Motion & material — "a printed page, alive" ───────────
+   Restrained, physical motion (ink settling, a wax seal stamping) and warm
+   paper-catching-light depth — never hard UI shadows or flashy SaaS animation.
+   Everything degrades to nothing under prefers-reduced-motion. */
+
+/* Scroll reveal: content settles in like ink on the page. */
+@keyframes ink-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.reveal-hidden { opacity: 0; }
+.reveal-in { animation: ink-rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+/* Soft, warm elevation + hover lift — paper catching light. */
+.elev { box-shadow: 0 1px 2px rgba(24, 24, 27, 0.04), 0 10px 30px -16px rgba(24, 24, 27, 0.16); }
+.lift { transition: transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.35s ease, border-color 0.35s ease; }
+/* Hover lift only for real pointers; touch gets a quiet press state instead. */
+@media (hover: hover) and (pointer: fine) {
+  .lift:hover { transform: translateY(-3px); box-shadow: 0 2px 4px rgba(24, 24, 27, 0.05), 0 18px 40px -18px rgba(24, 24, 27, 0.22); }
+}
+.lift:active { transform: translateY(0); }
+/* Keyboard focus on bespoke card-links (the whole-card <Link className="group">). */
+a:focus-visible > .lift, .lift:focus-visible { outline: 2px solid #065f46; outline-offset: 2px; }
+
+/* The wax seal: stamps in, then its checkmark draws. */
+@keyframes seal-in { 0% { opacity: 0; transform: scale(0.5) rotate(-12deg); } 60% { opacity: 1; transform: scale(1.06) rotate(2deg); } 100% { transform: scale(1) rotate(0); } }
+.seal-anim { animation: seal-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1.05) 0.15s both; transform-origin: center; }
+@keyframes seal-draw { to { stroke-dashoffset: 0; } }
+.seal-check { stroke-dasharray: 46; stroke-dashoffset: 46; animation: seal-draw 0.45s ease 0.55s forwards; }
+
+/* A slow gold sheen sweeping a verified surface — foil catching the light. */
+@keyframes sheen { 0% { background-position: -150% 0; } 100% { background-position: 250% 0; } }
+.sheen { position: relative; overflow: hidden; }
+.sheen::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 42%, rgba(180, 83, 9, 0.10) 50%, transparent 58%); background-size: 250% 100%; animation: sheen 4.5s ease-in-out 1s 2; pointer-events: none; }
+
+/* Warm ring offset matches the paper background (no cool-white seam). */
+:root { --tw-ring-offset-color: #fafaf7; }
+
+/* In-progress dot for the live-verify chip (it's a live round-trip, show it). */
+@keyframes dot-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+.dot-pulse { animation: dot-pulse 1s ease-in-out infinite; }
+
+/* Warm skeleton shimmer for loading slots — paper tones, never cool grey. */
+@keyframes skel { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.skeleton { background: linear-gradient(100deg, #efeee9 30%, #f6f5f1 50%, #efeee9 70%); background-size: 200% 100%; animation: skel 1.5s ease-in-out infinite; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .dot-pulse, .skeleton { animation: none !important; } }
+
+/* The live-verify chip popping from checking → verified. */
+@keyframes chip-pop { 0% { transform: scale(0.9); opacity: 0.4; } 60% { transform: scale(1.05); } 100% { transform: scale(1); opacity: 1; } }
+.chip-pop { animation: chip-pop 0.4s cubic-bezier(0.2, 0.8, 0.2, 1.05) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-hidden, .reveal-in, .seal-anim, .seal-check, .sheen::after, .chip-pop {
+    animation: none !important; opacity: 1 !important; transform: none !important; stroke-dashoffset: 0 !important;
+  }
+  .lift:hover { transform: none; }
+}
