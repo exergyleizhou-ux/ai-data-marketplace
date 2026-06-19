@@ -1,6 +1,7 @@
 "use client";
 
 import type { QualityCheck } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 
 type Col = {
   name: string;
@@ -42,6 +43,7 @@ const ALERT_CLS: Record<string, string> = {
 };
 
 export function SchemaTable({ checks }: { checks: QualityCheck[] }) {
+  const { t } = useT();
   const schema = checks.find((c) => c.type === "schema");
   const r = schema?.report as
     | {
@@ -87,12 +89,12 @@ export function SchemaTable({ checks }: { checks: QualityCheck[] }) {
         <table className="w-full text-xs">
           <thead>
             <tr className="text-neutral-400">
-              <th className="py-1 text-left font-medium">字段 Field</th>
-              <th className="text-left font-medium">类型</th>
-              <th className="text-right font-medium">非空</th>
-              <th className="text-right font-medium">缺失</th>
-              <th className="text-right font-medium">不同值</th>
-              <th className="pl-3 text-left font-medium">范围 / 示例</th>
+              <th className="py-1 text-left font-medium">{t("字段", "Field")}</th>
+              <th className="text-left font-medium">{t("类型", "Type")}</th>
+              <th className="text-right font-medium">{t("非空", "Non-null")}</th>
+              <th className="text-right font-medium">{t("缺失", "Missing")}</th>
+              <th className="text-right font-medium">{t("不同值", "Distinct")}</th>
+              <th className="pl-3 text-left font-medium">{t("范围 / 示例", "Range / example")}</th>
             </tr>
           </thead>
           <tbody>

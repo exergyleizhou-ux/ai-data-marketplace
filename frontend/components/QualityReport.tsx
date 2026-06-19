@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { QualityCheck } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 
 /** Bilingual buyer-facing quality report. Renders the persisted quality_check
  *  rows: the authenticity score + band, the de-identification proof, and the
@@ -42,18 +43,19 @@ const arr = (v: unknown): Record<string, unknown>[] =>
  *  band when a dataset was statistically screened (tabular), otherwise a generic
  *  "quality verified" mark when all checks passed. Renders nothing if unknown. */
 export function QualityBadge({ band, verified }: { band?: string; verified?: boolean }) {
+  const { t, lang } = useT();
   if (band) {
     const b = BAND[band] ?? BAND.review;
     return (
       <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${b.cls}`}>
-        {b.zh}
+        {lang === "en" ? b.en : b.zh}
       </span>
     );
   }
   if (verified) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-        ✓ 质检通过
+        ✓ {t("质检通过", "Quality verified")}
       </span>
     );
   }
