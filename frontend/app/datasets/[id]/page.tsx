@@ -105,7 +105,9 @@ export default function DatasetDetailPage({ params }: { params: Promise<{ id: st
               onClick={toggleWatch}
               disabled={watchBusy}
               className="text-xl"
-              title={watching ? "取消收藏" : "收藏"}
+              aria-pressed={watching}
+              aria-label={watching ? t("取消收藏", "Unwatch") : t("收藏", "Watch")}
+              title={watching ? t("取消收藏", "Unwatch") : t("收藏", "Watch")}
             >
               {watching ? "⭐" : "☆"}
             </button>
