@@ -15,7 +15,7 @@ const config: Config = {
       colors: {
         paper: "#fafaf7",
         ink: "#18181b",
-        muted: "#71717a",
+        muted: "#5f5f68", // darkened one step so secondary text clears WCAG AA even at 10-11px on paper
         rule: "#e7e5e0",
         forest: {
           DEFAULT: "#047857",
