@@ -1,0 +1,57 @@
+# 如何独立复现 / 验证一份 C2D 结果
+
+绿洲的每一次「可用不可见」(Compute-to-Data)计算都会签发一张结果存证 `VO-…`。它把
+**计算结果的内容指纹(SHA-256)**绑定到**产出它的算法镜像 digest**与**源数据集**。
+任何人——不必信任本平台——都能独立核验它。下面三种方式,从最轻到最彻底。
+
+## 这张证书绑定了什么
+
+```
+结果指纹 (output SHA-256)  ⟵ 由…产出 ⟶  已审核算法 (镜像 digest 钉死) + 源数据集
+```
+
+- **镜像 digest 钉死**:算法是按 `sha256:…` 锁定的容器镜像,代码不可被悄悄替换。
+- **`--network=none` 沙箱 + 只读数据 + 非特权**:计算时数据可用不可见,只有聚合结果离开沙箱。
+- **只出聚合**:算法按设计只回传聚合量(效应量 / 统计量 / 拟合参数…),从不回传原始行。
+
+## 方式一:重算哈希(最快,够用)
+
+1. 在买家页面下载这次计算的结果(`output.bin`)。
+2. 本地重算它的 SHA-256:
+
+   ```sh
+   shasum -a 256 output.bin
+   ```
+3. 与证书里的 `output_sha256` 比对。**一致 ⇒ 结果未被篡改、确由该证书所述的计算产生。**
+
+## 方式二:公开验证页(无需登录)
+
+打开 `/verify`,输入 `VO-…` 编号(或直接访问 `/verify?cert=VO-…`)。页面会显示该存证是否
+**已登记 / 可验证**、资源类型与登记时间。常规结果与联邦联合结果的证书都已纳入这个公开索引。
+
+## 方式三:在你自己的数据上复跑(最彻底)
+
+算法是开源的、按 digest 钉死的。你可以**用一份你已知答案的数据**复跑同一个算法,确认它
+确实在做它声称的事:
+
+```sh
+# 拉取证书里那一行 digest 钉死的镜像(示例:完整性筛查)
+docker pull <registry>/vo-paperguard@sha256:46ca9a23…
+
+# 在你自己的 CSV 上、用与生产完全相同的沙箱姿态跑
+docker run --rm --network=none --read-only --user 65534:65534 \
+  -v "$PWD/data:/data:ro" -v "$PWD/out:/out" -v "$PWD/params.json:/params.json:ro" \
+  <registry>/vo-paperguard@sha256:46ca9a23…
+
+# 结果在 out/output.bin —— 它是 zip(model.json, metrics.json) 或 raw JSON
+```
+
+算法源码在 `algorithms/<name>/`,逐行可审。沙箱姿态(`--network=none --read-only
+--user 65534`)与平台生产一致,见各算法 README 与 `backend/internal/modules/compute/runner_docker.go`。
+
+## 它能证明什么、不能证明什么
+
+- ✅ **能**:结果完整性(没被篡改)、计算溯源(哪个钉死算法、对哪个数据集)、隐私姿态
+  (数据不出沙箱、只出聚合)。
+- ⚠️ **暂不能**:第三方/区块链公证(本证书为平台自行出具)、硬件级机密性(L2 真 TEE 仍
+  受限,见 `/c2d/honesty`)。我们对此**如实标注,不 over-claim**。
