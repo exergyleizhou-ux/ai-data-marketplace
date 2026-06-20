@@ -171,11 +171,17 @@ export default function C2DShowcasePage() {
       </section>
 
       {/* Deeper surfaces */}
-      <section className="grid gap-3 sm:grid-cols-2">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Link href="/c2d/dossier" className="group">
           <Card className="lift h-full group-hover:border-forest-700">
             <div className="font-medium text-ink">{t("可验证研究档案 →", "A verifiable research dossier →")}</div>
             <p className="mt-1 text-xs leading-relaxed text-ink/70">{t("对同一个数据集做的全部分析,五张证书串成一条完整证据链。", "Every analysis on one dataset — five certificates forming a complete evidence chain.")}</p>
+          </Card>
+        </Link>
+        <Link href="/c2d/reproduce" className="group">
+          <Card className="lift h-full group-hover:border-forest-700">
+            <div className="font-medium text-ink">{t("可复现性:自己重跑一遍 →", "Reproducibility: re-run it yourself →")}</div>
+            <p className="mt-1 text-xs leading-relaxed text-ink/70">{t("证书是可重跑、防篡改的记录——方法+数据+结果,三种独立复现方式。", "The cert is a re-runnable, tamper-evident record — method+data+result, three independent ways to reproduce.")}</p>
           </Card>
         </Link>
         <Link href="/c2d/honesty" className="group">
