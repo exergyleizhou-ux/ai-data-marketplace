@@ -50,6 +50,18 @@ export type ComputeSignal = {
   jobs_run: number;
 };
 
+export type ApiKey = {
+  id: string;
+  prefix: string;
+  name: string;
+  tier: string;
+  usage_count: number;
+  usage_month: string;
+  created_at?: string;
+  last_used_at?: string;
+  revoked_at?: string;
+};
+
 export type Dataset = {
   id: string;
   seller_id: string;
@@ -683,6 +695,15 @@ export const api = {
   // Oasis Verify — start a Stripe subscription checkout, returns the URL to redirect to
   verifyCheckout: (priceId: string) =>
     request<{ checkout_url: string }>("/billing/checkout", { method: "POST", body: { price_id: priceId } }),
+
+  // Oasis Verify — self-serve API-key management
+  listApiKeys: () => request<{ items: ApiKey[] }>("/api-keys"),
+  createApiKey: (name: string, tier = "free") =>
+    request<{ key: string; id: string; prefix: string; tier: string; name: string }>("/api-keys", {
+      method: "POST",
+      body: { name, tier },
+    }),
+  revokeApiKey: (id: string) => request<{ revoked: boolean }>(`/api-keys/${id}`, { method: "DELETE" }),
 
   // compliance — data export + account deletion
   requestDataExport: () => request<DataExportJob>("/users/me/data-export", { body: {} }),

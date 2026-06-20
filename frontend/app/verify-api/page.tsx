@@ -31,7 +31,7 @@ export default function VerifyApiLanding() {
   // redirect; otherwise send the visitor to get a (free) key first.
   async function upgradePro() {
     if (!PRO_PRICE_ID) {
-      window.location.href = "/account";
+      window.location.href = "/verify-api/keys";
       return;
     }
     setBusy(true);
@@ -39,7 +39,7 @@ export default function VerifyApiLanding() {
       const { checkout_url } = await api.verifyCheckout(PRO_PRICE_ID);
       window.location.href = checkout_url;
     } catch {
-      window.location.href = "/account"; // not logged in / billing off → get a key
+      window.location.href = "/verify-api/keys"; // not logged in / billing off → get a key
     } finally {
       setBusy(false);
     }
@@ -129,7 +129,7 @@ export default function VerifyApiLanding() {
       </Reveal>
 
       <div className="flex flex-wrap items-center gap-4">
-        <Link href="/account" className="inline-flex items-center justify-center rounded-full bg-ink px-6 py-2.5 text-sm font-medium text-paper transition hover:bg-ink/85">
+        <Link href="/verify-api/keys" className="inline-flex items-center justify-center rounded-full bg-ink px-6 py-2.5 text-sm font-medium text-paper transition hover:bg-ink/85">
           {t("拿一个免费 API key →", "Get a free API key →")}
         </Link>
         <Link href="/c2d" className="text-sm font-medium text-forest-700 hover:underline">{t("背后的技术 →", "The technology behind it →")}</Link>
