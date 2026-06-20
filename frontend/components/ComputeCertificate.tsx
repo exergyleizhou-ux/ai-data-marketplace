@@ -40,6 +40,41 @@ function CertField({ label, value, mono, wrap }: { label: string; value: string;
   );
 }
 
+// EmbedButton copies an HTML snippet that embeds the live verify badge linking
+// back to the public verification page — the shareable "verified by Oasis" loop.
+// The badge is served by the backend (GET /verify/:cert_id/badge.svg) and renders
+// green when the cert is registered.
+function EmbedButton({ certId }: { certId: string }) {
+  const { t } = useT();
+  const [copied, setCopied] = useState(false);
+  if (!certId) return null;
+  async function copy() {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const api = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
+    const id = encodeURIComponent(certId);
+    const snippet =
+      `<a href="${origin}/verify?cert=${id}" target="_blank" rel="noreferrer">` +
+      `<img src="${api}/verify/${id}/badge.svg" alt="Oasis C2D verified — ${certId}" height="20"></a>`;
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* clipboard unavailable — ignore */
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={t("复制可嵌入的验证徽章代码", "copy embeddable verify-badge code")}
+      className="inline-flex items-center gap-1 rounded text-xs font-medium text-forest-700 transition hover:text-gold-700 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ink"
+    >
+      {copied ? t("已复制嵌入代码 ✓", "embed code copied ✓") : t("嵌入徽章 ⧉", "Embed badge ⧉")}
+    </button>
+  );
+}
+
 // ComputeCertificateCard renders the full provenance & integrity certificate for a
 // released compute-to-data result as a shareable credential: the VO-<id>, the
 // binding of the output fingerprint to the audited (pinned-digest) algorithm and
@@ -121,9 +156,12 @@ export function ComputeCertificateCard({ cert }: { cert: CertData }) {
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-          <a href={`/verify?cert=${encodeURIComponent(certId)}`} className="text-xs font-medium text-forest-700 hover:underline">
-            {t("公开验证 →", "Verify publicly →")}
-          </a>
+          <div className="flex items-center gap-3">
+            <a href={`/verify?cert=${encodeURIComponent(certId)}`} className="text-xs font-medium text-forest-700 hover:underline">
+              {t("公开验证 →", "Verify publicly →")}
+            </a>
+            <EmbedButton certId={certId} />
+          </div>
           <span className="text-[10px] text-muted">
             {t("可对下载结果重算 SHA-256 与本凭证比对", "Re-hash the downloaded result and compare")}
           </span>

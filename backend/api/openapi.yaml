@@ -1130,6 +1130,21 @@ paths:
         "200": { $ref: "#/components/schemas/Envelope" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /verify/{cert_id}/badge.svg:
+    get:
+      tags: [verify]
+      summary: Embeddable SVG status badge for a certificate
+      description: Always 200 with an SVG (green "verified" if the cert is registered, grey "unverified" otherwise) so an embedded image degrades gracefully.
+      security: []
+      parameters:
+        - { name: cert_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: An SVG status badge
+          content:
+            image/svg+xml:
+              schema: { type: string }
+
   # =========================================================================
   # COMPUTE
   # =========================================================================
