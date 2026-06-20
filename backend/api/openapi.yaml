@@ -1160,6 +1160,35 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /screen:
+    post:
+      tags: [api-keys]
+      summary: "Oasis Verify — run the integrity screen on an uploaded dataset (API-key auth)"
+      description: >-
+        Self-serve, metered verification. Authenticate with an API key
+        (X-API-Key or Bearer sk_…). POST a dataset as multipart `file` or a raw
+        CSV body; returns an integrity report + a re-hash-verifiable certificate.
+      security:
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+          text/csv:
+            schema: { type: string }
+      responses:
+        "200":
+          description: Integrity report + certificate
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Envelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
   # =========================================================================
   # VERIFY
   # =========================================================================
@@ -1974,6 +2003,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: "Oasis Verify API key (sk_live_…). Also accepted as Authorization: Bearer sk_live_…"
 
   schemas:
     Envelope:

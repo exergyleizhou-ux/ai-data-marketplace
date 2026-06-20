@@ -571,6 +571,8 @@ func (s *Server) routes() {
 		computeSvc.SetCertRegistrar(verifyRepo) // released compute results → public /verify lookup
 		// dev grant gated like payment's dev mark-paid (never in production).
 		compute.Register(api, computeSvc, authMW, auth.RequireRole("ops", "admin"), lim, s.cfg.Env != "production")
+		// Oasis Verify — self-serve, API-key-metered screen endpoint (POST /screen).
+		compute.RegisterVerifyAPI(api, computeSvc, apikey.APIKeyAuth(apikeySvc))
 		// Refund→revoke (H2): when a dispute refund lands, revoke the buyer's
 		// compute credits tied to that order.
 		orderSvc.SetComputeRevoker(orderComputeAdapter{c: computeSvc})
