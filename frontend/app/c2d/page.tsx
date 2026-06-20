@@ -91,6 +91,21 @@ const EXAMPLE_CERT: Record<string, unknown> = {
   statement_en: "Platform-issued provenance & integrity record for a compute-to-data result: it binds the output fingerprint (SHA-256) to the audited algorithm (pinned image digest) that produced it and the source dataset. Buyers can re-hash the downloaded result and compare.",
 };
 
+// Real, openly-licensed public data run through the SAME sandbox — both certs are
+// live + re-hash-verifiable (UCI Wine Quality red, 1,599 rows).
+const REAL_DATA = [
+  {
+    cert: "VO-0C300E9FAED2",
+    zh: { name: "完整性筛查", result: "8 个探测器 / 5 个触发 / 46 项发现 / verdict: anomalies_flagged。对真实数据集的统计完整性体检。" },
+    en: { name: "Integrity screen", result: "8 detectors / 5 flagged / 46 findings / verdict: anomalies_flagged. A statistical-integrity check of a real dataset." },
+  },
+  {
+    cert: "VO-2B9CCA235122",
+    zh: { name: "因果效应估计 (ATE)", result: "alcohol → quality(调 pH/硫酸盐/密度):OLS 0.365(95% CI 0.33–0.40),交叉拟合 DML 0.321。" },
+    en: { name: "Causal effect (ATE)", result: "alcohol → quality (adj. pH/sulphates/density): OLS 0.365 (95% CI 0.33–0.40), cross-fitted DML 0.321." },
+  },
+];
+
 export default function C2DShowcasePage() {
   const { t, lang } = useT();
   const L = <T,>(o: { zh: T; en: T }) => (lang === "en" ? o.en : o.zh);
@@ -152,6 +167,42 @@ export default function C2DShowcasePage() {
             </div>
           );
         })}
+      </section>
+
+      {/* Verified on REAL public data */}
+      <section className="space-y-4">
+        <h2 className="font-display text-xl tracking-tight text-ink">{t("在真实公开数据上验证", "Verified on real public data")}</h2>
+        <p className="max-w-2xl text-sm leading-relaxed text-ink/70">
+          {t(
+            "不止合成 demo 数据——下面两张证书,是把开放许可的真实数据集 UCI Wine Quality(1599 行)喂进同一个 --network=none 沙箱跑出来的,每一张都可重算核验。",
+            "Not just synthetic demo data — these two certificates were produced by running the openly-licensed real UCI Wine Quality dataset (1,599 rows) through the same --network=none sandbox; each is re-hash-verifiable.",
+          )}
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {REAL_DATA.map((r, i) => (
+            <Reveal key={r.cert} delay={(i % 2) * 80}>
+              <Card className="lift flex h-full flex-col gap-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-display text-lg leading-snug text-ink">{L(r)?.name}</span>
+                  <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted">UCI Wine Quality</span>
+                </div>
+                <p className="text-xs leading-relaxed text-ink/70">{L(r)?.result}</p>
+                <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+                  <Link href={`/verify?cert=${r.cert}`} className="rounded font-mono text-xs text-forest-700 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ink">
+                    {r.cert}
+                  </Link>
+                  <VerifyChip certId={r.cert} />
+                </div>
+              </Card>
+            </Reveal>
+          ))}
+        </div>
+        <p className="text-xs leading-relaxed text-ink/55">
+          {t(
+            "诚实:完整性筛查标的是「异常」而非「造假」;因果证书证的是「溯源」而非「因果假设成立」。",
+            "Honest: the integrity screen flags anomalies, not fraud; the causal cert proves provenance, not that the causal assumptions hold.",
+          )}
+        </p>
       </section>
 
       {/* Example credential */}
