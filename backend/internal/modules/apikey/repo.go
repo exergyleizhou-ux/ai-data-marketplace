@@ -26,6 +26,10 @@ type Repository interface {
 	AuthenticateAndMeter(ctx context.Context, keyHash, month string) (APIKey, error)
 	ListByAccount(ctx context.Context, accountID string) ([]APIKey, error)
 	Revoke(ctx context.Context, accountID, id string) error
+	// SetAccountTier sets the plan tier on ALL of an account's active keys — the
+	// target a billing webhook (Stripe subscription change) calls. Returns the
+	// number of keys updated.
+	SetAccountTier(ctx context.Context, accountID, tier string) (int, error)
 }
 
 type pgRepo struct{ pool *pgxpool.Pool }
@@ -120,4 +124,13 @@ func (r *pgRepo) Revoke(ctx context.Context, accountID, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *pgRepo) SetAccountTier(ctx context.Context, accountID, tier string) (int, error) {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE api_keys SET tier=$2 WHERE account_id=$1 AND revoked_at IS NULL`, accountID, tier)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
 }

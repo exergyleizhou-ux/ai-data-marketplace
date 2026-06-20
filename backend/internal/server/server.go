@@ -20,6 +20,7 @@ import (
 
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/anomaly"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/apikey"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auditlog"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/compliance"
@@ -383,6 +384,11 @@ func (s *Server) routes() {
 		notifySvc := notification.NewServiceWithChannels(notifyRepo, prefsRepo, emailSender, emailLogRepo,
 			notificationUserLookup{pool: s.db})
 		notification.Register(api, notifySvc, authMW)
+
+		// Oasis Verify — self-serve API keys (the metered, billable surface).
+		apikeySvc := apikey.NewService(apikey.NewRepository(s.db))
+		apikey.Register(api, apikeySvc, authMW)
+
 		orderSvc.SetNotifier(notifySvc)     // order events → buyer/seller notifications
 		dsSvc.SetQualityNotifier(notifySvc) // quality done → seller notification
 		authSvc.SetNotifier(notifySvc)      // password reset email
@@ -565,6 +571,8 @@ func (s *Server) routes() {
 		computeSvc.SetCertRegistrar(verifyRepo) // released compute results → public /verify lookup
 		// dev grant gated like payment's dev mark-paid (never in production).
 		compute.Register(api, computeSvc, authMW, auth.RequireRole("ops", "admin"), lim, s.cfg.Env != "production")
+		// Oasis Verify — self-serve, API-key-metered screen endpoint (POST /screen).
+		compute.RegisterVerifyAPI(api, computeSvc, apikey.APIKeyAuth(apikeySvc))
 		// Refund→revoke (H2): when a dispute refund lands, revoke the buyer's
 		// compute credits tied to that order.
 		orderSvc.SetComputeRevoker(orderComputeAdapter{c: computeSvc})

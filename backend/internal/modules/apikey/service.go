@@ -41,5 +41,14 @@ func (s *Service) Revoke(ctx context.Context, accountID, id string) error {
 	return s.repo.Revoke(ctx, accountID, id)
 }
 
+// SetTier changes the plan for an account (e.g. on a Stripe subscription change),
+// applying it to all the account's active keys. Unknown tiers fall back to free.
+func (s *Service) SetTier(ctx context.Context, accountID, tier string) (int, error) {
+	if _, ok := Tiers[tier]; !ok {
+		tier = "free"
+	}
+	return s.repo.SetAccountTier(ctx, accountID, tier)
+}
+
 // CurrentMonth is the UTC 'YYYY-MM' bucket the usage counter resets on.
 func CurrentMonth() string { return time.Now().UTC().Format("2006-01") }
