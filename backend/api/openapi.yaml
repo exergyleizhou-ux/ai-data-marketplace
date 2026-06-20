@@ -1117,6 +1117,50 @@ paths:
                 $ref: "#/components/schemas/Envelope"
 
   # =========================================================================
+  # API KEYS (Oasis Verify — self-serve, metered)
+  # =========================================================================
+  /api-keys:
+    post:
+      tags: [api-keys]
+      summary: Issue a new API key (plaintext returned ONCE)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                tier: { type: string, enum: [free, pro, scale] }
+      responses:
+        "200":
+          description: The new key — store the plaintext now, it is shown only once
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Envelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    get:
+      tags: [api-keys]
+      summary: List your API keys (metadata only, never the plaintext)
+      responses:
+        "200":
+          description: The account's keys
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Envelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api-keys/{id}:
+    delete:
+      tags: [api-keys]
+      summary: Revoke an API key
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/OK" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # =========================================================================
   # VERIFY
   # =========================================================================
   /verify/{cert_id}:

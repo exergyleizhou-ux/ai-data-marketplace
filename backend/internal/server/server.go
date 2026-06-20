@@ -20,6 +20,7 @@ import (
 
 	"github.com/lei/ai-data-marketplace/backend/internal/config"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/anomaly"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/apikey"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auditlog"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/compliance"
@@ -383,6 +384,11 @@ func (s *Server) routes() {
 		notifySvc := notification.NewServiceWithChannels(notifyRepo, prefsRepo, emailSender, emailLogRepo,
 			notificationUserLookup{pool: s.db})
 		notification.Register(api, notifySvc, authMW)
+
+		// Oasis Verify — self-serve API keys (the metered, billable surface).
+		apikeySvc := apikey.NewService(apikey.NewRepository(s.db))
+		apikey.Register(api, apikeySvc, authMW)
+
 		orderSvc.SetNotifier(notifySvc)     // order events → buyer/seller notifications
 		dsSvc.SetQualityNotifier(notifySvc) // quality done → seller notification
 		authSvc.SetNotifier(notifySvc)      // password reset email
