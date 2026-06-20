@@ -1160,6 +1160,39 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /billing/checkout:
+    post:
+      tags: [api-keys]
+      summary: "Oasis Verify — start a Stripe subscription checkout (JWT auth)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [price_id]
+              properties:
+                price_id: { type: string }
+      responses:
+        "200":
+          description: "{ checkout_url }"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Envelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /billing/stripe/webhook:
+    post:
+      tags: [api-keys]
+      summary: "Stripe subscription webhook (signature-verified; price → plan tier)"
+      security: []
+      responses:
+        "200":
+          description: Acknowledged
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Envelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /screen:
     post:
       tags: [api-keys]
