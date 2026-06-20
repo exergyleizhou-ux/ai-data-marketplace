@@ -5,7 +5,8 @@ import Link from "next/link";
 import { api, type Notification } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
-import { Alert, Badge, Button, Card, Empty, Spinner } from "@/components/ui";
+import { Alert, Badge, Button, Card, Empty } from "@/components/ui";
+import { Reveal } from "@/components/Reveal";
 
 export default function NotificationsPage() {
   return (
@@ -63,7 +64,14 @@ function Inner() {
     finally { setBusy(""); }
   }
 
-  if (items === null) return <Spinner />;
+  if (items === null)
+    return (
+      <div className="space-y-2 pt-2" aria-hidden>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="skeleton h-20 w-full rounded-2xl" />
+        ))}
+      </div>
+    );
 
   const unreadN = items.filter((n) => !n.is_read).length;
 
@@ -85,7 +93,7 @@ function Inner() {
         <Empty>{t("暂无通知", "No notifications yet")}</Empty>
       ) : (
         <div className="space-y-2">
-          {items.map((n) => {
+          {items.map((n, i) => {
             const label = KIND[n.kind] ?? [n.kind, n.kind];
             const href = n.resource_type === "order" && n.resource_id
               ? `/orders/${n.resource_id}`
@@ -93,37 +101,37 @@ function Inner() {
                 ? `/datasets/${n.resource_id}`
                 : null;
             return (
-              <Card key={n.id} className={!n.is_read ? "border-l-2 border-l-blue-500" : ""}>
-                <div className="flex items-start justify-between">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Badge>{t(label[0], label[1])}</Badge>
-                      {!n.is_read && <span className="h-2 w-2 rounded-full bg-blue-500" />}
+              <Reveal key={n.id} delay={Math.min(i, 8) * 40}>
+                <Card className={`lift ${!n.is_read ? "border-l-2 border-l-forest-600" : ""}`}>
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Badge>{t(label[0], label[1])}</Badge>
+                        {!n.is_read && <span className="h-2 w-2 rounded-full bg-forest" />}
+                      </div>
+                      <p className="mt-1 text-sm font-medium text-ink">{n.title}</p>
+                      {n.body && <p className="mt-0.5 text-sm text-ink/60">{n.body}</p>}
+                      <div className="mt-1 font-mono text-xs text-muted">{n.created_at?.slice(0, 19)}</div>
                     </div>
-                    <p className="mt-1 text-sm font-medium">{n.title}</p>
-                    {n.body && <p className="mt-0.5 text-sm text-neutral-500">{n.body}</p>}
-                    <div className="mt-1 text-xs text-neutral-400">
-                      {n.created_at?.slice(0, 19)}
+                    <div className="ml-3 flex shrink-0 gap-2">
+                      {href && (
+                        <Link href={href} className="rounded text-xs text-forest-700 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ink">
+                          {t("查看", "View")}
+                        </Link>
+                      )}
+                      {!n.is_read && (
+                        <button
+                          disabled={busy === n.id}
+                          onClick={() => markRead(n.id)}
+                          className="rounded text-xs text-muted transition hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ink"
+                        >
+                          {t("标为已读", "Read")}
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <div className="flex gap-2 shrink-0 ml-3">
-                    {href && (
-                      <Link href={href} className="text-xs text-blue-600 hover:underline">
-                        {t("查看", "View")}
-                      </Link>
-                    )}
-                    {!n.is_read && (
-                      <button
-                        disabled={busy === n.id}
-                        onClick={() => markRead(n.id)}
-                        className="text-xs text-neutral-400 hover:text-neutral-700"
-                      >
-                        {t("标为已读", "Read")}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </Card>
+                </Card>
+              </Reveal>
             );
           })}
         </div>

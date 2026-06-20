@@ -123,7 +123,7 @@ export function AuthShell({
     <div className="mx-auto max-w-sm py-8 sm:py-12">
       {kicker && <p className="text-center font-mono text-kicker uppercase text-muted">{kicker}</p>}
       <h1 className="mt-3 text-center font-display text-3xl leading-tight tracking-tight">{title}</h1>
-      <div className="mt-6 rounded-2xl border border-rule bg-white p-6">{children}</div>
+      <div className="mt-6 rounded-2xl border border-rule bg-white p-6 shadow-[0_1px_2px_rgba(24,24,27,0.03),0_12px_32px_-18px_rgba(24,24,27,0.16)]">{children}</div>
       {footer && <div className="mt-4 text-center text-sm text-ink/60">{footer}</div>}
     </div>
   );
