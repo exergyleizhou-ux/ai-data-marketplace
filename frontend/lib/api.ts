@@ -41,6 +41,15 @@ export type SourceDeclaration = {
   license_scope: string;
   commitment: boolean;
 };
+export type ComputeSignal = {
+  dataset_id: string;
+  enabled: boolean;
+  trust_level: string;
+  allow_federated: boolean;
+  allow_psi: boolean;
+  jobs_run: number;
+};
+
 export type Dataset = {
   id: string;
   seller_id: string;
@@ -487,6 +496,12 @@ export const api = {
   // datasets
   listDatasets: (q: Record<string, string | number | undefined>) =>
     request<{ items: Dataset[] }>("/datasets", { auth: false, query: q }),
+  // compute-to-data discovery signals for a batch of datasets (public catalog badge)
+  computeOfferSignals: (datasetIds: string[]) =>
+    request<{ signals: Record<string, ComputeSignal> }>("/compute/offers/signals", {
+      auth: false,
+      query: { dataset_ids: datasetIds.join(",") },
+    }),
   getDataset: (id: string) => request<Dataset>(`/datasets/${id}`, { auth: false }),
   preview: (id: string) => request<Preview>(`/datasets/${id}/preview`),
   datasetReviews: (id: string) => request<{ items: Review[] }>(`/datasets/${id}/reviews`, { auth: false }),

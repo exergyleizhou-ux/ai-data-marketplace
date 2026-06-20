@@ -29,6 +29,10 @@ type Repository interface {
 	// offers
 	UpsertOffer(ctx context.Context, o Offer) (Offer, error)
 	GetOffer(ctx context.Context, datasetID string) (Offer, error)
+	// OfferSignals returns, for each of the given datasets that has an ENABLED
+	// compute offer, its public discovery signal (trust level + federated/psi +
+	// released-job count). Datasets without an enabled offer are omitted.
+	OfferSignals(ctx context.Context, datasetIDs []string) (map[string]OfferSignal, error)
 
 	// entitlements
 	CreateEntitlement(ctx context.Context, e Entitlement) (Entitlement, error)

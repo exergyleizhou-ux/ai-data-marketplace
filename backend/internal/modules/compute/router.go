@@ -19,6 +19,9 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 
 	// Public read: a dataset's offer (buyers see price / trust level).
 	rg.GET("/datasets/:id/compute-offer", h.getOffer)
+	// Public batch: compute-to-data discovery signals for the catalog (which
+	// datasets support verifiable sandbox compute, trust level, usage count).
+	rg.GET("/compute/offers/signals", h.offerSignals)
 
 	// Seller: configure the offer (ownership enforced in the service).
 	seller := rg.Group("")
