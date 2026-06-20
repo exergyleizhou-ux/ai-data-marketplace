@@ -54,8 +54,10 @@ type Runner interface {
 // only on the algorithm/output kind, so the full submit→run→release loop can be
 // exercised without a container runtime.
 //
-// Test hook: a job param "_mock_output_bytes" (number) makes it emit that many
-// bytes, used to exercise the output-size gate.
+// Test hooks: a job param "_mock_output_bytes" (number) makes it emit that many
+// bytes (exercises the output-size gate); "_mock_output_raw" (string) makes it
+// emit those exact bytes verbatim (exercises the structural output gate with a
+// non-JSON / unstructured payload, e.g. a malicious algorithm dumping raw data).
 type MockRunner struct{}
 
 // NewMockRunner returns a MockRunner.
@@ -69,13 +71,19 @@ func (MockRunner) NeedsStagedData() bool { return false }
 
 // Run synthesizes a deterministic output for the algorithm's output kind.
 func (MockRunner) Run(_ context.Context, req RunRequest) (RunResult, error) {
-	// Optional oversize hook for the gate test.
+	// Optional oversize hook for the size gate test.
 	if n, ok := numParam(req.Job.Params, "_mock_output_bytes"); ok && n > 0 {
 		blob := make([]byte, n)
 		for i := range blob {
 			blob[i] = 'A'
 		}
 		return RunResult{OutputKind: req.Algorithm.OutputKind, Output: blob}, nil
+	}
+	// Optional raw (non-JSON, unstructured) hook for the structural gate test:
+	// emit the given bytes verbatim, simulating a malicious algorithm that returns
+	// a raw blob instead of a structured aggregate.
+	if raw, ok := req.Job.Params["_mock_output_raw"].(string); ok && raw != "" {
+		return RunResult{OutputKind: req.Algorithm.OutputKind, Output: []byte(raw)}, nil
 	}
 
 	// Federated sub-job (P4-a): emit deterministic-but-dataset-varying local
