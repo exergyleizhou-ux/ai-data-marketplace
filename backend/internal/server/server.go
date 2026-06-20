@@ -23,6 +23,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/apikey"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auditlog"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/auth"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/billing"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/compliance"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/compute"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/dataset"
@@ -388,6 +389,10 @@ func (s *Server) routes() {
 		// Oasis Verify — self-serve API keys (the metered, billable surface).
 		apikeySvc := apikey.NewService(apikey.NewRepository(s.db))
 		apikey.Register(api, apikeySvc, authMW)
+		// Stripe billing → plan tiers (config-gated; disabled without Stripe keys,
+		// the free tier still works). Subscription webhook → apikey.SetTier.
+		billingSvc := billing.NewService(s.cfg.StripeSecretKey, s.cfg.StripeWebhookSecret, s.cfg.VerifyPriceMap, s.cfg.AppBaseURL, apikeySvc)
+		billing.Register(api, billingSvc, authMW)
 
 		orderSvc.SetNotifier(notifySvc)     // order events → buyer/seller notifications
 		dsSvc.SetQualityNotifier(notifySvc) // quality done → seller notification

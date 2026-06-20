@@ -41,6 +41,7 @@ type Config struct {
 	StripeSecretKey     string // sk_test_… (test mode is free, no real money)
 	StripeWebhookSecret string // whsec_… from `stripe listen` / dashboard endpoint
 	StripeCurrency      string // settlement currency for Stripe (test default usd)
+	VerifyPriceMap      string // Oasis Verify: "priceID:tier,priceID:tier" (Stripe price → plan tier)
 
 	CORSAllowOrigin string // browser origin allowed to call the API ("*" in dev)
 	AppBaseURL      string // frontend base URL for email links (e.g. https://app.example.com)
@@ -99,6 +100,7 @@ func Load() (*Config, error) {
 		StripeSecretKey:     getenv("STRIPE_SECRET_KEY", ""),
 		StripeWebhookSecret: getenv("STRIPE_WEBHOOK_SECRET", ""),
 		StripeCurrency:      getenv("STRIPE_CURRENCY", "usd"),
+		VerifyPriceMap:      getenv("VERIFY_PRICE_MAP", ""),
 
 		CORSAllowOrigin: getenv("CORS_ALLOW_ORIGIN", "*"),
 		AppBaseURL:      getenv("APP_BASE_URL", "http://localhost:3000"),
