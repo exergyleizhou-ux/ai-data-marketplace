@@ -1,6 +1,10 @@
 package compute
 
-import "context"
+import (
+	"context"
+
+	"github.com/google/uuid"
+)
 
 // OfferSignal is the public compute-to-data discovery signal for one dataset: it
 // tells a browsing buyer that the dataset supports verifiable sandbox compute, at
@@ -20,9 +24,18 @@ type OfferSignal struct {
 // (avoids N+1 on the catalog). Only datasets with an enabled offer are returned.
 func (r *pgRepo) OfferSignals(ctx context.Context, datasetIDs []string) (map[string]OfferSignal, error) {
 	out := make(map[string]OfferSignal)
-	if len(datasetIDs) == 0 {
+	// Filter to well-formed UUIDs: dataset_id is a uuid column, so a malformed id
+	// would abort the whole query (the endpoint is public — never 500 on junk).
+	valid := make([]string, 0, len(datasetIDs))
+	for _, id := range datasetIDs {
+		if _, err := uuid.Parse(id); err == nil {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
 		return out, nil
 	}
+	datasetIDs = valid
 	rows, err := r.pool.Query(ctx, `
 		SELECT o.dataset_id, o.enabled, o.trust_level, o.allow_federated, o.allow_psi,
 		       COALESCE(j.cnt, 0)
