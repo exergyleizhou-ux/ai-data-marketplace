@@ -21,6 +21,11 @@ func Register(rg *gin.RouterGroup, repo Repository, limiter ratelimit.Limiter) {
 	rg.GET("/verify/:cert_id",
 		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "verify_lookup", Limit: 30, Window: time.Minute}),
 		h.lookup)
+	// Embeddable SVG status badge (the viral loop): a green "verified" badge for a
+	// registered cert, grey otherwise. Always 200 so an embedded <img> degrades.
+	rg.GET("/verify/:cert_id/badge.svg",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "verify_badge", Limit: 60, Window: time.Minute}),
+		h.badge)
 }
 
 func (h *handler) lookup(c *gin.Context) {
