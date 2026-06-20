@@ -223,6 +223,19 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 		return
 	}
 
+	// L2 attestation enforcement (design P3): an L2 offer promises a remote-
+	// attestation report proving the approved code ran in a genuine TEE. The
+	// runner-TYPE gate above ensures a tee: runner; this ensures it actually
+	// PRODUCED an attestation. A tee: runner that returns none (attester
+	// misconfigured/failed) must fail closed — never release L2 output as if it
+	// were attested. Without this, the only attestation handling is a best-effort
+	// store-if-present below, which would silently release unattested L2 output.
+	if offer.TrustLevel == TrustL2 && len(res.Attestation) == 0 {
+		slog.Error("compute: L2 job produced no attestation", "job_id", jobID, "runner", s.runner.Kind())
+		s.failJob(ctx, jobID, "trust_l2_attestation_missing")
+		return
+	}
+
 	// Output gate (design §7/§8, A2): structural + information-content validation,
 	// not just a size cap. The sandbox severs the network, so the output object is
 	// the ONLY exfil channel — a malicious algorithm author could steganographically
