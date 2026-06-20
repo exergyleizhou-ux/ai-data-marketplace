@@ -1148,6 +1148,41 @@ paths:
   # =========================================================================
   # COMPUTE
   # =========================================================================
+  /compute/offers/signals:
+    get:
+      tags: [compute]
+      summary: Compute-to-data discovery signals for a batch of datasets
+      description: >-
+        Public catalog signal — for each requested dataset that has an enabled
+        compute offer, returns its trust level, federated/PSI flags, and the
+        count of released compute jobs (a usage cue). Datasets without an enabled
+        offer are omitted.
+      security: []
+      parameters:
+        - name: dataset_ids
+          in: query
+          required: false
+          description: Comma-separated dataset ids (max 200).
+          schema: { type: string }
+      responses:
+        "200":
+          description: A map of dataset id → compute discovery signal
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  signals:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        dataset_id: { type: string }
+                        enabled: { type: boolean }
+                        trust_level: { type: string }
+                        allow_federated: { type: boolean }
+                        allow_psi: { type: boolean }
+                        jobs_run: { type: integer }
   /compute/algorithms:
     get:
       tags: [compute]

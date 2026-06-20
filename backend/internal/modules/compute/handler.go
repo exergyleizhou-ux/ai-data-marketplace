@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -61,6 +62,32 @@ func (h *handler) getOffer(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, o)
+}
+
+// offerSignals returns the public compute-to-data discovery signal for a batch of
+// datasets (?dataset_ids=a,b,c) — used by the catalog to badge which datasets
+// support verifiable sandbox compute, at what trust level, and how used they are.
+func (h *handler) offerSignals(c *gin.Context) {
+	raw := strings.TrimSpace(c.Query("dataset_ids"))
+	if raw == "" {
+		httpx.OK(c, gin.H{"signals": map[string]OfferSignal{}})
+		return
+	}
+	ids := make([]string, 0, 16)
+	for _, p := range strings.Split(raw, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			ids = append(ids, p)
+		}
+		if len(ids) >= 200 { // bound the batch to keep the query cheap
+			break
+		}
+	}
+	sigs, err := h.svc.OfferSignals(c.Request.Context(), ids)
+	if err != nil {
+		fail(c, err)
+		return
+	}
+	httpx.OK(c, gin.H{"signals": sigs})
 }
 
 // --- buyer: algorithms / purchase / jobs ---

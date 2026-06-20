@@ -214,6 +214,18 @@ func (f *fakeRepo) GetOffer(_ context.Context, datasetID string) (Offer, error) 
 	return o, nil
 }
 
+func (f *fakeRepo) OfferSignals(_ context.Context, datasetIDs []string) (map[string]OfferSignal, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make(map[string]OfferSignal)
+	for _, id := range datasetIDs {
+		if o, ok := f.offrs[id]; ok && o.Enabled {
+			out[id] = OfferSignal{DatasetID: id, Enabled: true, TrustLevel: o.TrustLevel, AllowFederated: o.AllowFederated, AllowPSI: o.AllowPSI}
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) CreateEntitlement(_ context.Context, e Entitlement) (Entitlement, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
