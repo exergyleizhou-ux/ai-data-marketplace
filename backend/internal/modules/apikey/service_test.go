@@ -92,3 +92,36 @@ func TestAPIKeyLifecycle(t *testing.T) {
 		t.Fatalf("list: err=%v keys=%+v", err, keys)
 	}
 }
+
+// TestSetTier: a subscription change upgrades all of an account's active keys,
+// lifting their quota (the billing target a Stripe webhook calls).
+func TestSetTier(t *testing.T) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		t.Skip("DATABASE_URL not set; skipping real-DB integration test")
+	}
+	if err := db.RunMigrations(dsn); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	defer pool.Close()
+	ctx := context.Background()
+	svc := NewService(NewRepository(pool))
+	acct := seedUser(t, pool)
+
+	_, plain, _ := svc.Issue(ctx, acct, "k", "free")
+	n, err := svc.SetTier(ctx, acct, "pro")
+	if err != nil || n != 1 {
+		t.Fatalf("set tier: n=%d err=%v", n, err)
+	}
+	// Pro quota (500) now applies — a 6th scan (over the old free 5) succeeds.
+	const month = "2026-08"
+	for i := 0; i < 6; i++ {
+		if _, err := svc.repo.AuthenticateAndMeter(ctx, HashKey(plain), month); err != nil {
+			t.Fatalf("scan #%d after upgrade: %v", i+1, err)
+		}
+	}
+}

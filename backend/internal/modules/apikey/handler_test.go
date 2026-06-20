@@ -56,6 +56,19 @@ func (f *fakeRepo) ListByAccount(_ context.Context, acct string) ([]APIKey, erro
 	}
 	return out, nil
 }
+func (f *fakeRepo) SetAccountTier(_ context.Context, acct, tier string) (int, error) {
+	n := 0
+	for h, k := range f.byHash {
+		if k.AccountID == acct && !k.Revoked() {
+			k.Tier = tier
+			f.byHash[h] = k
+			f.byID[k.ID] = k
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (f *fakeRepo) Revoke(_ context.Context, acct, id string) error {
 	k, ok := f.byID[id]
 	if !ok || k.AccountID != acct {
