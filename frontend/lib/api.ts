@@ -680,6 +680,10 @@ export const api = {
   adminResolveAnomaly: (id: string, note?: string) =>
     request<Anomaly>(`/admin/anomalies/${id}/resolve`, { body: { note } }),
 
+  // Oasis Verify — start a Stripe subscription checkout, returns the URL to redirect to
+  verifyCheckout: (priceId: string) =>
+    request<{ checkout_url: string }>("/billing/checkout", { method: "POST", body: { price_id: priceId } }),
+
   // compliance — data export + account deletion
   requestDataExport: () => request<DataExportJob>("/users/me/data-export", { body: {} }),
   getMyDataExport: () => request<DataExportJob>("/users/me/data-export"),

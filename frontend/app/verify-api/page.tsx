@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
+import { api } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { PageHeader, Card } from "@/components/ui";
 import { Reveal } from "@/components/Reveal";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
+const PRO_PRICE_ID = process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID ?? "";
 
 const STEPS = [
   { n: "01", zh: { t: "拿一个 API key", d: "登录后在控制台自助签发(免费档即开即用)。" }, en: { t: "Get an API key", d: "Self-issue one in the console after sign-in (free tier, instant)." } },
@@ -22,6 +25,26 @@ const TIERS = [
 export default function VerifyApiLanding() {
   const { t, lang } = useT();
   const L = <T,>(o: { zh: T; en: T }) => (lang === "en" ? o.en : o.zh);
+  const [busy, setBusy] = useState(false);
+
+  // Upgrade to Pro: when a Stripe price is configured, start a checkout and
+  // redirect; otherwise send the visitor to get a (free) key first.
+  async function upgradePro() {
+    if (!PRO_PRICE_ID) {
+      window.location.href = "/account";
+      return;
+    }
+    setBusy(true);
+    try {
+      const { checkout_url } = await api.verifyCheckout(PRO_PRICE_ID);
+      window.location.href = checkout_url;
+    } catch {
+      window.location.href = "/account"; // not logged in / billing off → get a key
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const curl = `curl -X POST ${API_BASE}/screen \\
   -H "X-API-Key: sk_live_…" \\
   -F "file=@your-dataset.csv"`;
@@ -77,6 +100,16 @@ export default function VerifyApiLanding() {
                 <div className="mt-1 font-mono text-2xl font-semibold text-ink">{tier.price}<span className="text-sm font-normal text-muted">{tier.price.startsWith("$") && tier.price !== "$0" ? "/mo" : ""}</span></div>
                 <p className="mt-2 text-xs text-ink/70">{L(tier).q}</p>
                 <p className="mt-1 text-xs text-muted">{L(tier).who}</p>
+                {tier.cta && (
+                  <button
+                    type="button"
+                    onClick={upgradePro}
+                    disabled={busy}
+                    className="mt-3 inline-flex items-center justify-center rounded-full bg-forest-700 px-4 py-1.5 text-xs font-medium text-paper transition hover:bg-forest-700/85 disabled:opacity-60"
+                  >
+                    {busy ? t("跳转中…", "Redirecting…") : t("升级 Pro →", "Upgrade to Pro →")}
+                  </button>
+                )}
               </Card>
             </Reveal>
           ))}
