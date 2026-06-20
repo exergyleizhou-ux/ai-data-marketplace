@@ -20,7 +20,7 @@
 1. **开一台云 VM**(国际先用便宜的:Hetzner / DigitalOcean / Fly.io;国内:阿里云 ECS)。装 Docker。
 2. **部署**:`docker-compose.prod.yml` 已就绪(postgres + redis + backend + frontend + 本地 registry)。设置 `.env`:`POSTGRES_*`、`APP_ENV=production`、`COMPUTE_RUNNER=docker`、`STORAGE_DIR`(挂一个持久卷,**别用 /tmp**)、`NEXT_PUBLIC_API_BASE_URL=https://你的域名/api/v1`。`docker compose -f docker-compose.prod.yml up -d`。
 3. **域名 + TLS**:用 Caddy/Nginx 反代 + Let's Encrypt(几行配置)。
-4. **注册筛查算法**(关键——`/screen` 靠它):把 `algorithms/paperguard` 构建并 digest-钉死推到 registry,然后 ops 注册 + 批准 + trusted(见 `algorithms/demo-kmeans-up.sh` 的模式;`/screen` 的 `trustedScreener` 会找名字/镜像含 `paperguard` 的 trusted 算法)。
+4. **注册筛查算法**(关键——`/screen` 靠它):**直接跑 `scripts/register-verify-screener.sh`**(幂等:构建+digest-钉死推 registry → ops 注册+批准+trusted)。没它 `/screen` 会返回「no trusted integrity-screen algorithm registered」。
 5. **冒烟测试**:登录 → `POST /api/v1/api-keys` 拿 key → `curl -X POST https://域名/api/v1/screen -H "X-API-Key: sk_live_…" -F file=@a.csv` → 应返回报告 + `certificate_id` → `GET /api/v1/verify/<cert>` 可验证。
 
 **做完这步 = 免费档已上线、能注册、能用、能引流。**
