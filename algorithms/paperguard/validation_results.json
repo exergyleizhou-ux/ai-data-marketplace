@@ -1,0 +1,55 @@
+{
+  "method": "paired (base vs base+injected-anomaly), production screen(); differential response of the targeted detector",
+  "n_pairs_per_type": 30,
+  "rows_per_dataset": 200,
+  "seed": 20260620,
+  "per_type": {
+    "digit_heaping": {
+      "target_detectors": [
+        "A1",
+        "A7"
+      ],
+      "sensitivity": 1.0,
+      "differential_response_rate": 1.0
+    },
+    "benford_violation": {
+      "target_detectors": [
+        "A2"
+      ],
+      "sensitivity": 1.0,
+      "differential_response_rate": 1.0
+    },
+    "implausible_values": {
+      "target_detectors": [
+        "A6"
+      ],
+      "sensitivity": 1.0,
+      "differential_response_rate": 1.0
+    },
+    "decimal_overconsistency": {
+      "target_detectors": [
+        "A5"
+      ],
+      "sensitivity": 1.0,
+      "differential_response_rate": 1.0
+    },
+    "smooth_residual": {
+      "target_detectors": [
+        "D1"
+      ],
+      "sensitivity": 1.0,
+      "differential_response_rate": 1.0
+    },
+    "uniform_variance": {
+      "target_detectors": [
+        "D2"
+      ],
+      "sensitivity": 1.0,
+      "differential_response_rate": 1.0
+    }
+  },
+  "overall_sensitivity": 1.0,
+  "overall_differential_response_rate": 1.0,
+  "fpr_specificity": "NOT measured \u2014 synthetic RNG data is not a valid negative control for the digit-distribution detectors (A1/A7); a real-world FPR requires a real clean-data partner (Part B).",
+  "interpretation": "The screen detects each injected anomaly family above its own synthetic baseline. The binary verdict is conservative ('warrants review'), not a fraud determination."
+}
