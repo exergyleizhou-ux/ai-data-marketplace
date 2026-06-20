@@ -5,7 +5,7 @@ import Link from "next/link";
 import { api, yuan, type Dataset, type KYC, type Order, type ComputeAlgorithm, type ComputeJob, type OutboxEntry, type ReconciliationPoint, type AuditLogEntry, type Withdrawal, type Anomaly, type DeletionRequest, type Report } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Protected } from "@/components/Protected";
-import { Alert, Badge, Button, Card, Empty, Input, PageHeader, Spinner, Tabs } from "@/components/ui";
+import { Alert, Badge, Button, Card, Empty, Input, PageHeader, SkeletonGrid, Tabs } from "@/components/ui";
 import { MiniChart } from "@/components/MiniChart";
 
 type Tab = "review" | "kyc" | "tx" | "compute" | "outbox" | "audit" | "withdraw" | "anomaly" | "deletion" | "moderation";
@@ -89,7 +89,7 @@ function ReviewQueue() {
     }
   }
 
-  if (items === null) return <Spinner />;
+  if (items === null) return <SkeletonGrid count={3} />;
   return (
     <div className="space-y-3">
       {err && <Alert>{err}</Alert>}
@@ -162,7 +162,7 @@ function KYCQueue() {
     }
   }
 
-  if (items === null) return <Spinner />;
+  if (items === null) return <SkeletonGrid count={3} />;
   return (
     <div className="space-y-3">
       {err && <Alert>{err}</Alert>}
@@ -240,7 +240,7 @@ function Transactions() {
     } finally { setBusy(""); }
   }
 
-  if (items === null) return <Spinner />;
+  if (items === null) return <SkeletonGrid count={3} />;
   if (items.length === 0) return <Empty>{t("暂无交易", "No transactions yet")}</Empty>;
 
   const disputes = items.filter((o) => o.status === "disputed");
@@ -532,7 +532,7 @@ function JobReviewQueue() {
     } finally { setBusy(""); }
   }
 
-  if (items === null) return <Spinner />;
+  if (items === null) return <SkeletonGrid count={3} />;
   return (
     <div className="space-y-3">
       {err && <Alert>{err}</Alert>}
@@ -590,7 +590,7 @@ function AlgorithmRegistry() {
     finally { setBusy(""); }
   }
 
-  if (items === null) return <Spinner />;
+  if (items === null) return <SkeletonGrid count={3} />;
   return (
     <div className="space-y-3">
       {err && <Alert>{err}</Alert>}
@@ -705,7 +705,7 @@ function SettlementOutbox() {
     } finally { setBusy(""); }
   }
 
-  if (items === null) return <Spinner />;
+  if (items === null) return <SkeletonGrid count={3} />;
   const failedN = items.filter((e) => e.status === "failed").length;
   const pendingN = items.filter((e) => e.status === "pending").length;
 
@@ -923,7 +923,7 @@ function WithdrawalAdmin() {
     finally { setBusy(""); }
   }
 
-  if (items === null) return <Spinner />;
+  if (items === null) return <SkeletonGrid count={3} />;
   return (
     <div className="space-y-3">
       {err && <Alert>{err}</Alert>}
@@ -997,7 +997,7 @@ function AnomalyList() {
     high_risk_action: [t("高风险操作", "High risk action"), "high_risk_action"],
   };
 
-  if (items === null) return <Spinner />;
+  if (items === null) return <SkeletonGrid count={3} />;
   return (
     <div className="space-y-3">
       {err && <Alert>{err}</Alert>}
@@ -1062,7 +1062,7 @@ function DeletionAdmin() {
     finally { setBusy(""); }
   }
 
-  if (items === null) return <Spinner />;
+  if (items === null) return <SkeletonGrid count={3} />;
   return (
     <div className="space-y-3">
       {err && <Alert>{err}</Alert>}
@@ -1133,7 +1133,7 @@ function ContentModerationTab() {
     finally { setBusy(""); }
   }
 
-  if (items === null) return <Spinner label={t("加载中…", "Loading…")} />;
+  if (items === null) return <SkeletonGrid count={3} />;
   return (
     <div className="space-y-3">
       {err && <Alert>{err}</Alert>}
