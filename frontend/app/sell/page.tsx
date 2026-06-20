@@ -39,6 +39,18 @@ function SellInner() {
     <div className="space-y-8">
       <PageHeader kicker={t("供给", "Supply")} title={t("卖家工作台", "Seller Workbench")} />
 
+      <div className="rounded-xl border border-forest-200 bg-forest-50/40 p-4">
+        <p className="text-sm font-medium text-forest-800">
+          {t("为什么在这里上架:可信 = 卖得更好。", "Why list here: verified data sells better.")}
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-ink/75">
+          {t(
+            "每个数据集上架时都会自动做完整性体检并拿到一张可溯源证书——买家看到「已验证」徽章才更敢买、愿意出更高价。这正是本市场区别于免费数据堆的地方。",
+            "Every dataset is automatically integrity-screened and earns a provenance certificate on listing — the 'verified' badge is what makes buyers trust it and pay more. That's what sets this marketplace apart from free data dumps.",
+          )}
+        </p>
+      </div>
+
       {err && <Alert>{err}</Alert>}
       <CreateForm onCreated={reload} />
 

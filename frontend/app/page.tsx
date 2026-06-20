@@ -20,15 +20,15 @@ export default function Home() {
       <section className="lg:grid lg:grid-cols-[1.1fr_0.9fr] lg:items-center lg:gap-12">
         <div>
           <p className="font-mono text-kicker uppercase text-muted">
-            {t("数据基础设施 · 自 2026", "Data infrastructure · est. 2026")}
+            {t("可信数据市场 · 科研先行 · 自 2026", "The verified data marketplace · research-first · est. 2026")}
           </p>
           <h1 className="mt-4 font-display text-display-md leading-[1.02] tracking-tight sm:text-display-lg">
-            {t("可用,不可见。", "Available, never visible.")}
+            {t("每一份数据,都经过验证。", "Every dataset, verified.")}
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-relaxed text-ink/80 sm:text-lg">
             {t(
-              "训练数据流通的高信任基础设施。卖方的数据从不离开它的沙箱;买方拿走的只有经审核算法跑出的结果——附密码学存证。",
-              "High-trust infrastructure for AI training data. The seller's raw data never leaves its sandbox; the buyer takes only the result of an audited algorithm — with a cryptographic certificate.",
+              "一个可信数据市场:卖方先给数据做完整性体检、拿到可溯源认证,再挂出来卖;买方买到的每份数据都「已验证、可追溯、放心用于训练与研究」。先从科研/科学数据做起。",
+              "A marketplace where every dataset is verified: sellers integrity-screen their data and earn a provenance certificate before listing; buyers get data that's checked, traceable, and safe to train on. Starting with scientific & research data.",
             )}
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
@@ -36,11 +36,11 @@ export default function Home() {
               href="/datasets"
               className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper hover:bg-ink/85"
             >
-              {t("浏览数据市场", "Browse the marketplace")}
+              {t("浏览可信数据", "Browse verified data")}
               <span aria-hidden>→</span>
             </Link>
-            <Link href="/sell" className="text-sm font-medium text-ink cue-underline hover:text-forest-700">
-              {t("上架我的数据", "List my data")}
+            <Link href="/verify-api" className="text-sm font-medium text-ink cue-underline hover:text-forest-700">
+              {t("验证并上架我的数据 →", "Verify & list my data →")}
             </Link>
           </div>
         </div>
