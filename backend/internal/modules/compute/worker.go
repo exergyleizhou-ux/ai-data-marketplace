@@ -223,11 +223,17 @@ func (s *Service) processJob(ctx context.Context, jobID string) {
 		return
 	}
 
-	// Output gate: size cap (design §7/§8). A real runner enforces this during
-	// write; the mock returns in memory so we check here. A gate rejection
-	// refunds the buyer's credit (§21: rejected output isn't billed).
-	if maxOutputBytes > 0 && int64(len(res.Output)) > maxOutputBytes {
-		s.rejectJob(ctx, jobID, job.EntitlementID, "output_exceeds_max_bytes")
+	// Output gate (design §7/§8, A2): structural + information-content validation,
+	// not just a size cap. The sandbox severs the network, so the output object is
+	// the ONLY exfil channel — a malicious algorithm author could steganographically
+	// pack raw rows into a within-size "aggregate". GateOutput requires a structured
+	// aggregate (a JSON object or a zip of *.json) within bounded
+	// size/strings/numbers/depth/entropy; anything else is withheld. A rejection
+	// refunds the buyer's credit (§21: rejected output isn't billed). The runner
+	// already enforces the raw byte cap during collection; this is the rest.
+	if v := GateOutput(res.OutputKind, res.Output, policyForKind(res.OutputKind, maxOutputBytes)); v != nil {
+		slog.Warn("compute: output gate rejected job", "job_id", jobID, "reason", v.Reason, "detail", v.Detail)
+		s.rejectJob(ctx, jobID, job.EntitlementID, v.Reason)
 		return
 	}
 
