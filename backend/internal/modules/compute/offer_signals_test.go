@@ -68,4 +68,13 @@ func TestOfferSignals(t *testing.T) {
 	if _, ok := sigs[dsB]; ok {
 		t.Errorf("dataset B with no offer must NOT have a signal, got %+v", sigs[dsB])
 	}
+
+	// Malformed (non-UUID) ids must be ignored, not error — the endpoint is public.
+	mixed, err := repo.OfferSignals(ctx, []string{"x", "not-a-uuid", dsA})
+	if err != nil {
+		t.Fatalf("malformed ids must be ignored, not error: %v", err)
+	}
+	if _, ok := mixed[dsA]; !ok {
+		t.Errorf("valid id alongside malformed ones should still resolve")
+	}
 }
