@@ -78,6 +78,11 @@ def _ols_ate(d, T, Y, covars):
     dof = n - p
     if dof <= 0:
         die("too_few_rows_for_params")
+    # Refuse a rank-deficient design: pinv would silently return the minimum-norm
+    # solution, splitting a coefficient across collinear columns (a redundant
+    # covariate halves the reported effect) with no warning. Fail loudly instead.
+    if np.linalg.matrix_rank(X) < p:
+        die("rank_deficient_design")
     XtX_inv = np.linalg.pinv(X.T @ X)
     beta = XtX_inv @ X.T @ y
     resid = y - X @ beta
@@ -132,6 +137,10 @@ def compute(df, params):
     d = df[[T, Y] + covars].dropna().astype(float).reset_index(drop=True)
     if len(d) < 20:
         die("too_few_complete_rows")
+    # A constant treatment has no effect to estimate; the DML cross-fit denominator
+    # would be machine-eps and blow the estimate up to ~1e12. Refuse up front.
+    if d[T].nunique() <= 1:
+        die("constant_treatment")
 
     ate, se, dof = _ols_ate(d, T, Y, covars)
     t_stat = ate / se if se > 0 else 0.0

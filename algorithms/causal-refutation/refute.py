@@ -98,7 +98,14 @@ def compute(df, params):
     orig = _effect(d, T, Y, covars)
     rng = np.random.default_rng(SEED)
     n = len(d)
-    absorig = abs(orig) if orig != 0 else 1e-12
+    # A (near-)zero original effect cannot be meaningfully refuted: every ratio-based
+    # check (placebo / RCC / subset) divides by it, and the old 1e-12 floor made them
+    # all trivially pass — certifying a NON-existent effect as "validated" (the worst
+    # possible inversion). Flag the degenerate case and floor the denominator at the
+    # outcome scale instead of 1e-12.
+    yscale = float(d[Y].std()) or 1.0
+    degenerate = abs(orig) < 1e-6 * yscale
+    absorig = max(abs(orig), 1e-6 * yscale)
 
     # 1. placebo treatment — permute T; effect should vanish.
     tvals = d[T].to_numpy(float)
@@ -132,7 +139,10 @@ def compute(df, params):
     sub_change = abs(sub_mean - orig) / absorig
     sub_pass = bool(sub_change < 0.15)
 
-    evidence = "validated" if (placebo_pass and rcc_pass and sub_pass) else "weak"
+    if degenerate:
+        evidence = "undefined"  # no real effect to validate or refute
+    else:
+        evidence = "validated" if (placebo_pass and rcc_pass and sub_pass) else "weak"
 
     model = {
         "format": "causal-refutation-1",
