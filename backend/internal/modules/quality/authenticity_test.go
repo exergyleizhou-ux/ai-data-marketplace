@@ -171,3 +171,57 @@ func TestAuthenticityParquetDefersToSidecar(t *testing.T) {
 		t.Errorf("note should mention the sidecar, got %q", note)
 	}
 }
+
+func TestTerminalDigit_SkipsLowCardinalityIntegers(t *testing.T) {
+	// Binary 0/1, Likert 1-5, day-of-week 0-6, month 1-12 are categorical/coded
+	// columns. The last-digit-uniformity test assumes a uniform terminal digit under
+	// the null, which is FALSE for small-range/low-cardinality integers — so it must
+	// NOT fire (the same false-positive class as the GPS PII bug, on the auth path).
+	mk := func(mod, add int) numColumn {
+		var c numColumn
+		c.name = "coded"
+		for i := 0; i < 300; i++ {
+			c.values = append(c.values, float64(i%mod+add))
+		}
+		return c
+	}
+	for _, c := range []numColumn{mk(2, 0), mk(5, 1), mk(7, 0), mk(12, 1)} {
+		if f, ok := terminalDigitFinding(c); ok {
+			t.Fatalf("terminal-digit wrongly applicable to low-cardinality column (mod path): %+v", f)
+		}
+	}
+}
+
+func TestTerminalDigit_StillFiresOnWideRangeDigitStacking(t *testing.T) {
+	// A wide-range, high-cardinality integer column whose values are all multiples of
+	// 10 (terminal digit always 0 — fabrication-like) must STILL be detected.
+	var c numColumn
+	c.name = "amount"
+	for i := 0; i < 300; i++ {
+		c.values = append(c.values, float64((i*70)%9000)) // 0..8990 step 70, all end in 0
+	}
+	if _, ok := terminalDigitFinding(c); !ok {
+		t.Fatal("terminal-digit should still apply+fire on wide-range digit-stacked integers")
+	}
+}
+
+func TestDuplicateRows_ExcludesHeaderFromRatio(t *testing.T) {
+	// 21 distinct data rows + 9 rows duplicating an existing one => 30 data rows,
+	// true duplicate ratio = 9/30 = 0.30 (== threshold, should fire). Counting the
+	// header row would dilute it to 9/31 = 0.29 and wrongly SUPPRESS the finding.
+	var b strings.Builder
+	b.WriteString("a,b,c\n") // header (non-numeric => detected)
+	for i := 0; i < 21; i++ {
+		fmt.Fprintf(&b, "%d,%d,%d\n", i, i, i) // 21 distinct
+	}
+	for i := 0; i < 9; i++ {
+		b.WriteString("0,0,0\n") // 9 duplicates of the i==0 row
+	}
+	f, ok := duplicateRowsFinding([]byte(b.String()), 30, ',')
+	if !ok {
+		t.Fatal("duplicate-rows should fire at ratio 0.30 (header must be excluded)")
+	}
+	if got := f.Statistic; got < 0.30 {
+		t.Fatalf("duplicate ratio computed on data rows should be 0.30, got %v (header counted?)", got)
+	}
+}

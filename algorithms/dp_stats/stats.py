@@ -66,6 +66,18 @@ def laplace(rng, scale):
     return float(rng.laplace(0.0, scale)) if scale > 0 else 0.0
 
 
+def sum_sensitivity(lo, hi):
+    """L1 sensitivity of a sum over values clamped to [lo, hi] under the
+    add/remove-one neighbor model — the SAME model the count uses (sensitivity 1).
+    Adding or removing one clamped record changes the sum by at most max(|lo|,|hi|).
+
+    (hi-lo is the *bounded-DP* change-one-value sensitivity, a different and
+    inconsistent neighbor relation; it under-noises whenever the bounds do not
+    straddle 0 — e.g. [10,20] would be 2x under-noised — silently breaking the
+    claimed epsilon. So we always use max(|lo|,|hi|).)"""
+    return max(abs(lo), abs(hi))
+
+
 def main():
     params = load_params()
     # Epsilon is platform-injected (offer.dp_epsilon -> job.dp_epsilon -> _epsilon).
@@ -102,21 +114,26 @@ def main():
         series = pd.to_numeric(numeric[c], errors="coerce").dropna()
         if series.empty:
             continue
-        if c in bounds and isinstance(bounds[c], (list, tuple)) and len(bounds[c]) == 2:
+        supplied = c in bounds and isinstance(bounds[c], (list, tuple)) and len(bounds[c]) == 2
+        if supplied:
             lo, hi = float(bounds[c][0]), float(bounds[c][1])
             src = "supplied"
         else:
             lo, hi = float(series.min()), float(series.max())
-            src = "observed (data-dependent — not a formal DP guarantee)"
+            src = "observed (data-dependent — not a formal DP guarantee; raw bounds withheld)"
         clamped = series.clip(lo, hi)
-        span = max(hi - lo, 0.0)
-        noisy_sum = float(clamped.sum()) + laplace(rng, span / eps_each)  # sum sensitivity = span
+        # Sum sensitivity under add/remove-one (consistent with the count) = max(|lo|,|hi|).
+        noisy_sum = float(clamped.sum()) + laplace(rng, sum_sensitivity(lo, hi) / eps_each)
         denom = max(round(count_dp), 1)
-        per_column[c] = {
+        col_out = {
             "mean_dp": round(noisy_sum / denom, 6),
-            "bounds": [lo, hi],
             "bounds_source": src,
         }
+        if supplied:
+            # Public, caller-supplied bounds are safe to echo. Observed bounds are the
+            # raw min/max of private data and are NEVER emitted (zero-noise leak).
+            col_out["bounds"] = [lo, hi]
+        per_column[c] = col_out
 
     metrics = {
         "format": "vo-dp-stats-1",

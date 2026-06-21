@@ -156,10 +156,38 @@ def test_refuses_high_cardinality_label():
         "a refused label must not produce an output bundle"
 
 
+def test_refuses_singleton_class():
+    """L1 privacy: a class with too few rows leaks (near-)raw records via its
+    per-class mean theta (a mean over one row IS that row). It must be refused —
+    the earlier guard bounds the class count, this bounds each class's size."""
+    header = ["f1", "f2", "label"]
+    rows = [[i, i + 1, "A"] for i in range(20)]  # 20 rows, class A
+    rows.append([777, 888, "B"])  # 1 row, class B (singleton)
+    d = tempfile.mkdtemp(prefix="gnb-test-")
+    data_dir = os.path.join(d, "data")
+    out_dir = os.path.join(d, "out")
+    os.makedirs(data_dir)
+    os.makedirs(out_dir)
+    with open(os.path.join(data_dir, "input.csv"), "w") as f:
+        f.write(",".join(header) + "\n")
+        for r in rows:
+            f.write(",".join(str(c) for c in r) + "\n")
+    env = dict(os.environ, VO_DATA_DIR=data_dir, VO_OUT_DIR=out_dir)
+    res = subprocess.run(
+        [sys.executable, os.path.join(HERE, "train.py")],
+        env=env, capture_output=True, text=True,
+    )
+    assert res.returncode != 0, "singleton class must be refused"
+    assert "777" not in res.stdout and "888" not in res.stdout, "raw singleton row leaked in logs"
+    assert not os.path.exists(os.path.join(out_dir, "output.bin")), \
+        "a refused singleton class must not produce an output bundle"
+
+
 if __name__ == "__main__":
     for fn in [test_fit_exact_params, test_predicts_separable_perfectly,
                test_deterministic, test_label_param_overrides_default,
-               test_no_per_row_leakage, test_refuses_high_cardinality_label]:
+               test_no_per_row_leakage, test_refuses_high_cardinality_label,
+               test_refuses_singleton_class]:
         fn()
         print(f"ok: {fn.__name__}")
     print("all passed")
