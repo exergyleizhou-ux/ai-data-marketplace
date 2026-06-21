@@ -18,7 +18,10 @@ const (
 	benfordMinLogStd = 0.5  // min std-dev of log10(values): below this the column is
 	//                        sequential/uniform/binned (not log-uniform) and Benford
 	//                        does not apply (real Benford data is ≳0.8; sequential ≲0.45)
-	sentinelMinMode = 0.40 // a min/max value taking ≥40% of a column is sentinel-like
+	sentinelMinMode  = 0.40 // a min/max value taking ≥40% of a column is sentinel-like
+	sentinelOutlierK = 3.0  // the repeated extreme must sit ≥K·std from the nearest
+	//                         other value to count as an out-of-band sentinel (vs a
+	//                         contiguous, legitimately zero-inflated/censored value)
 	dupRowsMinRatio = 0.30 // duplicate-row fraction that starts to matter
 
 	// Applicability gates for the terminal-digit test: below these the column is
@@ -349,21 +352,49 @@ func sentinelFinding(c numColumn) (authFinding, bool) {
 	n := len(c.values)
 	for _, cand := range []float64{minV, maxV} {
 		share := float64(freq[cand]) / float64(n)
-		if share >= sentinelMinMode {
-			return authFinding{
-				Detector:    "sentinel_value",
-				Column:      c.name,
-				Reference:   "data-quality placeholder/sentinel screening",
-				Statistic:   round2(share),
-				Significant: true,
-				Severity:    "medium",
-				InnocentExplanations: []string{
-					"the value is a legitimate floor/cap (e.g. a clipped sensor range)",
-					"the column is genuinely zero-inflated or censored",
-					"the repeated extreme reflects a real, common observation",
-				},
-			}, true
+		if share < sentinelMinMode {
+			continue
 		}
+		// A real sentinel (-999 / 9999) is a distributional OUTLIER — far from the
+		// rest of the data. A legitimately zero-inflated/censored column's repeated
+		// extreme is CONTIGUOUS with the data (0 next to 1,2,3…). Only flag when the
+		// candidate sits far (≥K·std) from the nearest other value; otherwise it's
+		// ordinary mode-at-the-boundary, a false positive on count/zero-inflated data.
+		nearest := math.Inf(1)
+		var sum, sum2 float64
+		m := 0
+		for _, v := range c.values {
+			if v == cand {
+				continue
+			}
+			if d := math.Abs(v - cand); d < nearest {
+				nearest = d
+			}
+			sum += v
+			sum2 += v * v
+			m++
+		}
+		if m == 0 {
+			continue
+		}
+		mf := float64(m)
+		std := math.Sqrt(math.Max(sum2/mf-(sum/mf)*(sum/mf), 0))
+		if std <= 0 || nearest < sentinelOutlierK*std {
+			continue // contiguous with the data → zero-inflation, not a sentinel
+		}
+		return authFinding{
+			Detector:    "sentinel_value",
+			Column:      c.name,
+			Reference:   "data-quality placeholder/sentinel screening",
+			Statistic:   round2(share),
+			Significant: true,
+			Severity:    "medium",
+			InnocentExplanations: []string{
+				"the value is a legitimate floor/cap (e.g. a clipped sensor range)",
+				"the column is genuinely zero-inflated or censored",
+				"the repeated extreme reflects a real, common observation",
+			},
+		}, true
 	}
 	return authFinding{}, false
 }

@@ -36,6 +36,32 @@ func TestBenford_StillFiresOnLogUniform(t *testing.T) {
 	}
 }
 
+func TestSentinel_SkipsZeroInflatedButFlagsOutlier(t *testing.T) {
+	// A legitimately zero-inflated column (0 dominates but is CONTIGUOUS with the
+	// data 1,2,3,…) must NOT be flagged as a "-999 placeholder". A true sentinel
+	// (an out-of-band value far from the real cluster) MUST still be flagged.
+	var zeroInf, sentinel numColumn
+	zeroInf.name, sentinel.name = "complaints", "temp"
+	for i := 0; i < 200; i++ {
+		zeroInf.values = append(zeroInf.values, 0)
+	}
+	for v := 1; v <= 150; v++ {
+		zeroInf.values = append(zeroInf.values, float64(v))
+	}
+	for i := 0; i < 150; i++ {
+		sentinel.values = append(sentinel.values, -999)
+	}
+	for v := 50; v < 200; v++ {
+		sentinel.values = append(sentinel.values, float64(v))
+	}
+	if f, ok := sentinelFinding(zeroInf); ok {
+		t.Fatalf("zero-inflated column wrongly flagged as sentinel: %+v", f)
+	}
+	if _, ok := sentinelFinding(sentinel); !ok {
+		t.Fatal("a true out-of-band sentinel (-999) should still be flagged")
+	}
+}
+
 func TestScoreAuthenticity_CapsPerColumn(t *testing.T) {
 	// Two correlated detectors firing on the SAME column (e.g. Benford + terminal-
 	// digit, both "digits non-uniform") are not independent evidence; summing them

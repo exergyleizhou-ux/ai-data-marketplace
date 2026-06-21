@@ -14,6 +14,12 @@ import (
 // flag re-uploaded/resold data (docs §6.3).
 func SimHash(content []byte) string {
 	shingles := bigramShingles(content)
+	if len(shingles) == 0 {
+		// Empty / whitespace-only content has no shingles. Return "" (the caller's
+		// NULLIF stores NULL) rather than the all-zero fingerprint, which would
+		// collide as a "near-duplicate" with every other degenerate upload.
+		return ""
+	}
 	var vec [64]int
 	for _, sh := range shingles {
 		h := fnvHash(sh)

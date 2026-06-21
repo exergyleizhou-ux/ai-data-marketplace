@@ -139,9 +139,13 @@ def compute(df, params):
         boots["nde"].append(bn)
         boots["nie"].append(bi)
         boots["ate"].append(ba)
-        if ba != 0:
+        # Proportion-mediated is only meaningful when the total effect is bounded away
+        # from 0. When NDE and NIE nearly cancel (inconsistent/suppression mediation),
+        # ATE≈0 and nie/ate explodes (e.g. "548% mediated"). Gate on the total being
+        # non-trivial relative to the effects it sums, not just != 0.
+        if abs(ba) > 0.05 * (abs(bn) + abs(bi)):
             boots["prop"].append(bi / ba)
-    prop = nie / ate if ate != 0 else None
+    prop = nie / ate if abs(ate) > 0.05 * (abs(nde) + abs(nie)) else None
 
     model = {
         "format": "causal-mediation-1",
