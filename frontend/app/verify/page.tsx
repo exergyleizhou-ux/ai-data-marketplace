@@ -138,8 +138,8 @@ export default function VerifyPage() {
       )}
       <p className="font-mono text-[10px] uppercase tracking-widest text-muted">
         {t(
-          "绿洲 · AI 训练数据 · 一码存证 · 溯源可信",
-          "Verdant Oasis · AI training data · provenance by certificate",
+          "绿洲 · 可信科研数据 · 一码存证 · 溯源可信",
+          "Verdant Oasis · verified research data · provenance by certificate",
         )}
       </p>
     </div>
