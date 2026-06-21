@@ -197,5 +197,14 @@ func writeParams(params map[string]any) (string, error) {
 		os.Remove(f.Name())
 		return "", err
 	}
+	// os.CreateTemp makes the file 0600, but it's mounted at /params.json:ro into a
+	// container that runs as uid 65534 (dockerRunArgs --user). On a real Linux Docker
+	// host the sandbox uid then can't read it, and an algorithm that swallows the read
+	// error silently falls back to defaults — ignoring the buyer's params. Make it
+	// world-readable (same uid-perm fix as the staged /data dir).
+	if err := os.Chmod(f.Name(), 0o644); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
 	return f.Name(), nil
 }
