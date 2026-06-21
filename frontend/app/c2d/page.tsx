@@ -100,9 +100,9 @@ const REAL_DATA = [
     en: { name: "Integrity screen", result: "8 detectors / 5 flagged / 46 findings / verdict: anomalies_flagged. A statistical-integrity check of a real dataset." },
   },
   {
-    cert: "VO-A123BADD0B0A",
-    zh: { name: "因果效应估计 (ATE)", result: "fixed acidity → volatile acidity(调整 9 个理化协变量):OLS 0.011(95% CI 0.001–0.022),交叉拟合 DML 0.008。" },
-    en: { name: "Causal effect (ATE)", result: "fixed acidity → volatile acidity (adj. 9 physicochemical covariates): OLS 0.011 (95% CI 0.001–0.022), cross-fitted DML 0.008." },
+    cert: "VO-DF2EA8BF09F4",
+    zh: { name: "因果效应估计 (ATE)", result: "alcohol → quality(调 pH/硫酸盐/密度):OLS 0.365(95% CI 0.33–0.40),交叉拟合 DML 0.321。" },
+    en: { name: "Causal effect (ATE)", result: "alcohol → quality (adj. pH/sulphates/density): OLS 0.365 (95% CI 0.33–0.40), cross-fitted DML 0.321." },
   },
 ];
 
