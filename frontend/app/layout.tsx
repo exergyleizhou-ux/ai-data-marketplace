@@ -5,7 +5,7 @@ import { AuthProvider } from "@/lib/auth";
 import { LocaleProvider } from "@/lib/i18n";
 import { Nav } from "@/components/Nav";
 import { SiteFooter } from "@/components/SiteFooter";
-import { BRAND } from "@/lib/brand";
+import { siteMetadata } from "@/lib/seo";
 
 // Design system fonts (see DESIGN.md):
 // - Instrument Serif = display, signals editorial gravitas + cryptographic authority
@@ -30,10 +30,7 @@ const mono = Geist_Mono({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: `${BRAND.name} — ${BRAND.tagline}`,
-  description: `${BRAND.sloganZh} ${BRAND.description}`,
-};
+export const metadata: Metadata = siteMetadata;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
