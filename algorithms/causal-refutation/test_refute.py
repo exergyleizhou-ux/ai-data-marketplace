@@ -45,8 +45,21 @@ def test_default_first_two_numeric_columns():
     assert model["design"]["treatment"] == "dose" and model["design"]["outcome"] == "resp"
 
 
+def test_zero_effect_is_not_validated():
+    # A constant outcome → original effect 0. The old 1e-12 floor made every
+    # refuter pass → "validated", certifying a non-existent effect (the worst
+    # inversion). It must be "undefined", never "validated".
+    rng = np.random.default_rng(0)
+    n = 300
+    df = pd.DataFrame({"T": rng.normal(0, 1, n), "Y": np.full(n, 5.0)})
+    model, _ = REF.compute(df, {"treatment": "T", "outcome": "Y"})
+    assert abs(model["original_effect"]) < 1e-9, model["original_effect"]
+    assert model["evidence_level"] == "undefined", model["evidence_level"]
+
+
 if __name__ == "__main__":
     test_real_effect_is_validated()
     test_aggregates_only()
     test_default_first_two_numeric_columns()
+    test_zero_effect_is_not_validated()
     print("OK: all refutation tests passed")

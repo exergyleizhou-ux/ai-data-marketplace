@@ -113,6 +113,11 @@ def _ols_treatment_t(d, T, Y, covars):
     dof = n - p
     if dof <= 0:
         die("too_few_rows_for_params")
+    # Refuse a rank-deficient design (perfect collinearity, incl. a constant
+    # treatment collinear with the intercept): pinv would silently split the
+    # coefficient and report a confident-but-wrong robustness value.
+    if np.linalg.matrix_rank(X) < p:
+        die("rank_deficient_design")
     XtX_inv = np.linalg.pinv(X.T @ X)
     beta = XtX_inv @ X.T @ y
     resid = y - X @ beta

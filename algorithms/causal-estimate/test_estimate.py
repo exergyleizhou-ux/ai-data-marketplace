@@ -1,10 +1,32 @@
 """Tests for the causal-estimate C2D algorithm.  Run: python test_estimate.py"""
 import numpy as np
 import pandas as pd
+import pytest
 
 import estimate as EST
 
 ALLOWED = {"format", "design", "estimate", "treatment"}
+
+
+def test_constant_treatment_refused():
+    # A constant treatment has no effect to estimate; the DML denominator would
+    # otherwise be machine-eps and blow the estimate up to ~1e12. Must refuse.
+    rng = np.random.default_rng(0)
+    n = 200
+    df = pd.DataFrame({"T": np.full(n, 3.0), "Y": rng.normal(0, 1, n), "cov": rng.normal(0, 1, n)})
+    with pytest.raises(SystemExit):
+        EST.compute(df, {"treatment": "T", "outcome": "Y", "covariates": ["cov"]})
+
+
+def test_rank_deficient_design_refused():
+    # A covariate identical to the treatment (perfect collinearity): pinv would
+    # silently split the coefficient (halving the reported effect). Must refuse.
+    rng = np.random.default_rng(0)
+    n = 200
+    T = rng.normal(0, 1, n)
+    df = pd.DataFrame({"T": T, "Y": 1.5 * T + rng.normal(0, 0.4, n), "cov": T})
+    with pytest.raises(SystemExit):
+        EST.compute(df, {"treatment": "T", "outcome": "Y", "covariates": ["cov"]})
 
 
 def _data(ate=1.5, n=2000, binary=False):

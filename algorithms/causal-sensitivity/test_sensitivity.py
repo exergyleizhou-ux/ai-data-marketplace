@@ -6,10 +6,22 @@ effect a low one (fragile). Output must be aggregates only. Run:
 """
 import numpy as np
 import pandas as pd
+import pytest
 
 import sensitivity as SEN
 
 ALLOWED_MODEL_KEYS = {"format", "design", "estimate", "sensitivity", "interpretation"}
+
+
+def test_rank_deficient_design_refused():
+    # A covariate identical to the treatment (perfect collinearity): pinv would
+    # split the coefficient and report a confident-but-wrong robustness value.
+    rng = np.random.default_rng(0)
+    n = 300
+    T = rng.normal(0, 1, n)
+    df = pd.DataFrame({"T": T, "Y": 2.0 * T + rng.normal(0, 0.3, n), "cov": T})
+    with pytest.raises(SystemExit):
+        SEN.compute(df, {"treatment": "T", "outcome": "Y", "covariates": ["cov"]})
 
 
 def test_strong_effect_is_robust():
