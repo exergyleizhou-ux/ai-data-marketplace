@@ -60,8 +60,25 @@ def test_default_first_three_numeric_columns():
     assert model["design"]["treatment"] == "T"
 
 
+def test_proportion_none_when_total_effect_cancels():
+    # NDE and NIE nearly cancel (suppression/inconsistent mediation) → ATE ≈ 0, and
+    # nie/ate explodes (e.g. "548% mediated"). proportion_mediated must be None.
+    rng = np.random.default_rng(0)
+    n = 4000
+    T = rng.normal(0, 1, n)
+    M = 0.5 * T + rng.normal(0, 0.5, n)              # alpha_T = 0.5
+    Y = -1.0 * T + 2.0 * M + rng.normal(0, 0.5, n)   # NDE=-1, NIE=0.5*2=1, ATE≈0
+    model, _ = MED.compute(
+        pd.DataFrame({"T": T, "M": M, "Y": Y}),
+        {"treatment": "T", "mediator": "M", "outcome": "Y"})
+    e = model["effects"]
+    assert abs(e["ate"]) < 0.15, e["ate"]  # confirm the total effect ~0
+    assert e["proportion_mediated"] is None, e
+
+
 if __name__ == "__main__":
     test_recovers_known_mediation()
     test_aggregates_only()
     test_default_first_three_numeric_columns()
+    test_proportion_none_when_total_effect_cancels()
     print("OK: all mediate tests passed")
