@@ -154,14 +154,29 @@ def main():
     # De-standardise centroids back to original feature units for interpretability.
     centroids_orig = centroids * sd + mu
 
+    # Privacy guard (L1: the audited code IS the boundary). A singleton cluster's
+    # centroid de-standardises to that row, verbatim — a raw-record leak, and
+    # `cluster_sizes` would even point a reader at it. Suppress the centroids of
+    # sub-threshold clusters (keep only their size); no near-raw record leaves the
+    # sandbox. Default floor 2 blocks the verbatim singleton leak; raise
+    # `min_cluster_size` for stronger k-anonymity on sensitive data.
+    min_cluster_size = int(params.get("min_cluster_size", 2))
+
+    def _safe_centroids(rows):
+        return [
+            ([float(v) for v in rows[j]] if sizes[j] >= min_cluster_size else None)
+            for j in range(k)
+        ]
+
     model = {
         "format": "vo-kmeans-1",
         "features": list(feats.columns),
         "k": k,
-        "centroids": [[float(v) for v in row] for row in centroids_orig],
-        "centroids_standardized": [[float(v) for v in row] for row in centroids],
+        "centroids": _safe_centroids(centroids_orig),
+        "centroids_standardized": _safe_centroids(centroids),
         "mean": [float(v) for v in mu],
         "std": [float(v) for v in sd],
+        "min_cluster_size": min_cluster_size,
     }
     metrics = {
         "k": k,

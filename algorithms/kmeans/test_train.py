@@ -93,8 +93,26 @@ def test_output_has_no_per_row_labels():
             assert len(v) <= 10, "no per-row-length arrays in the output"
 
 
+def test_suppresses_small_cluster_centroid():
+    # L1 privacy: a tiny/singleton cluster's centroid de-standardises to a (near-)raw
+    # record (a singleton cluster's centroid IS that row, and cluster_sizes points a
+    # reader at it). It must be suppressed (None), not emitted as a readable row.
+    rng = np.random.default_rng(1)
+    base = rng.normal([0.0, 0.0], 0.2, (60, 2))
+    df = pd.DataFrame({
+        "x": list(base[:, 0]) + [999999.0],  # one extreme outlier -> singleton cluster
+        "y": list(base[:, 1]) + [999999.0],
+    })
+    model, metrics = _bundle(_run_on(df, {"k": 3, "min_cluster_size": 5})[0])
+    assert None in model["centroids"], "small-cluster centroid must be suppressed (None)"
+    blob_text = json.dumps(model)
+    assert "999999" not in blob_text, "raw outlier row leaked via an emitted centroid"
+    assert min(metrics["cluster_sizes"]) < 5, "expected the outlier to form a sub-threshold cluster"
+
+
 if __name__ == "__main__":
-    for fn in [test_finds_three_clusters, test_deterministic, test_k_clamped_to_n, test_output_has_no_per_row_labels]:
+    for fn in [test_finds_three_clusters, test_deterministic, test_k_clamped_to_n,
+               test_output_has_no_per_row_labels, test_suppresses_small_cluster_centroid]:
         fn()
         print(f"ok: {fn.__name__}")
     print("all passed")

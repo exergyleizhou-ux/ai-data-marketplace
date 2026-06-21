@@ -17,6 +17,11 @@ const (
 	benfordMinRatio = 100  // max/min span required for Benford to be meaningful
 	sentinelMinMode = 0.40 // a min/max value taking ≥40% of a column is sentinel-like
 	dupRowsMinRatio = 0.30 // duplicate-row fraction that starts to matter
+
+	// Applicability gates for the terminal-digit test: below these the column is
+	// categorical/coded, not a measurement, and the uniform-last-digit null is invalid.
+	terminalDigitMinDistinct = 20  // ≥20 distinct values (excludes binary/Likert/codes)
+	terminalDigitMinSpan     = 100 // value range ≥100 (excludes small-range counts)
 )
 
 // authFinding is one statistical signal on one column. Every finding carries an
@@ -255,6 +260,26 @@ func terminalDigitFinding(c numColumn) (authFinding, bool) {
 	if len(c.values) < authMinColN || float64(integerish)/float64(len(c.values)) < 0.9 {
 		return authFinding{}, false
 	}
+	// Applicability gate: the last-digit-uniformity null (a uniform terminal digit)
+	// only holds for high-cardinality integers that span enough magnitude. Small-
+	// range or low-cardinality integer columns are categorical/coded (binary flags,
+	// Likert scales, day-of-week, month, status codes) where the digit is inherently
+	// non-uniform — running the test there produces false "suspect" flags on
+	// legitimate data. Require both a cardinality floor and a magnitude span.
+	distinct := map[float64]struct{}{}
+	minV, maxV := c.values[0], c.values[0]
+	for _, v := range c.values {
+		distinct[v] = struct{}{}
+		if v < minV {
+			minV = v
+		}
+		if v > maxV {
+			maxV = v
+		}
+	}
+	if len(distinct) < terminalDigitMinDistinct || maxV-minV < terminalDigitMinSpan {
+		return authFinding{}, false
+	}
 	var counts [10]int
 	for _, v := range c.values {
 		d := int(math.Mod(math.Abs(math.Round(v)), 10))
@@ -331,19 +356,25 @@ func duplicateRowsFinding(content []byte, nrows int, delim rune) (authFinding, b
 	r.Comma = delim
 	r.FieldsPerRecord = -1
 	rows, err := r.ReadAll()
-	if err != nil || len(rows) < authMinColN {
+	if err != nil {
+		return authFinding{}, false
+	}
+	// Exclude the header row (same heuristic as parseNumericColumns): it is always
+	// unique, so counting it dilutes the duplicate ratio across the detection
+	// threshold and reports a statistic that is wrong by one row.
+	start := 0
+	if len(rows) > 0 && !allNumeric(rows[0]) {
+		start = 1
+	}
+	data := rows[start:]
+	if len(data) < authMinColN {
 		return authFinding{}, false
 	}
 	seen := map[string]struct{}{}
-	total := 0
-	for i := 0; i < len(rows); i++ {
-		key := strings.Join(rows[i], "\x00")
-		total++
-		seen[key] = struct{}{}
+	for i := range data {
+		seen[strings.Join(data[i], "\x00")] = struct{}{}
 	}
-	if total == 0 {
-		return authFinding{}, false
-	}
+	total := len(data)
 	dupRatio := float64(total-len(seen)) / float64(total)
 	if dupRatio < dupRowsMinRatio {
 		return authFinding{}, false

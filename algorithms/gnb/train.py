@@ -192,6 +192,16 @@ def main():
     for i, label in enumerate(y):
         class_indices[label].append(i)
 
+    # Privacy guard (L1: the audited code IS the boundary). A class's per-class mean
+    # `theta` over a SINGLE row IS that row, verbatim — a direct raw-record leak. The
+    # earlier guard bounds the class *count*; this bounds each class's *size*. Default
+    # floor 2 blocks the verbatim singleton leak while still allowing legitimately
+    # small research classes (a mean over ≥2 rows is an average, not a record); raise
+    # `min_class_count` for stronger k-anonymity on sensitive data.
+    min_class_count = int(params.get("min_class_count", 2))
+    if min(len(ix) for ix in class_indices.values()) < min_class_count:
+        die("class_too_small")
+
     # Compute theta (mean), var (population variance + epsilon), priors.
     theta = {}
     var = {}
