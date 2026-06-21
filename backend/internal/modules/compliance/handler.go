@@ -9,6 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
 )
 
 type handler struct {
@@ -16,23 +18,31 @@ type handler struct {
 	deletionSvc *DeletionService
 }
 
-func Register(rg *gin.RouterGroup, exportSvc *ExportService, deletionSvc *DeletionService, authMW, opsGate gin.HandlerFunc) {
+func Register(rg *gin.RouterGroup, exportSvc *ExportService, deletionSvc *DeletionService, authMW, opsGate gin.HandlerFunc, limiter ratelimit.Limiter) {
 	h := &handler{exportSvc: exportSvc, deletionSvc: deletionSvc}
 
 	authed := rg.Group("/users/me")
 	authed.Use(authMW)
-	authed.POST("/data-export", h.requestExport)
+	authed.POST("/data-export",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "data_export", Limit: 5, Window: time.Minute}),
+		h.requestExport)
 	authed.GET("/data-export", h.getExportStatus)
 	authed.GET("/data-export/download", h.downloadExport)
-	authed.POST("/account/deletion", h.requestDeletion)
-	authed.DELETE("/account/deletion", h.cancelDeletion)
+	authed.POST("/account/deletion",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "account_deletion", Limit: 3, Window: time.Minute}),
+		h.requestDeletion)
+	authed.DELETE("/account/deletion",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "account_deletion_cancel", Limit: 5, Window: time.Minute}),
+		h.cancelDeletion)
 
 	admin := rg.Group("/admin/account-deletions")
 	admin.Use(authMW, opsGate)
 	admin.GET("", h.adminList)
 	admin.POST("/:id/approve", h.approve)
 	admin.POST("/:id/reject", h.reject)
-	admin.POST("/:id/execute", h.execute)
+	admin.POST("/:id/execute",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "deletion_execute", Limit: 10, Window: time.Minute}),
+		h.execute)
 }
 
 // --- export ---

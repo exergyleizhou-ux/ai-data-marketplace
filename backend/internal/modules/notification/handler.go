@@ -3,24 +3,31 @@ package notification
 import (
 	"errors"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
 )
 
 type handler struct{ svc *Service }
 
 // Register mounts notification routes. All require auth (user-scoped).
-func Register(rg *gin.RouterGroup, svc *Service, authMW gin.HandlerFunc) {
+func Register(rg *gin.RouterGroup, svc *Service, authMW gin.HandlerFunc, limiter ratelimit.Limiter) {
 	h := &handler{svc: svc}
 
 	u := rg.Group("/users/me/notifications")
 	u.Use(authMW)
 	u.GET("", h.list)
 	u.GET("/unread-count", h.countUnread)
-	u.POST("/read-all", h.markAllRead)
-	u.POST("/:id/read", h.markRead)
+	u.POST("/read-all",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "notif_read_all", Limit: 20, Window: time.Minute}),
+		h.markAllRead)
+	u.POST("/:id/read",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "notif_read", Limit: 30, Window: time.Minute}),
+		h.markRead)
 
 	p := rg.Group("/users/me/notification-preferences")
 	p.Use(authMW)

@@ -37,8 +37,12 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	authed.POST("/datasets",
 		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "dataset_create", Limit: 20, Window: time.Minute}),
 		h.create)
-	authed.PUT("/datasets/:id", h.update)
-	authed.PUT("/datasets/:id/datasheet", h.setDatasheet) // owner-only; editable anytime
+	authed.PUT("/datasets/:id",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "dataset_update", Limit: 20, Window: time.Minute}),
+		h.update)
+	authed.PUT("/datasets/:id/datasheet",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "datasheet_update", Limit: 30, Window: time.Minute}),
+		h.setDatasheet) // owner-only; editable anytime
 	authed.POST("/datasets/:id/source-declaration/sign", h.signSource)
 	authed.GET("/users/me/datasets", h.listMine) // separate path to avoid /datasets/:id conflict
 
@@ -46,7 +50,9 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 	// upload id, so the :id segment is only meaningful for init.
 	authed.POST("/datasets/:id/upload/init", h.initUpload)
 	authed.PUT("/datasets/:id/upload/part", h.uploadPart)
-	authed.POST("/datasets/:id/upload/complete", h.completeUpload)
+	authed.POST("/datasets/:id/upload/complete",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "upload_complete", Limit: 10, Window: time.Minute}),
+		h.completeUpload)
 	authed.GET("/datasets/:id/upload/status", h.uploadStatus)
 
 	// Ops review / takedown.

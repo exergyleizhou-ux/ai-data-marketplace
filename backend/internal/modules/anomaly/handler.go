@@ -2,21 +2,28 @@ package anomaly
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/middleware"
+	"github.com/lei/ai-data-marketplace/backend/internal/platform/ratelimit"
 )
 
 type handler struct{ svc *Service }
 
-func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc) {
+func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc, limiter ratelimit.Limiter) {
 	h := &handler{svc: svc}
 	admin := rg.Group("/admin/anomalies")
 	admin.Use(authMW, opsGate)
 	admin.GET("", h.list)
-	admin.POST("/:id/acknowledge", h.acknowledge)
-	admin.POST("/:id/resolve", h.resolve)
+	admin.POST("/:id/acknowledge",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "anomaly_ack", Limit: 20, Window: time.Minute}),
+		h.acknowledge)
+	admin.POST("/:id/resolve",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "anomaly_resolve", Limit: 20, Window: time.Minute}),
+		h.resolve)
 }
 
 func (h *handler) list(c *gin.Context) {
