@@ -44,7 +44,7 @@ export function HeroPlate() {
         {/* CERTIFICATE — sealed result emerges */}
         <div className="flex items-center justify-between gap-3 rounded-lg border border-rule bg-white px-3 py-2.5">
           <div className="min-w-0">
-            <p className="font-mono text-xs text-gold-700">VO-795A4D76D4FE</p>
+            <p className="font-mono text-xs text-gold-700">VO-6CB8181EBD2C</p>
             <p className="font-mono text-[10px] text-muted">{t("只出聚合结果 + 封缄", "aggregate result + seal only")}</p>
           </div>
           <div className="shrink-0">

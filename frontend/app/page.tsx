@@ -112,7 +112,7 @@ export default function Home() {
             {
               h: t("结果存证", "Result certificate"),
               d: t("每次输出绑定算法镜像 digest,凭证号可独立核验。", "Every output binds to the audited algorithm's image digest; the certificate ID verifies independently."),
-              mono: "VO-795A4D76D4FE",
+              mono: "VO-6CB8181EBD2C",
               monoLabel: t("真实凭证号 · 可验真", "live certificate · verifiable"),
               accent: "gold",
             },
