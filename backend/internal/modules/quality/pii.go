@@ -3,6 +3,7 @@ package quality
 import (
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -56,7 +57,7 @@ var detectors = []detector{
 	{"ipv4", confHigh, regexp.MustCompile(`(?:\d{1,3}\.){3}\d{1,3}`), isDigitOrDot, validIPv4},
 	{"passport", confHeuristic, regexp.MustCompile(`[EeGgDdSsPpHh]\d{8}`), isAlnum, nil},
 	{"plate", confHeuristic, regexp.MustCompile(`[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼][A-HJ-NP-Z][A-HJ-NP-Z0-9]{4}[A-HJ-NP-Z0-9挂学警港澳]`), nil, nil},
-	{"gps", confHeuristic, regexp.MustCompile(`\d{1,3}\.\d{4,}\s*,\s*\d{1,3}\.\d{4,}`), nil, nil},
+	{"gps", confHeuristic, regexp.MustCompile(`\d{1,3}\.\d{4,}\s*,\s*\d{1,3}\.\d{4,}`), nil, plausibleGPS},
 	{"address", confHeuristic, regexp.MustCompile(`[\x{4e00}-\x{9fa5}]{2,6}(?:市|区|县)[\x{4e00}-\x{9fa5}]{0,10}?(?:路|街|大道|巷|弄)\d+号?(?:\d+室)?`), nil, nil},
 }
 
@@ -237,9 +238,18 @@ func PII(content []byte, declaredPII bool) Check {
 	case declaredPII:
 		// Disclosed — warn, still expected to de-identify before publishing.
 		return Check{Type: TypePII, Result: ResultWarn, Report: report}
-	default:
-		report["error"] = "personal information detected but source declaration says none"
+	case byConfidence[confHigh] > 0:
+		// Validated high-confidence PII (email/phone/checksum-ID/Luhn-card/IPv4)
+		// that is undeclared hard-fails: this is the gate that bounces the dataset.
+		report["error"] = "high-confidence personal information detected but source declaration says none"
 		return Check{Type: TypePII, Result: ResultFail, Report: report}
+	default:
+		// Only low-confidence heuristic guesses (gps/passport/plate/address). These
+		// over-trigger on legitimate data (e.g. decimal columns in scientific CSVs
+		// look like coordinate pairs), so they must NOT auto-bounce a dataset —
+		// they surface as a WARN for ops/seller review instead.
+		report["note"] = "low-confidence heuristic matches only — flagged for review, not auto-failed"
+		return Check{Type: TypePII, Result: ResultWarn, Report: report}
 	}
 }
 
@@ -320,6 +330,33 @@ func validIDCard(s string) bool {
 }
 
 // validIPv4 reports whether each dotted octet is in 0..255.
+// plausibleGPS rejects the dominant false-positive of the bare two-decimal GPS
+// pattern: pairs of sub-1° normalized decimals (e.g. 0.5140,0.2245) are
+// ubiquitous as adjacent CSV columns in scientific/ML tabular data and are not
+// real coordinates. A real coordinate pair has both components within valid
+// lat/long ranges AND at least one component ≥ 1°. The regex matches only
+// positive values, so the lower-range check is one-sided. Over-rejecting a true
+// near-(0,0) coordinate is acceptable; falsely failing every numeric research
+// dataset on the PII gate is not (the research-data beachhead depends on it).
+func plausibleGPS(s string) bool {
+	parts := strings.SplitN(s, ",", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	lat, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	lon, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	if lat > 90 || lon > 180 {
+		return false
+	}
+	if lat < 1 && lon < 1 {
+		return false // normalized scientific decimals, not a real location
+	}
+	return true
+}
+
 func validIPv4(s string) bool {
 	parts := strings.Split(s, ".")
 	if len(parts) != 4 {
