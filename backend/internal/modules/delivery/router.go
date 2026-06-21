@@ -18,7 +18,9 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW gin.HandlerFunc, limiter
 
 	authed := rg.Group("")
 	authed.Use(authMW)
-	authed.POST("/orders/:id/download", h.requestDownload)
+	authed.POST("/orders/:id/download",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "download_request", Limit: 30, Window: time.Minute}),
+		h.requestDownload)
 
 	rg.GET("/files/:token",
 		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "file_download", Limit: 60, Window: time.Minute}),

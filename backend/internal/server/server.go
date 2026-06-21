@@ -384,7 +384,7 @@ func (s *Server) routes() {
 		}
 		notifySvc := notification.NewServiceWithChannels(notifyRepo, prefsRepo, emailSender, emailLogRepo,
 			notificationUserLookup{pool: s.db})
-		notification.Register(api, notifySvc, authMW)
+		notification.Register(api, notifySvc, authMW, lim)
 
 		// Oasis Verify — self-serve API keys (the metered, billable surface).
 		apikeySvc := apikey.NewService(apikey.NewRepository(s.db))
@@ -447,14 +447,14 @@ func (s *Server) routes() {
 		}
 		anomalySvc := anomaly.NewService(anomalyRepo, s.db, anomalyAlerter)
 		anomalySvc.StartScanner(context.Background())
-		anomaly.Register(api, anomalySvc, authMW, auth.RequireRole("ops", "admin"))
+		anomaly.Register(api, anomalySvc, authMW, auth.RequireRole("ops", "admin"), lim)
 
 		// PIPL Compliance: data export + account deletion (PR-S).
 		compExportSvc := compliance.NewExportService(compliance.NewExportRepository(s.db),
 			complianceSourceAdapter{pool: s.db}, notifySvc, store)
 		compExportSvc.StartScanner(context.Background())
 		compDeletionSvc := compliance.NewDeletionService(compliance.NewDeletionRepository(s.db), notifySvc, compExportSvc)
-		compliance.Register(api, compExportSvc, compDeletionSvc, authMW, auth.RequireRole("ops", "admin"))
+		compliance.Register(api, compExportSvc, compDeletionSvc, authMW, auth.RequireRole("ops", "admin"), lim)
 		// compute certs: registered in compute module via the same interface
 		// (wired below after computeSvc is constructed)
 

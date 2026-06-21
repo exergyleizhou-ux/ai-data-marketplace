@@ -22,11 +22,15 @@ func Register(rg *gin.RouterGroup, svc *Service, authMW, opsGate gin.HandlerFunc
 		h.create)
 	g.GET("", h.list)
 	g.GET("/:id", h.get)
-	g.POST("/:id/confirm-delivery", h.confirmDelivery)
+	g.POST("/:id/confirm-delivery",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "order_confirm", Limit: 20, Window: time.Minute}),
+		h.confirmDelivery)
 	g.POST("/:id/dispute",
 		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "order_dispute", Limit: 10, Window: time.Minute}),
 		h.dispute)
-	g.POST("/:id/review", h.createReview)
+	g.POST("/:id/review",
+		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "order_review", Limit: 30, Window: time.Minute}),
+		h.createReview)
 
 	authed := rg.Group("")
 	authed.Use(authMW)
