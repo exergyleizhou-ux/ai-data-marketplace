@@ -32,7 +32,18 @@ func stageData(ctx context.Context, store storage.Storage, key string) (string, 
 		return "", nil, err
 	}
 	cleanup := func() { _ = os.RemoveAll(dir) }
-	f, err := os.Create(filepath.Join(dir, "input.csv"))
+	// MkdirTemp makes the dir 0700, but the sandbox container runs as uid 65534
+	// (runner_docker.go --user) and mounts this dir at /data:ro. On a real Linux
+	// Docker host (Docker Desktop masks host uid perms; a Linux daemon enforces
+	// them) the sandbox uid can only traverse /data if the dir grants other-x —
+	// otherwise the algorithm gets "Permission denied" on /data. Mirror the
+	// out-dir chmod the runner already does for the same reason.
+	if err := os.Chmod(dir, 0o755); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	csvPath := filepath.Join(dir, "input.csv")
+	f, err := os.Create(csvPath)
 	if err != nil {
 		cleanup()
 		return "", nil, err
@@ -43,6 +54,11 @@ func stageData(ctx context.Context, store storage.Storage, key string) (string, 
 		return "", nil, err
 	}
 	if err := f.Close(); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	// Likewise readable by the non-owner sandbox uid (umask could make os.Create 0600).
+	if err := os.Chmod(csvPath, 0o644); err != nil {
 		cleanup()
 		return "", nil, err
 	}
