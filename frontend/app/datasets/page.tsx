@@ -119,8 +119,8 @@ export default function DatasetsPage() {
                     {signals[d.id]?.enabled && <ComputeBadge sig={signals[d.id]} />}
                   </div>
                   <div className="mt-auto flex items-center justify-between pt-3">
-                    <span className="font-mono text-lg font-semibold text-ink">{yuan(d.final_price_cents ?? d.suggested_price_cents)}</span>
-                    <span className="text-xs text-muted">{t(`${d.sample_count} 条样本`, `${d.sample_count} samples`)}</span>
+                    <span className="font-mono text-lg font-semibold tabular-nums text-ink">{yuan(d.final_price_cents ?? d.suggested_price_cents)}</span>
+                    <span className="text-xs tabular-nums text-muted">{t(`${d.sample_count} 条样本`, `${d.sample_count} samples`)}</span>
                   </div>
                 </Card>
               </Link>
