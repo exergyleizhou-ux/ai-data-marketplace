@@ -9,7 +9,7 @@ import pandas as pd
 
 import kinetics as KIN
 
-ALLOWED_MODEL_KEYS = {"format", "design", "fits", "best_model", "best_r2", "derived"}
+ALLOWED_MODEL_KEYS = {"format", "design", "fits", "best_model", "best_r2", "derived", "fit_ok"}
 
 
 def _logistic_data(K=10.0, B0=0.1, r=0.8, n=40, noise=0.02, seed=0):
@@ -47,8 +47,30 @@ def test_default_first_two_numeric_columns():
     assert model["design"]["time"] == "a" and model["design"]["value"] == "b"
 
 
+def test_noise_data_not_confidently_fitted():
+    # Pure noise (no growth) must NOT yield confident kinetic constants. The old code
+    # picked a "best" model by relative R² with no quality floor and emitted a
+    # populated `derived` block (carrying_capacity, doubling_time, …) for noise.
+    rng = np.random.default_rng(1)
+    df = pd.DataFrame({"hour": np.linspace(0, 15, 40), "biomass": rng.uniform(1, 5, 40)})
+    model, _ = KIN.compute(df, {"time": "hour", "value": "biomass"})
+    assert model["fit_ok"] is False, model.get("best_r2")
+    assert model["best_model"] is None
+    assert model["derived"] == {}
+
+
+def test_good_fit_still_reported():
+    # A genuine logistic curve must still pass the gate and report its constants.
+    model, _ = KIN.compute(_logistic_data(), {"time": "hour", "value": "biomass"})
+    assert model["fit_ok"] is True
+    assert model["best_model"] in ("logistic", "gompertz")
+    assert model["derived"]  # non-empty
+
+
 if __name__ == "__main__":
     test_recovers_logistic()
     test_aggregates_only()
     test_default_first_two_numeric_columns()
+    test_noise_data_not_confidently_fitted()
+    test_good_fit_still_reported()
     print("OK: all kinetics tests passed")

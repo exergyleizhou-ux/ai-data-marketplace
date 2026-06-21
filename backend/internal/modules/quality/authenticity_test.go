@@ -2,9 +2,62 @@ package quality
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 )
+
+func TestBenford_SkipsNonLogUniform(t *testing.T) {
+	// Sequential IDs and evenly-binned columns span orders of magnitude (passing the
+	// span gate) but are NOT log-uniform, so Benford's law does not apply — they must
+	// not be false-flagged (the sequential-ID/year/counter "suspect" class).
+	var seq, binned numColumn
+	seq.name, binned.name = "id", "binned"
+	for i := 1; i <= 600; i++ {
+		seq.values = append(seq.values, float64(i))
+		binned.values = append(binned.values, float64(10*(i%100+1))) // 10..1000 evenly spaced
+	}
+	for _, c := range []numColumn{seq, binned} {
+		if f, ok := benfordFinding(c); ok {
+			t.Fatalf("Benford wrongly applicable to non-log-uniform column %q: %+v", c.name, f)
+		}
+	}
+}
+
+func TestBenford_StillFiresOnLogUniform(t *testing.T) {
+	// Genuine log-uniform (multiplicative) data spanning decades must still be screened.
+	var c numColumn
+	c.name = "amount"
+	for i := 0; i < 400; i++ {
+		c.values = append(c.values, math.Pow(10, float64(i)/100.0)) // 10^0..10^4, log-uniform
+	}
+	if _, ok := benfordFinding(c); !ok {
+		t.Fatal("Benford should still apply to genuine log-uniform data")
+	}
+}
+
+func TestScoreAuthenticity_CapsPerColumn(t *testing.T) {
+	// Two correlated detectors firing on the SAME column (e.g. Benford + terminal-
+	// digit, both "digits non-uniform") are not independent evidence; summing them
+	// double-counts one quirk into a false "suspect". The penalty must cap at the
+	// single strongest finding per column.
+	two := []authFinding{
+		{Detector: "benford_first_digit", Column: "x", Severity: "high", Significant: true},
+		{Detector: "terminal_digit_uniformity", Column: "x", Severity: "high", Significant: true},
+	}
+	one := two[:1]
+	if s2, _ := scoreAuthenticity(two); func() int { s, _ := scoreAuthenticity(one); return s }() != s2 {
+		t.Fatalf("two correlated findings on one column scored differently from one: %d", s2)
+	}
+	// findings on DIFFERENT columns still accumulate.
+	diff := []authFinding{
+		{Column: "x", Severity: "high", Significant: true},
+		{Column: "y", Severity: "high", Significant: true},
+	}
+	if s, _ := scoreAuthenticity(diff); s != 60 {
+		t.Fatalf("two columns each -20 should be 60, got %d", s)
+	}
+}
 
 func csvColumn(name string, vals []float64) []byte {
 	var b strings.Builder
