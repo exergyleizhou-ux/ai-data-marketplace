@@ -11,7 +11,7 @@ import { VerifyChip } from "@/components/VerifyChip";
 // issued on this platform (verified live below).
 const ALGOS = [
   {
-    cert: "VO-795A4D76D4FE",
+    cert: "VO-6CB8181EBD2C",
     origin: "PaperGuard",
     zh: { name: "数据完整性筛查", desc: "在沙箱内对表格数据跑 8 个统计异常检测器(Benford、终端位、算术一致性…),只回传按检测器分级的完整性判定,绝不回传原始行。" },
     en: { name: "Data-integrity screen", desc: "Runs 8 statistical anomaly detectors (Benford, terminal-digit, arithmetic consistency…) over tabular data in the sandbox; returns a per-detector integrity verdict, never raw rows." },
@@ -64,7 +64,7 @@ const ALGOS = [
 // The nine algorithms group into three families, so the grid tells a story
 // (integrity → causal inference → bioprocess) instead of being a uniform wall.
 const FAMILIES = [
-  { key: "integrity", zh: "完整性", en: "Integrity", certs: ["VO-795A4D76D4FE"] },
+  { key: "integrity", zh: "完整性", en: "Integrity", certs: ["VO-6CB8181EBD2C"] },
   { key: "causal", zh: "因果推断", en: "Causal inference", certs: ["VO-817B868978BB", "VO-1DFD9CBEFFAB", "VO-639F1C2A367C", "VO-D9342583F9B4"] },
   { key: "process", zh: "生物过程", en: "Bioprocess", certs: ["VO-6B9E6ACC8A5F", "VO-885746636F33", "VO-1410D25DB7E2", "VO-6FC497AD7987"] },
 ];
@@ -78,14 +78,14 @@ const STEPS = [
 
 // A real registered certificate, embedded to showcase the buyer-facing credential.
 const EXAMPLE_CERT: Record<string, unknown> = {
-  certificate_id: "VO-795A4D76D4FE",
-  algorithm: { name: "PaperGuard data-integrity screen", image_digest: "sha256:46ca9a23e080ca2bdf4ba010b400341ecc30b587f3b72810196f7c2ed4692eb3", version: 1 },
-  dataset_id: "08a8b100-41cd-4067-a824-3036d2b13a5b",
+  certificate_id: "VO-6CB8181EBD2C",
+  algorithm: { name: "PaperGuard data-integrity screen", image_digest: "sha256:6d0ad32bcf0327468fa2e9b1219c22722a617f2de4093ecbaecef0cece689a59", version: 1 },
+  dataset_id: "4915afe6-fb00-49ae-841d-053bd13712c0",
   integrity: { algorithm: "SHA-256", verifiable: true },
-  output_sha256: "92dfc19aaa38766d250325c0df1569e618833ababba6c065224b2c1775afe1ed",
+  output_sha256: "c84aa30538181142fb7c34903b93ad918fa1d3f24742810733b3834be9b9e08b",
   operator: "杭州科农绿洲生物科技有限公司",
-  registered_at: "2026-06-19 04:37:45",
-  output_bytes: 942,
+  registered_at: "2026-06-21 18:18:31",
+  output_bytes: 977,
   status: "registered",
   statement_zh: "本凭证由平台基于「可用不可见」计算结果的内容指纹(SHA-256)、产出该结果的已审核算法(镜像 digest 钉死)与源数据集出具,用于结果完整性校验与计算溯源存证。买方可对下载结果重新计算 SHA-256 与本凭证比对。",
   statement_en: "Platform-issued provenance & integrity record for a compute-to-data result: it binds the output fingerprint (SHA-256) to the audited algorithm (pinned image digest) that produced it and the source dataset. Buyers can re-hash the downloaded result and compare.",
@@ -95,14 +95,14 @@ const EXAMPLE_CERT: Record<string, unknown> = {
 // live + re-hash-verifiable (UCI Wine Quality red, 1,599 rows).
 const REAL_DATA = [
   {
-    cert: "VO-0C300E9FAED2",
+    cert: "VO-6CB8181EBD2C",
     zh: { name: "完整性筛查", result: "8 个探测器 / 5 个触发 / 46 项发现 / verdict: anomalies_flagged。对真实数据集的统计完整性体检。" },
     en: { name: "Integrity screen", result: "8 detectors / 5 flagged / 46 findings / verdict: anomalies_flagged. A statistical-integrity check of a real dataset." },
   },
   {
-    cert: "VO-2B9CCA235122",
-    zh: { name: "因果效应估计 (ATE)", result: "alcohol → quality(调 pH/硫酸盐/密度):OLS 0.365(95% CI 0.33–0.40),交叉拟合 DML 0.321。" },
-    en: { name: "Causal effect (ATE)", result: "alcohol → quality (adj. pH/sulphates/density): OLS 0.365 (95% CI 0.33–0.40), cross-fitted DML 0.321." },
+    cert: "VO-A123BADD0B0A",
+    zh: { name: "因果效应估计 (ATE)", result: "fixed acidity → volatile acidity(调整 9 个理化协变量):OLS 0.011(95% CI 0.001–0.022),交叉拟合 DML 0.008。" },
+    en: { name: "Causal effect (ATE)", result: "fixed acidity → volatile acidity (adj. 9 physicochemical covariates): OLS 0.011 (95% CI 0.001–0.022), cross-fitted DML 0.008." },
   },
 ];
 
