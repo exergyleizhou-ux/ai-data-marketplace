@@ -179,3 +179,61 @@ func TestMaskTokenIsInert(t *testing.T) {
 		t.Errorf("mask token detected as PII: %v", c)
 	}
 }
+
+func TestPII_GPSExcludesScientificDecimalPairs(t *testing.T) {
+	// Sub-1 normalized decimal pairs dominate scientific/ML tabular data (UCI
+	// abalone, breast-cancer-wisconsin, etc.). Adjacent CSV columns of such
+	// decimals must NOT be flagged as GPS PII — otherwise virtually every numeric
+	// research dataset falsely fails the PII gate (the research-data beachhead).
+	for _, s := range []string{"0.5140,0.2245", "0.11840,0.27760", "0.4550,0.3650"} {
+		for _, m := range scan(s) {
+			if m.name == "gps" {
+				t.Fatalf("scientific decimal pair %q wrongly flagged as gps", s)
+			}
+		}
+	}
+}
+
+func TestPII_GPSStillDetectsRealCoordinates(t *testing.T) {
+	// Real, in-range coordinate pairs (at least one component ≥ 1°) must still be
+	// detected so genuine location PII is not missed.
+	for _, s := range []string{"30.2741,120.1551", "40.7128,116.4074"} {
+		found := false
+		for _, m := range scan(s) {
+			if m.name == "gps" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("real coordinate %q not detected as gps", s)
+		}
+	}
+}
+
+func TestPII_HeuristicOnlyMatchesWarnNotFail(t *testing.T) {
+	// Low-confidence heuristic guesses (gps/plate/passport/address) must NOT hard
+	// FAIL an undeclared dataset — that bounces legitimate data on a guess. They
+	// surface as WARN (the dataset still goes to ops review); only validated
+	// high-confidence PII fails. Without this, numeric research data whose decimal
+	// columns trip the gps heuristic gets falsely rejected.
+	for _, s := range []string{"坐标 30.2741,120.1551", "车牌 京A12345"} {
+		c := PII([]byte(s), false)
+		if c.Result != ResultWarn {
+			t.Fatalf("heuristic-only %q: got %s, want warn", s, c.Result)
+		}
+		if c.Report["total"].(int) == 0 {
+			t.Fatalf("heuristic-only %q: matches should still be recorded", s)
+		}
+	}
+}
+
+func TestPII_HighConfidenceUndeclaredStillFails(t *testing.T) {
+	// Validated high-confidence PII (email, phone, checksum-ID, Luhn card) that is
+	// undeclared must still hard FAIL — the gate that protects buyers stays.
+	for _, s := range []string{"联系 a@b.com", "手机 " + validPhone, "证 " + validID} {
+		c := PII([]byte(s), false)
+		if c.Result != ResultFail {
+			t.Fatalf("undeclared high-confidence PII %q: got %s, want fail", s, c.Result)
+		}
+	}
+}
