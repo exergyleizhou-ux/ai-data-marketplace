@@ -12,9 +12,12 @@ import (
 // by design: this is the always-on Go baseline; the PaperGuard sidecar adds the
 // deeper detectors (GRIM/SPRITE/...). Signal, not verdict.
 const (
-	authMinColN     = 30   // min numeric values for a column to be screened
-	authFDRAlpha    = 0.05 // significance after Benjamini-Hochberg
-	benfordMinRatio = 100  // max/min span required for Benford to be meaningful
+	authMinColN      = 30   // min numeric values for a column to be screened
+	authFDRAlpha     = 0.05 // significance after Benjamini-Hochberg
+	benfordMinRatio  = 100  // max/min span required for Benford to be meaningful
+	benfordMinLogStd = 0.5  // min std-dev of log10(values): below this the column is
+	//                        sequential/uniform/binned (not log-uniform) and Benford
+	//                        does not apply (real Benford data is ≳0.8; sequential ≲0.45)
 	sentinelMinMode = 0.40 // a min/max value taking ≥40% of a column is sentinel-like
 	dupRowsMinRatio = 0.30 // duplicate-row fraction that starts to matter
 
@@ -224,6 +227,22 @@ func benfordFinding(c numColumn) (authFinding, bool) {
 		n++
 	}
 	if n < authMinColN || minV <= 0 || maxV/minV < benfordMinRatio {
+		return authFinding{}, false
+	}
+	// Distributional applicability gate. Span ≥100 is necessary but NOT sufficient
+	// for Benford: sequential IDs, evenly-binned, and uniform-over-a-range columns
+	// span orders of magnitude yet are not log-uniform and would false-flag. Benford
+	// holds for log-uniform (multiplicative) data; require enough spread in log10
+	// space to distinguish it (real Benford data ≳0.8; sequential/uniform ≲0.45).
+	var sl, sl2 float64
+	for _, v := range c.values {
+		l := math.Log10(v)
+		sl += l
+		sl2 += l * l
+	}
+	nf := float64(n)
+	logStd := math.Sqrt(math.Max(sl2/nf-(sl/nf)*(sl/nf), 0))
+	if logStd < benfordMinLogStd {
 		return authFinding{}, false
 	}
 	chi2 := 0.0
@@ -438,11 +457,21 @@ func severityFromP(p float64, significant bool) string {
 // scoreAuthenticity turns significant findings into a 0-100 score and a band.
 func scoreAuthenticity(findings []authFinding) (int, string) {
 	weight := map[string]int{"info": 0, "low": 4, "medium": 10, "high": 20}
-	score := 100
+	// Cap the penalty at the single strongest finding PER COLUMN. Several detectors
+	// keying off the same column property (Benford + terminal-digit, or sentinel +
+	// duplicate-rows) are correlated, not independent evidence; summing them double-
+	// counts one quirk and unfairly pushes legitimate data into "review"/"suspect".
+	perCol := map[string]int{}
 	for _, f := range findings {
 		if f.Significant {
-			score -= weight[f.Severity]
+			if w := weight[f.Severity]; w > perCol[f.Column] {
+				perCol[f.Column] = w
+			}
 		}
+	}
+	score := 100
+	for _, w := range perCol {
+		score -= w
 	}
 	if score < 0 {
 		score = 0

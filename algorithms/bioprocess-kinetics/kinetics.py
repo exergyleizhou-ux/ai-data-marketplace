@@ -118,10 +118,22 @@ def compute(df, params):
                      bounds=([ymax * 0.5, 1e-6, -abs(tmax)], [ymax * 10, 100, tmax])))
 
     converged = [f for f in fits if f.get("converged")]
-    best = max(converged, key=lambda f: f["r2"]) if converged else None
+    # Reject physically impossible logistic fits: initial biomass ≥ carrying capacity
+    # (B0 ≥ K) cannot happen in density-dependent growth — the optimizer can land
+    # there on noise, and it would otherwise be selected as "best".
+    valid = [f for f in converged if not (f["model"] == "logistic" and f["params"][0] >= f["params"][1])]
+    best = max(valid, key=lambda f: f["r2"]) if valid else None
+    best_r2 = best["r2"] if best else None
+
+    # Goodness-of-fit gate: a "best" model by *relative* R² is meaningless if no model
+    # actually fits. Below a quality floor (configurable), report NO kinetic constants
+    # and flag fit_ok=false — rather than emitting confident params for noise/decay/
+    # constant data. best_r2 is still surfaced so the buyer sees why.
+    min_r2 = float(params.get("min_r2", 0.8))
+    fit_ok = bool(best is not None and best_r2 >= min_r2)
 
     derived = {}
-    if best and best["model"] == "logistic":
+    if fit_ok and best["model"] == "logistic":
         B0, K, r = best["params"]
         derived = {
             "carrying_capacity": round(K, 6),
@@ -129,7 +141,7 @@ def compute(df, params):
             "max_dB_dt": round(r * K / 4, 6),         # max slope at B=K/2
             "doubling_time": round(math.log(2) / r, 6) if r > 0 else None,
         }
-    elif best and best["model"] == "gompertz":
+    elif fit_ok and best["model"] == "gompertz":
         A, mu_m, lam = best["params"]
         derived = {
             "asymptote": round(A, 6),
@@ -142,8 +154,9 @@ def compute(df, params):
         "design": {"time": tcol, "value": vcol, "models": ["logistic", "gompertz"],
                    "method": "closed-form growth-curve least squares (bos kinetics_engine port)"},
         "fits": fits,
-        "best_model": best["model"] if best else None,
-        "best_r2": best["r2"] if best else None,
+        "best_model": best["model"] if fit_ok else None,
+        "best_r2": round(best_r2, 6) if best_r2 is not None else None,
+        "fit_ok": fit_ok,
         "derived": derived,
     }
     metrics = {"n_points": int(len(d)), "t_min": round(float(t.min()), 6), "t_max": round(tmax, 6),
