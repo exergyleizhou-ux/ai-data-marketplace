@@ -10,6 +10,10 @@ import (
 
 // handleHealthz is a pure liveness probe: the process is up and serving.
 func (s *Server) handleHealthz(c *gin.Context) {
+	if c.Request.Method == http.MethodHead {
+		c.Status(http.StatusOK)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
@@ -23,6 +27,10 @@ func (s *Server) handleReadyz(c *gin.Context) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable", "dependency": "postgres"})
 			return
 		}
+	}
+	if c.Request.Method == http.MethodHead {
+		c.Status(http.StatusOK)
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ready", "env": s.cfg.Env})
 }

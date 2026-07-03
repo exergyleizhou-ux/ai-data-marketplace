@@ -13,7 +13,7 @@ const LINKS = [
   { href: "/datasets", zh: "数据市场", en: "Marketplace" },
   { href: "/c2d", zh: "可信计算", en: "Compute-to-data" },
   { href: "/verify-api", zh: "验证 API", en: "Verify API" },
-  { href: "/lumen", zh: "Lumen", en: "Lumen" },
+  { href: "/lumen/", zh: "Lumen", en: "Lumen" },
   { href: "/lumen-science/?embed=1&oasis=1", zh: "Lumen Science", en: "Lumen Science" },
   { href: "/sell", zh: "我要卖", en: "Sell", auth: true },
   { href: "/compute", zh: "隐私计算", en: "Compute", auth: true },

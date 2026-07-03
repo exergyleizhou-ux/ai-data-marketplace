@@ -322,16 +322,24 @@ func (s *Server) metricsAuth(next gin.HandlerFunc) gin.HandlerFunc {
 func (s *Server) routes() {
 	// Liveness / readiness — used by Docker Compose healthchecks and CI.
 	s.engine.GET("/healthz", s.handleHealthz)
+	s.engine.HEAD("/healthz", s.handleHealthz)
 	s.engine.GET("/readyz", s.handleReadyz)
+	s.engine.HEAD("/readyz", s.handleReadyz)
 	// Prometheus scrape endpoint — requires METRICS_TOKEN if configured.
 	s.engine.GET("/metrics", s.metricsAuth(gin.WrapH(metrics.Handler())))
 
 	// Versioned API surface. Module routers register under this group in
 	// later PRs, e.g. auth.Register(api), dataset.Register(api), ...
 	api := s.engine.Group("/api/v1")
-	api.GET("/ping", func(c *gin.Context) {
+	ping := func(c *gin.Context) {
+		if c.Request.Method == http.MethodHead {
+			c.Status(http.StatusOK)
+			return
+		}
 		httpx.OK(c, gin.H{"pong": true})
-	})
+	}
+	api.GET("/ping", ping)
+	api.HEAD("/ping", ping)
 
 	// --- module wiring (modular monolith) ---
 	// db may be nil in route-only tests; modules needing it are skipped then.

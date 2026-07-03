@@ -81,31 +81,36 @@ server {
   listen 8080;
   server_name _;
   client_max_body_size 64m;
+  absolute_redirect off;
+  port_in_redirect off;
 
-  location /api/    { proxy_pass http://127.0.0.1:8090; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $remote_addr; proxy_set_header X-Forwarded-Proto $scheme; }
-  location /healthz { proxy_pass http://127.0.0.1:8090; }
-  location /docs    { proxy_pass http://127.0.0.1:8090; }
+  # Cloudflare terminates TLS; origin sees HTTP on :8080 — preserve public https URLs.
+  set $public_scheme https;
+
+  location /api/    { proxy_pass http://127.0.0.1:8090; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $remote_addr; proxy_set_header X-Forwarded-Proto $public_scheme; }
+  location /healthz { proxy_pass http://127.0.0.1:8090; proxy_set_header X-Forwarded-Proto $public_scheme; }
+  location /docs    { proxy_pass http://127.0.0.1:8090; proxy_set_header X-Forwarded-Proto $public_scheme; }
 
   # Lumen programming agent — strip /lumen/ prefix before upstream
-  location = /lumen { return 301 /lumen/; }
+  location = /lumen { return 301 $public_scheme://$host/lumen/; }
   location /lumen/ {
     proxy_pass http://127.0.0.1:8787/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Proto $public_scheme;
     proxy_buffering off;
     proxy_read_timeout 300s;
   }
 
   # Lumen Science — strip /lumen-science/ prefix before upstream
-  location = /lumen-science { return 301 /lumen-science/$is_args$args; }
+  location = /lumen-science { return 301 $public_scheme://$host/lumen-science/$is_args$args; }
   location /lumen-science/ {
     proxy_pass http://127.0.0.1:18990/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Proto $public_scheme;
     proxy_buffering off;
     proxy_read_timeout 300s;
   }
@@ -114,7 +119,7 @@ server {
     proxy_pass http://127.0.0.1:3200;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Proto $public_scheme;
   }
 }
 NGINX
