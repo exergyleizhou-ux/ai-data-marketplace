@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-/** Full-bleed Oasis shell: keep Nav, hide footer padding, host Lumen iframes. */
+/** Full-bleed Oasis shell — goal:d6aa846b round9 */
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     document.body.classList.add("workspace-embed");
