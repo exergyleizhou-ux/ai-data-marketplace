@@ -42,4 +42,8 @@ export const siteMetadata: Metadata = {
     title,
     description,
   },
+  icons: {
+    icon: "/opengraph-image.png",
+    apple: "/opengraph-image.png",
+  },
 };

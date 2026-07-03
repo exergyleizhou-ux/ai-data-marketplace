@@ -19,6 +19,18 @@ const nextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  async rewrites() {
+    // Dev convenience: proxy Lumen services through the Next dev server.
+    // Production routes /lumen/* and /lumen-science/* at nginx/Caddy instead.
+    const lumenServe = process.env.LUMEN_SERVE_URL || "http://127.0.0.1:8787";
+    const lumenScience = process.env.LUMEN_SCIENCE_URL || "http://127.0.0.1:18990";
+    return [
+      { source: "/lumen", destination: `${lumenServe}/` },
+      { source: "/lumen/:path*", destination: `${lumenServe}/:path*` },
+      { source: "/lumen-science", destination: `${lumenScience}/` },
+      { source: "/lumen-science/:path*", destination: `${lumenScience}/:path*` },
+    ];
+  },
 };
 
 export default nextConfig;
