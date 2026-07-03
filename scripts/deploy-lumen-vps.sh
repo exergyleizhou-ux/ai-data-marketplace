@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy Lumen + Lumen Science integration onto the Oasis demo VPS.
+# Deploy Lumen + Lumen Science integration onto the Oasis demo VPS (goal:8c284a4e 5-ship fleet).
 # Run from repo root on your Mac (needs SSH key ~/.ssh/oasis_deploy).
 #
 #   bash scripts/deploy-lumen-vps.sh
@@ -21,11 +21,14 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SSH=(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${VPS_USER}@${VPS_HOST}")
 RSYNC=(rsync -az -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=no")
 
-echo "▸ cross-build lumen (linux/amd64)…"
+echo "▸ cross-build lumen + native MCP fleet (linux/amd64)…"
 mkdir -p "$LUMEN_SRC/bin"
 (
   cd "$LUMEN_SRC"
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/lumen-linux-amd64 ./cmd/lumen
+  for mcp in lumen-mcp-pubmed lumen-mcp-oasis lumen-mcp-chembl lumen-mcp-c2d lumen-mcp-geo; do
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "bin/${mcp}-linux-amd64" "./cmd/${mcp}"
+  done
 )
 
 echo "▸ sync frontend + lumen binary…"
@@ -33,10 +36,27 @@ echo "▸ sync frontend + lumen binary…"
   "${VPS_USER}@${VPS_HOST}:/opt/oasis/frontend/components/Nav.tsx"
 "${RSYNC[@]}" "$REPO_ROOT/frontend/next.config.mjs" \
   "${VPS_USER}@${VPS_HOST}:/opt/oasis/frontend/next.config.mjs"
+"${RSYNC[@]}" "$REPO_ROOT/frontend/app/globals.css" \
+  "${VPS_USER}@${VPS_HOST}:/opt/oasis/frontend/app/globals.css"
+"${RSYNC[@]}" "$REPO_ROOT/frontend/app/workspace/" \
+  "${VPS_USER}@${VPS_HOST}:/opt/oasis/frontend/app/workspace/"
+
+"${SSH[@]}" mkdir -p /opt/lumen/skills
+"${RSYNC[@]}" "$LUMEN_SRC/skills/" \
+  "${VPS_USER}@${VPS_HOST}:/opt/lumen/skills/"
 
 "${RSYNC[@]}" "$LUMEN_SRC/bin/lumen-linux-amd64" \
   "${VPS_USER}@${VPS_HOST}:/usr/local/bin/lumen"
-"${SSH[@]}" chmod +x /usr/local/bin/lumen
+for mcp in lumen-mcp-pubmed lumen-mcp-oasis lumen-mcp-chembl lumen-mcp-c2d lumen-mcp-geo; do
+  "${RSYNC[@]}" "$LUMEN_SRC/bin/${mcp}-linux-amd64" \
+    "${VPS_USER}@${VPS_HOST}:/usr/local/bin/${mcp}"
+done
+"${SSH[@]}" chmod +x /usr/local/bin/lumen \
+  /usr/local/bin/lumen-mcp-pubmed \
+  /usr/local/bin/lumen-mcp-oasis \
+  /usr/local/bin/lumen-mcp-chembl \
+  /usr/local/bin/lumen-mcp-c2d \
+  /usr/local/bin/lumen-mcp-geo
 
 echo "▸ install systemd units + nginx routes…"
 "${SSH[@]}" bash -s <<'REMOTE'
@@ -49,11 +69,14 @@ After=network.target
 
 [Service]
 Type=simple
+WorkingDirectory=/opt/lumen
 ExecStart=/usr/local/bin/lumen serve --addr 127.0.0.1:8787
 Restart=always
 RestartSec=3
 User=root
 Environment=HOME=/root
+Environment=LUMEN_PROJECT_ROOT=/opt/lumen
+Environment=LUMEN_DEMO=1
 
 [Install]
 WantedBy=multi-user.target
@@ -141,7 +164,8 @@ temperature = 0.7
 TOML
 
 systemctl daemon-reload
-systemctl enable --now lumen-serve lumen-science
+systemctl enable lumen-serve lumen-science
+systemctl restart lumen-serve lumen-science
 nginx -t && systemctl reload nginx
 REMOTE
 
@@ -157,6 +181,8 @@ echo "▸ smoke test…"
 sleep 4
 curl -fsS "https://demo.oasisdata2026.xyz/lumen/" | head -c 200 && echo " … /lumen ok"
 curl -fsS "https://demo.oasisdata2026.xyz/lumen-science/?embed=1" | head -c 200 && echo " … /lumen-science ok"
+curl -fsS -X POST "https://demo.oasisdata2026.xyz/lumen-science/api/native/verify" \
+  -H 'Content-Type: application/json' -d '{}' | grep -q '"ok":true' && echo " … native verify 5/5 ok"
 
 echo
 echo "════════════════════════════════════════════════════════════"
