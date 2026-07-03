@@ -13,6 +13,8 @@ const LINKS = [
   { href: "/datasets", zh: "数据市场", en: "Marketplace" },
   { href: "/c2d", zh: "可信计算", en: "Compute-to-data" },
   { href: "/verify-api", zh: "验证 API", en: "Verify API" },
+  { href: "/lumen", zh: "Lumen", en: "Lumen" },
+  { href: "/lumen-science/?embed=1&oasis=1", zh: "Lumen Science", en: "Lumen Science" },
   { href: "/sell", zh: "我要卖", en: "Sell", auth: true },
   { href: "/compute", zh: "隐私计算", en: "Compute", auth: true },
   { href: "/orders", zh: "我的订单", en: "Orders", auth: true },
@@ -39,14 +41,15 @@ export function Nav() {
   }, [pathname]);
 
   const visibleLinks = LINKS.filter((l) => !l.auth || user);
+  const linkPath = (href: string) => href.split("?")[0];
   const linkClass = (href: string) =>
     `rounded-md px-3 py-1.5 text-sm ${
-      pathname.startsWith(href) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-600 hover:bg-neutral-50"
+      pathname.startsWith(linkPath(href)) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-600 hover:bg-neutral-50"
     }`;
   // Mobile drawer rows get a comfortable ≥44px touch target.
   const drawerLinkClass = (href: string) =>
     `flex min-h-[44px] items-center rounded-md px-3 text-sm ${
-      pathname.startsWith(href) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-700 hover:bg-neutral-50"
+      pathname.startsWith(linkPath(href)) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-700 hover:bg-neutral-50"
     }`;
 
   return (
@@ -72,16 +75,32 @@ export function Nav() {
         </Link>
         {/* Desktop links */}
         <nav className="hidden flex-1 items-center gap-1 sm:flex">
-          {visibleLinks.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={linkClass(l.href)}
-              aria-current={pathname.startsWith(l.href) ? "page" : undefined}
-            >
-              {t(l.zh, l.en)}
-            </Link>
-          ))}
+          {visibleLinks.map((l) => {
+            const isExternal = l.href.startsWith("http");
+            if (isExternal) {
+              return (
+                <a
+                  key={l.href}
+                  href={l.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={linkClass(l.href)}
+                >
+                  {t(l.zh, l.en)}
+                </a>
+              );
+            }
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={linkClass(l.href)}
+                aria-current={pathname.startsWith(linkPath(l.href)) ? "page" : undefined}
+              >
+                {t(l.zh, l.en)}
+              </Link>
+            );
+          })}
           {isOps && (
             <Link href="/admin" className={linkClass("/admin")}>
               {t("运营后台", "Ops")}
@@ -149,16 +168,32 @@ export function Nav() {
       {menuOpen && (
         <div className="border-t border-neutral-200 bg-white px-2 py-1 sm:hidden">
           <nav className="flex flex-col divide-y divide-rule/70">
-            {visibleLinks.map((l) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                className={drawerLinkClass(l.href)}
-                aria-current={pathname.startsWith(l.href) ? "page" : undefined}
-              >
-                {t(l.zh, l.en)}
-              </Link>
-            ))}
+            {visibleLinks.map((l) => {
+              const isExternal = l.href.startsWith("http");
+              if (isExternal) {
+                return (
+                  <a
+                    key={l.href}
+                    href={l.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={drawerLinkClass(l.href)}
+                  >
+                    {t(l.zh, l.en)}
+                  </a>
+                );
+              }
+              return (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className={drawerLinkClass(l.href)}
+                  aria-current={pathname.startsWith(linkPath(l.href)) ? "page" : undefined}
+                >
+                  {t(l.zh, l.en)}
+                </Link>
+              );
+            })}
             {isOps && (
               <Link href="/admin" className={drawerLinkClass("/admin")}>
                 {t("运营后台", "Ops")}
