@@ -105,11 +105,16 @@ h1, h2, h3 { text-wrap: balance; }
 
 /* Lumen / Science workspace: full-bleed iframe under Oasis Nav */
 body.workspace-embed main {
-  max-width: none;
-  margin-left: 0;
-  margin-right: 0;
-  padding: 0;
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding: 0 !important;
+  min-height: calc(100vh - 3.5rem);
 }
 body.workspace-embed footer {
-  display: none;
+  display: none !important;
+}
+body.workspace-embed .workspace-frame {
+  min-height: calc(100vh - 3.5rem);
+  height: calc(100vh - 3.5rem);
 }
