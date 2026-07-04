@@ -1,49 +1,63 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { tokenStore } from "@/lib/api";
 
 const MSG_AUTH = "lumen-science:oasis-auth";
 const MSG_REQUEST = "lumen-science:request-oauth";
-const LOCAL_LUMEN = "http://127.0.0.1:18990";
-const VPS_LUMEN = "/lumen-science";
 
 export default function LumenScienceWorkspacePage() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [src, setSrc] = useState<string | null>(null);
+  const triedLocal = useRef(false);
 
-  // Probe local Lumen first — sandbox only works on the user's Mac.
-  // VPS proxy is Linux, can't run Claude Science sandbox.
-  useEffect(() => {
-    let cancelled = false;
-    async function probe() {
-      try {
-        const r = await fetch(LOCAL_LUMEN + "/api/health", { signal: AbortSignal.timeout(1500) });
-        if (r.ok && !cancelled) { setSrc(LOCAL_LUMEN + "/?embed=1&oasis=1"); return; }
-      } catch (_) {}
-      if (!cancelled) setSrc(VPS_LUMEN + "/?embed=1&oasis=1");
-    }
-    probe();
-    return () => { cancelled = true; };
+  // Try local Lumen first via iframe load — no fetch, no CORS, no cert issues.
+  // If it loads within 2s, use local (sandbox works). Otherwise use VPS proxy.
+  const onLocalLoad = useCallback(() => {
+    if (!triedLocal.current) return;
+    // Local Lumen responded — keep using it
   }, []);
+
+  const tryLocal = useCallback(() => {
+    if (triedLocal.current) return;
+    triedLocal.current = true;
+    const timeout = setTimeout(() => {
+      // Local didn't respond in time — fallback to VPS
+      setSrc("/lumen-science/?embed=1&oasis=1");
+    }, 2000);
+    // Use a hidden test iframe
+    const testFrame = document.createElement("iframe");
+    testFrame.src = "https://127.0.0.1:18993/?embed=1&oasis=1";
+    testFrame.style.display = "none";
+    testFrame.onload = () => {
+      clearTimeout(timeout);
+      setSrc("https://127.0.0.1:18993/?embed=1&oasis=1");
+      testFrame.remove();
+    };
+    testFrame.onerror = () => {
+      clearTimeout(timeout);
+      setSrc("/lumen-science/?embed=1&oasis=1");
+      testFrame.remove();
+    };
+    document.body.appendChild(testFrame);
+  }, []);
+
+  useEffect(() => { tryLocal(); }, [tryLocal]);
 
   useEffect(() => {
     const sendAuth = () => {
       const token = tokenStore.access;
       iframeRef.current?.contentWindow?.postMessage(
         { type: MSG_AUTH, access_token: token || null },
-        window.location.origin
+        "*"
       );
     };
-
-    sendAuth();
 
     const onStorage = (e: StorageEvent) => {
       if (e.key === "adm_access" || e.key === "adm_refresh") sendAuth();
     };
 
     const onMessage = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin) return;
       if (e.data?.type !== MSG_REQUEST) return;
       if (!tokenStore.access) {
         window.open("/login?next=/workspace/lumen-science", "_blank");
@@ -52,6 +66,7 @@ export default function LumenScienceWorkspacePage() {
       }
     };
 
+    sendAuth();
     window.addEventListener("storage", onStorage);
     window.addEventListener("message", onMessage);
     return () => {
@@ -62,8 +77,9 @@ export default function LumenScienceWorkspacePage() {
 
   if (!src) {
     return (
-      <div className="flex items-center justify-center h-full bg-paper text-dim text-sm">
-        检测本地 Lumen 服务…
+      <div className="flex flex-col items-center justify-center h-full bg-paper gap-4">
+        <p className="text-dim text-sm">正在连接 Lumen Science…</p>
+        <p className="text-dim text-xs">如长时间未响应，请确认本机已启动 Lumen</p>
       </div>
     );
   }
