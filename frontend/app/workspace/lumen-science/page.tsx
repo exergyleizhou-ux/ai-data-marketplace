@@ -49,6 +49,7 @@ export default function LumenScienceWorkspacePage() {
       title="Lumen Science"
       className="h-full w-full border-0 bg-paper"
       allow="clipboard-read; clipboard-write"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
     />
   );
 }
