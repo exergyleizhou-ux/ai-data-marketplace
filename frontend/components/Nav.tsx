@@ -15,6 +15,7 @@ const LINKS = [
   { href: "/verify-api", zh: "验证 API", en: "Verify API" },
   { href: "/workspace/lumen", zh: "Lumen", en: "Lumen" },
   { href: "/workspace/lumen-science", zh: "Lumen Science", en: "Lumen Science" },
+  { href: "/workspace/lumen-lab", zh: "实验室", en: "Lab" },
   { href: "/sell", zh: "我要卖", en: "Sell", auth: true },
   { href: "/compute", zh: "隐私计算", en: "Compute", auth: true },
   { href: "/orders", zh: "我的订单", en: "Orders", auth: true },
