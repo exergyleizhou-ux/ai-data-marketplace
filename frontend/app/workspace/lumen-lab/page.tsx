@@ -11,7 +11,7 @@ export default function LumenLabWorkspacePage() {
     if (triedLocal.current) return;
     triedLocal.current = true;
     const timeout = setTimeout(() => {
-      setSrc("/lumen-science/lab-fallback"); // show message
+      setSrc("/lumen-science/?embed=1&oasis=1"); // show message
     }, 2500);
     const testFrame = document.createElement("iframe");
     testFrame.src = "https://127.0.0.1:18995/?embed=1";
@@ -32,7 +32,7 @@ export default function LumenLabWorkspacePage() {
         httpFrame.remove();
       };
       httpFrame.onerror = () => {
-        setSrc("/lumen-science/lab-fallback");
+        setSrc("/lumen-science/?embed=1&oasis=1");
         httpFrame.remove();
       };
       document.body.appendChild(httpFrame);
@@ -51,7 +51,7 @@ export default function LumenLabWorkspacePage() {
     );
   }
 
-  if (src === "/lumen-science/lab-fallback") {
+  if (false) {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-paper gap-4 p-8 text-center">
         <h3 className="text-lg font-semibold">Lumen Science 实验室</h3>
