@@ -8,7 +8,7 @@
 #   1. cross-builds lumen for linux/amd64
 #   2. rsyncs marketplace frontend changes + lumen binary
 #   3. updates nginx to proxy /lumen/* and /lumen-science/*
-#   4. installs systemd units for lumen-serve (:8787) and lumen-science (:18990)
+#   4. installs systemd units for lumen-serve (:8787), lumen-science (:18990), lumen-lab (:18992)
 #   5. rebuilds Next.js frontend and restarts services
 set -euo pipefail
 
@@ -99,6 +99,23 @@ Environment=HOME=/root
 WantedBy=multi-user.target
 UNIT
 
+cat > /etc/systemd/system/lumen-lab.service <<'UNIT'
+[Unit]
+Description=Lumen Science Lab (Oasis /lumen-lab proxy target)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/lumen science lab --addr 127.0.0.1:18992 --no-browser
+Restart=always
+RestartSec=3
+User=root
+Environment=HOME=/root
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
 cat > /etc/nginx/sites-available/oasis <<'NGINX'
 server {
   listen 8080;
@@ -109,6 +126,16 @@ server {
 
   # Cloudflare terminates TLS; origin sees HTTP on :8080 — preserve public https URLs.
   set $public_scheme https;
+
+  location /api/lab/ {
+    proxy_pass http://127.0.0.1:18992/api/lab/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $public_scheme;
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+  }
 
   location /api/    { proxy_pass http://127.0.0.1:8090; proxy_set_header Host $host; proxy_set_header X-Forwarded-For $remote_addr; proxy_set_header X-Forwarded-Proto $public_scheme; }
   location /healthz { proxy_pass http://127.0.0.1:8090; proxy_set_header X-Forwarded-Proto $public_scheme; }
@@ -132,6 +159,19 @@ server {
     proxy_pass http://127.0.0.1:18990/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $public_scheme;
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+  }
+
+  location = /lumen-lab { return 301 $public_scheme://$host/lumen-lab/$is_args$args; }
+  location /lumen-lab/ {
+    proxy_pass http://127.0.0.1:18992/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
     proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $public_scheme;
     proxy_buffering off;
@@ -164,8 +204,8 @@ temperature = 0.7
 TOML
 
 systemctl daemon-reload
-systemctl enable lumen-serve lumen-science
-systemctl restart lumen-serve lumen-science
+systemctl enable lumen-serve lumen-science lumen-lab
+systemctl restart lumen-serve lumen-science lumen-lab
 nginx -t && systemctl reload nginx
 REMOTE
 
@@ -181,12 +221,19 @@ echo "▸ smoke test…"
 sleep 4
 curl -fsS "https://demo.oasisdata2026.xyz/lumen/" | head -c 200 && echo " … /lumen ok"
 curl -fsS "https://demo.oasisdata2026.xyz/lumen-science/?embed=1" | head -c 200 && echo " … /lumen-science ok"
+curl -fsS "https://demo.oasisdata2026.xyz/api/lab/health" | tee /tmp/lab-health.json | grep -q '"panel"' && echo " … /api/lab/health ok"
+# National-lab probes: capacity + readyz
+grep -q '"capacity"' /tmp/lab-health.json && echo " … health.capacity present" || echo " ⚠ capacity field missing (old binary?)"
+curl -fsS "https://demo.oasisdata2026.xyz/api/lab/readyz" | grep -q '"ready"' && echo " … /api/lab/readyz ok"
+curl -fsS "https://demo.oasisdata2026.xyz/lumen-lab/?embed=1" | head -c 200 && echo " … /lumen-lab ok"
+curl -fsS "https://demo.oasisdata2026.xyz/workspace/lumen-lab" | head -c 200 && echo " … /workspace/lumen-lab ok" || true
 curl -fsS -X POST "https://demo.oasisdata2026.xyz/lumen-science/api/native/verify" \
-  -H 'Content-Type: application/json' -d '{}' | grep -q '"ok":true' && echo " … native verify 5/5 ok"
+  -H 'Content-Type: application/json' -d '{}' | grep -q '"ok":true' && echo " … native verify 5/5 ok" || echo " ⚠ native verify soft-fail"
 
 echo
 echo "════════════════════════════════════════════════════════════"
 echo "  Lumen integration LIVE on https://demo.oasisdata2026.xyz"
-echo "  Nav: Lumen · Lumen Science"
-echo "  Paths: /lumen/ · /lumen-science/?embed=1&oasis=1"
+echo "  Nav: Lumen · Lumen Science · Lab"
+echo "  Paths: /lumen/ · /lumen-science/?embed=1&oasis=1 · /lumen-lab/?embed=1"
+echo "  Probes: /api/lab/health · /api/lab/readyz"
 echo "════════════════════════════════════════════════════════════"

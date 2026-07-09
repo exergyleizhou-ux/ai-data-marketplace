@@ -1,7 +1,10 @@
 # Production reverse proxy with automatic HTTPS (Let's Encrypt).
 # One domain serves both the app and the API:
-#   /api/*, /healthz, /readyz, /metrics, /docs*  → Go backend (:8080)
-#   everything else                              → Next.js frontend (:3000)
+#   /api/lab/* , /lumen-lab/*     → Lumen Lab (:18992)   [must NOT hit Go backend]
+#   /lumen-science/*             → Lumen Science GUI (:18990)
+#   /lumen/*                     → Lumen coding serve (:8787)
+#   other /api/* , /healthz…     → Go backend (:8080)
+#   everything else              → Next.js frontend (:3000)
 #
 # Caddy obtains and renews TLS certs automatically once {$DOMAIN} resolves to
 # this host on ports 80/443. For a purely local/offline trial, set DOMAIN=localhost
@@ -10,7 +13,34 @@
 {$DOMAIN} {
 	encode zstd gzip
 
-	# Backend: API + ops/health/metrics/docs.
+	# Lumen Lab: page + API (before generic /api/* backend rule)
+	handle /api/lab/* {
+		reverse_proxy {$LUMEN_LAB_UPSTREAM:lumen-lab:18992}
+	}
+	handle /lumen-lab/* {
+		reverse_proxy {$LUMEN_LAB_UPSTREAM:lumen-lab:18992}
+	}
+	handle /lumen-lab {
+		redir /lumen-lab/ 302
+	}
+
+	# Lumen Science bridge GUI
+	handle /lumen-science/* {
+		reverse_proxy {$LUMEN_SCIENCE_UPSTREAM:lumen-science:18990}
+	}
+	handle /lumen-science {
+		redir /lumen-science/ 302
+	}
+
+	# Lumen coding agent UI
+	handle /lumen/* {
+		reverse_proxy {$LUMEN_SERVE_UPSTREAM:lumen-serve:8787}
+	}
+	handle /lumen {
+		redir /lumen/ 302
+	}
+
+	# Backend: marketplace API + ops/health/metrics/docs.
 	@backend path /api/* /healthz /readyz /metrics /docs /docs/*
 	handle @backend {
 		reverse_proxy backend:8080

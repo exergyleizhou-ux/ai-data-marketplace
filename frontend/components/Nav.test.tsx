@@ -28,6 +28,14 @@ beforeEach(() => {
 });
 
 describe("Nav", () => {
+  it("exposes a single consolidated Lumen workspace entry", () => {
+    authState = { user: null, loading: false, logout: vi.fn() };
+    renderNav();
+    expect(screen.getByRole("link", { name: "Lumen" })).toHaveAttribute("href", "/workspace/lumen");
+    expect(screen.queryByRole("link", { name: "Lumen Science" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "实验室" })).toBeNull();
+  });
+
   it("shows sign-in / sign-up when anonymous", () => {
     authState = { user: null, loading: false, logout: vi.fn() };
     renderNav();

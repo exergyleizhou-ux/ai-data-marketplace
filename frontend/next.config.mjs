@@ -24,11 +24,15 @@ const nextConfig = {
     // Production routes /lumen/* and /lumen-science/* at nginx/Caddy instead.
     const lumenServe = process.env.LUMEN_SERVE_URL || "http://127.0.0.1:8787";
     const lumenScience = process.env.LUMEN_SCIENCE_URL || "http://127.0.0.1:18990";
+    const lumenLab = process.env.LUMEN_LAB_URL || "http://127.0.0.1:18992";
     return [
       { source: "/lumen", destination: `${lumenServe}/` },
       { source: "/lumen/:path*", destination: `${lumenServe}/:path*` },
       { source: "/lumen-science", destination: `${lumenScience}/` },
       { source: "/lumen-science/:path*", destination: `${lumenScience}/:path*` },
+      { source: "/lumen-lab", destination: `${lumenLab}/` },
+      { source: "/lumen-lab/:path*", destination: `${lumenLab}/:path*` },
+      { source: "/api/lab/:path*", destination: `${lumenLab}/api/lab/:path*` },
     ];
   },
 };

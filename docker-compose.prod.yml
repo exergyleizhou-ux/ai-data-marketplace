@@ -108,11 +108,43 @@ services:
     depends_on:
       - backend
 
+  # Optional Lumen workbench (profile: lumen).
+  #   docker compose --env-file .env.prod -f docker-compose.prod.yml --profile lumen up -d
+  # Point LUMEN_LAB_UPSTREAM at host-run lab if not using the profile:
+  #   LUMEN_LAB_UPSTREAM=host.docker.internal:18992
+  lumen-lab:
+    profiles: ["lumen"]
+    image: ${LUMEN_IMAGE:-lumen:local}
+    restart: unless-stopped
+    command: ["science", "lab", "--addr", "0.0.0.0:18992"]
+    environment:
+      LUMEN_SCIENCE_DIR: /data/science
+    volumes:
+      - lumendata:/data
+    expose:
+      - "18992"
+
+  lumen-science:
+    profiles: ["lumen"]
+    image: ${LUMEN_IMAGE:-lumen:local}
+    restart: unless-stopped
+    command: ["science", "gui", "--no-browser", "--addr", "0.0.0.0:18990"]
+    environment:
+      LUMEN_SCIENCE_DIR: /data/science
+    volumes:
+      - lumendata:/data
+    expose:
+      - "18990"
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     environment:
       DOMAIN: ${DOMAIN}
+      # Default: host-run Lumen on the Docker host (install binary on server).
+      LUMEN_LAB_UPSTREAM: ${LUMEN_LAB_UPSTREAM:-host.docker.internal:18992}
+      LUMEN_SCIENCE_UPSTREAM: ${LUMEN_SCIENCE_UPSTREAM:-host.docker.internal:18990}
+      LUMEN_SERVE_UPSTREAM: ${LUMEN_SERVE_UPSTREAM:-host.docker.internal:8787}
     ports:
       - "80:80"
       - "443:443"
@@ -130,3 +162,4 @@ volumes:
   miniodata:
   caddydata:
   caddyconfig:
+  lumendata:
