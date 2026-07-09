@@ -13,9 +13,8 @@ const LINKS = [
   { href: "/datasets", zh: "数据市场", en: "Marketplace" },
   { href: "/c2d", zh: "可信计算", en: "Compute-to-data" },
   { href: "/verify-api", zh: "验证 API", en: "Verify API" },
-  { href: "/workspace/lumen", zh: "Lumen", en: "Lumen" },
-  { href: "/workspace/lumen-science", zh: "Lumen Science", en: "Lumen Science" },
-  { href: "/workspace/lumen-lab", zh: "实验室", en: "Lab" },
+  // One entry: coding + Science bridge + Lab live as tabs inside /workspace
+  { href: "/workspace", zh: "科研工作台", en: "Workbench" },
   { href: "/sell", zh: "我要卖", en: "Sell", auth: true },
   { href: "/compute", zh: "隐私计算", en: "Compute", auth: true },
   { href: "/orders", zh: "我的订单", en: "Orders", auth: true },
@@ -43,14 +42,19 @@ export function Nav() {
 
   const visibleLinks = LINKS.filter((l) => !l.auth || user);
   const linkPath = (href: string) => href.split("?")[0];
+  const isActive = (href: string) => {
+    const p = linkPath(href);
+    if (p === "/workspace") return pathname === "/workspace" || pathname.startsWith("/workspace/");
+    return pathname.startsWith(p);
+  };
   const linkClass = (href: string) =>
     `rounded-md px-3 py-1.5 text-sm ${
-      pathname.startsWith(linkPath(href)) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-600 hover:bg-neutral-50"
+      isActive(href) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-600 hover:bg-neutral-50"
     }`;
   // Mobile drawer rows get a comfortable ≥44px touch target.
   const drawerLinkClass = (href: string) =>
     `flex min-h-[44px] items-center rounded-md px-3 text-sm ${
-      pathname.startsWith(linkPath(href)) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-700 hover:bg-neutral-50"
+      isActive(href) ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-700 hover:bg-neutral-50"
     }`;
 
   return (
@@ -96,7 +100,7 @@ export function Nav() {
                 key={l.href}
                 href={l.href}
                 className={linkClass(l.href)}
-                aria-current={pathname.startsWith(linkPath(l.href)) ? "page" : undefined}
+                aria-current={isActive(l.href) ? "page" : undefined}
               >
                 {t(l.zh, l.en)}
               </Link>
@@ -189,7 +193,7 @@ export function Nav() {
                   key={l.href}
                   href={l.href}
                   className={drawerLinkClass(l.href)}
-                  aria-current={pathname.startsWith(linkPath(l.href)) ? "page" : undefined}
+                  aria-current={isActive(l.href) ? "page" : undefined}
                 >
                   {t(l.zh, l.en)}
                 </Link>
