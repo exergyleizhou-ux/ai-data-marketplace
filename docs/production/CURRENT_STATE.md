@@ -161,3 +161,14 @@ Verified on 2026-07-12 in `/Users/lei/Documents/Codex/2026-07-12/new-chat-2/work
   `go vet ./...`, and `go build ./...` pass. The full race suite also passes
   against the real Docker Postgres, including Workbench repository/runtime
   ingest, server integration and asynchronous compute fixtures.
+- Logout now CSRF-binds a same-origin `DELETE /api/workbench/session` request in
+  parallel with the main-session logout. The BFF expires the HttpOnly
+  `oasis_workbench` cookie immediately (`Max-Age=0`, identical path/security
+  attributes), so the Lumen proxy's existing fail-closed missing-cookie check
+  makes the runtime unusable without waiting for the five-minute JWT expiry.
+  Route tests cover deletion, cross-site rejection and cookie attributes; the
+  frontend suite now contains 98 passing tests.
+- Real local object-storage integration covers successful persistence and
+  cleanup of both metadata and bytes when the quota commit step fails. Runtime
+  handlers propagate Postgres/storage errors as generic failures and never
+  report a Run or Artifact success after its durable write fails.

@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api, tokenStore, type LoginResult, type Tokens, type User } from "./api";
+import { revokeWorkbenchSession } from "./workbench-session";
 
 type AuthState = {
   user: User | null;
@@ -62,7 +63,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     const csrf=document.cookie.split("; ").find(v=>v.startsWith("oasis_csrf="))?.split("=")[1];
-    void fetch("/api/v1/auth/session/logout", { method: "POST", credentials: "include",headers:csrf?{"X-CSRF-Token":decodeURIComponent(csrf)}:{} });
+    void Promise.allSettled([
+      fetch("/api/v1/auth/session/logout", { method: "POST", credentials: "include",headers:csrf?{"X-CSRF-Token":decodeURIComponent(csrf)}:{} }),
+      revokeWorkbenchSession(),
+    ]);
     tokenStore.clear();
     setUser(null);
   }, []);
