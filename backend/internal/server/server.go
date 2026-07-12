@@ -361,6 +361,7 @@ func (s *Server) routes() {
 		authMW := auth.Middleware(tm)
 		store := s.objectStorage() // shared by dataset (upload) and delivery (download)
 		workbenchRepo := workbench.NewRepository(s.db)
+		s.closers = append(s.closers, workbenchRepo.StartQuotaReaper(time.Minute))
 		workbenchSvc := workbench.NewManagedService(workbenchRepo, workbench.NewTokenManager(s.cfg.WorkbenchJWTSecret, s.cfg.WorkbenchJWTTTL), store)
 		workbench.Register(api, workbenchSvc, tm, lim, s.cfg.WorkbenchJWTSecret != "")
 		workbench.RegisterRuntimeIngest(api, workbenchSvc, s.cfg.WorkbenchRuntimeIngestSecret)

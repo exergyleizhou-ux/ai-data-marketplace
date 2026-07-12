@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -149,5 +150,49 @@ func TestQuotaMachineContractAdmitsBeforeRunAndReturnsStableErrors(t *testing.T)
 	}
 	if w := do(usagePath, usage); w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte(`"recorded":false`)) {
 		t.Fatalf("usage duplicate=%d %s", w.Code, w.Body)
+	}
+}
+
+func TestTerminalCreateDoesNotReserveRunCapacity(t *testing.T) {
+	repo, pool, owner, _ := runtimeRepo(t)
+	now := time.Now()
+	_, created, err := repo.CreateRun(context.Background(), owner, Run{ID: "already-terminal", Profile: "code", Status: "failed", Version: 1, Request: json.RawMessage(`{}`), CreatedAt: now, UpdatedAt: now})
+	if err != nil || !created {
+		t.Fatalf("create=%v,%v", created, err)
+	}
+	var reservations int
+	if err = pool.QueryRow(context.Background(), `SELECT count(*) FROM workbench_run_reservations WHERE run_id='already-terminal'`).Scan(&reservations); err != nil || reservations != 0 {
+		t.Fatalf("reservations=%d err=%v", reservations, err)
+	}
+}
+
+func TestArtifactCommitStateFailureCompensatesMetadataAndObject(t *testing.T) {
+	repo, pool, owner, _ := runtimeRepo(t)
+	ctx := context.Background()
+	now := time.Now()
+	_, _, err := repo.CreateRun(ctx, owner, Run{ID: "artifact-compensate", Profile: "code", Status: "running", Version: 1, Request: json.RawMessage(`{}`), CreatedAt: now, UpdatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, `CREATE OR REPLACE FUNCTION test_drop_artifact_reservation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN DELETE FROM workbench_artifact_reservations WHERE artifact_id=NEW.id; RETURN NEW; END $$; CREATE TRIGGER test_drop_artifact_reservation AFTER INSERT ON workbench_artifacts FOR EACH ROW EXECUTE FUNCTION test_drop_artifact_reservation()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Exec(context.Background(), `DROP TRIGGER IF EXISTS test_drop_artifact_reservation ON workbench_artifacts; DROP FUNCTION IF EXISTS test_drop_artifact_reservation()`)
+	objects, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewManagedService(repo, NewTokenManager("unused", time.Minute), objects)
+	in := RuntimeArtifactInput{Owner: owner, Artifact: Artifact{ID: "commit-fails", RunID: "artifact-compensate", Name: "x", Kind: "evidence", MediaType: "text/plain", Provenance: json.RawMessage(`{}`), Metadata: json.RawMessage(`{}`), InputRefs: json.RawMessage(`[]`)}, Content: []byte("must be removed")}
+	if _, _, err = svc.StoreArtifact(ctx, in); err == nil {
+		t.Fatal("expected quota commit failure")
+	}
+	if _, err = repo.GetArtifact(ctx, owner, "commit-fails"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("metadata remains: %v", err)
+	}
+	key, _ := ArtifactObjectKey(owner, "artifact-compensate", "commit-fails")
+	if _, _, err = objects.Open(ctx, key); err == nil {
+		t.Fatal("object remains after compensated commit failure")
 	}
 }

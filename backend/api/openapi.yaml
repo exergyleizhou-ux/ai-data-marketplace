@@ -256,6 +256,15 @@ paths:
       responses:
         '200': { description: Usage debit recorded or already present }
         '429': { $ref: '#/components/responses/QuotaExceeded' }
+  /workbench/runtime/quota/runs/{id}/heartbeat:
+    post:
+      tags: [Workbench]
+      summary: Extend an active Run admission lease
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Lease extended for 120 seconds }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
   /workbench/runtime/quota/runs/{id}/complete:
     post:
       tags: [Workbench]
@@ -279,6 +288,15 @@ paths:
       security: [{ runtimeIngestAuth: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses: { '200': { description: Artifact reservation released } }
+  /workbench/runtime/quota/runs/{id}/artifacts/commit:
+    post:
+      tags: [Workbench]
+      summary: Commit storage quota after object and metadata are durable
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Artifact reservation committed }
+        '409': { description: Artifact reservation is missing or not committable }
   /admin/workbench/usage:
     get:
       tags: [Workbench]

@@ -6,9 +6,11 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"time"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/workbenchusage"
-	"time"
 )
 
 type RuntimeRunInput struct {
@@ -84,7 +86,10 @@ func (r *Repository) CreateRun(ctx context.Context, o Owner, v Run) (Run, bool, 
 		if v.StartedAt != nil {
 			started = *v.StartedAt
 		}
-		return r.usage.ReserveRunTx(ctx, tx, usageOwner(o), v.ID, started)
+		if !workbenchusage.IsTerminal(v.Status) {
+			return r.usage.ReserveRunTx(ctx, tx, usageOwner(o), v.ID, started)
+		}
+		return nil
 	})
 	if err != nil {
 		return Run{}, false, err
@@ -140,6 +145,17 @@ func (r *Repository) InsertArtifact(ctx context.Context, a Artifact) (bool, erro
 	return ct.RowsAffected() == 1, err
 }
 
+func (r *Repository) DeleteArtifact(ctx context.Context, o Owner, id string) error {
+	ct, err := r.db.Exec(ctx, `DELETE FROM workbench_artifacts WHERE id=$1 AND account_id=$2 AND workspace_id=$3`, id, o.AccountID, o.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() != 1 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Service) StoreArtifact(ctx context.Context, in RuntimeArtifactInput) (Artifact, bool, error) {
 	if s.objects == nil {
 		return Artifact{}, false, errors.New("object storage unavailable")
@@ -154,8 +170,9 @@ func (s *Service) StoreArtifact(ctx context.Context, in RuntimeArtifactInput) (A
 		return Artifact{}, false, e
 	}
 	committed := false
+	releaseReservation := true
 	defer func() {
-		if !committed {
+		if !committed && releaseReservation {
 			_ = s.runtime.usage.ArtifactState(context.Background(), usageOwner(in.Owner), a.RunID, a.ID, "released")
 		}
 	}()
@@ -193,12 +210,22 @@ func (s *Service) StoreArtifact(ctx context.Context, in RuntimeArtifactInput) (A
 		return Artifact{}, false, e
 	}
 	if !created {
-		_ = s.objects.Delete(ctx, key)
+		if e = s.runtime.usage.ArtifactState(ctx, usageOwner(in.Owner), a.RunID, a.ID, "committed"); e != nil {
+			return Artifact{}, false, e
+		}
+		committed = true
 		got, err := s.runtime.GetArtifact(ctx, in.Owner, a.ID)
 		return got, false, err
 	}
 	if e = s.runtime.usage.ArtifactState(ctx, usageOwner(in.Owner), a.RunID, a.ID, "committed"); e != nil {
-		return Artifact{}, false, e
+		releaseReservation = false
+		metaErr := s.runtime.DeleteArtifact(ctx, in.Owner, a.ID)
+		objectErr := s.objects.Delete(ctx, key)
+		if metaErr == nil && objectErr == nil {
+			releaseReservation = true
+			_ = s.runtime.usage.ArtifactState(context.Background(), usageOwner(in.Owner), a.RunID, a.ID, "released")
+		}
+		return Artifact{}, false, fmt.Errorf("commit artifact quota: %w (metadata cleanup: %v, object cleanup: %v)", e, metaErr, objectErr)
 	}
 	committed = true
 	return a, true, nil

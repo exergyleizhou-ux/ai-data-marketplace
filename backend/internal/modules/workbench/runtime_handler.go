@@ -45,6 +45,8 @@ func runtimeFailure(c *gin.Context, e error) {
 	var quota *workbenchusage.LimitError
 	if errors.As(e, &quota) {
 		c.JSON(http.StatusTooManyRequests, gin.H{"error": gin.H{"code": quota.Code, "message": "quota exceeded", "next_action": quota.NextAction}})
+	} else if errors.Is(e, workbenchusage.ErrReservationNotFound) {
+		c.JSON(http.StatusConflict, gin.H{"error": gin.H{"code": "quota_artifact_reservation_missing", "message": "artifact reservation is missing", "next_action": "retry_artifact"}})
 	} else if e == ErrNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"code": "not_found", "message": "resource not found"}})
 	} else if e == ErrConflict {
@@ -67,12 +69,25 @@ func (h runtimeHandler) admit(c *gin.Context) {
 	if in.StartedAt.IsZero() {
 		in.StartedAt = time.Now()
 	}
-	p, err := h.s.runtime.usage.AdmitRun(c, usageOwner(in.Owner), c.Param("id"), in.StartedAt)
+	p, expires, err := h.s.runtime.usage.AdmitRun(c, usageOwner(in.Owner), c.Param("id"), in.StartedAt)
 	if err != nil {
 		runtimeFailure(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": gin.H{"quota": p}})
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"quota": p, "lease_expires_at": expires}})
+}
+
+func (h runtimeHandler) heartbeat(c *gin.Context) {
+	var in quotaAdmissionInput
+	if !bindRuntime(c, &in) || !requireOwner(c, in.Owner) {
+		return
+	}
+	expires, err := h.s.runtime.usage.Heartbeat(c, usageOwner(in.Owner), c.Param("id"))
+	if err != nil {
+		runtimeFailure(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"lease_expires_at": expires})
 }
 
 type quotaCompletionInput struct {
@@ -158,6 +173,22 @@ func (h runtimeHandler) releaseArtifact(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"released": true})
+}
+
+func (h runtimeHandler) commitArtifact(c *gin.Context) {
+	var in quotaArtifactInput
+	if !bindRuntime(c, &in) || !requireOwner(c, in.Owner) {
+		return
+	}
+	if in.ArtifactID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "invalid_request", "message": "artifact_id is required"}})
+		return
+	}
+	if err := h.s.runtime.usage.ArtifactState(c, usageOwner(in.Owner), c.Param("id"), in.ArtifactID, "committed"); err != nil {
+		runtimeFailure(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"committed": true})
 }
 
 func (h runtimeHandler) createRun(c *gin.Context) {

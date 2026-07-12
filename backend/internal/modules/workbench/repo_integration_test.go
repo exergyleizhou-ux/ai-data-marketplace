@@ -59,7 +59,7 @@ func seedRun(t *testing.T, p *pgxpool.Pool, o Owner, id string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = p.Exec(context.Background(), `INSERT INTO workbench_run_reservations(run_id,account_id,workspace_id,started_at) VALUES($1,$2,$3,now()) ON CONFLICT DO NOTHING`, id, o.AccountID, o.WorkspaceID)
+	_, err = p.Exec(context.Background(), `INSERT INTO workbench_run_reservations(run_id,account_id,workspace_id,started_at,last_heartbeat_at,expires_at) VALUES($1,$2,$3,now(),now(),now()+interval '2 minutes') ON CONFLICT DO NOTHING`, id, o.AccountID, o.WorkspaceID)
 	if err != nil {
 		t.Fatal(err)
 	}

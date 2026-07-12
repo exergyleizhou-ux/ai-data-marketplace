@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -41,16 +43,28 @@ type Manager struct {
 	now func() time.Time
 }
 
+const LeaseDuration = 2 * time.Minute
+
+var ErrReservationNotFound = errors.New("quota reservation not found")
+
 func New(db *pgxpool.Pool) *Manager                   { return &Manager{db: db, now: time.Now} }
 func (m *Manager) SetClockForTest(f func() time.Time) { m.now = f }
 
 func policy(ctx context.Context, tx pgx.Tx, o Owner) (Policy, error) {
+	// Serialize account-wide concurrency across every workspace belonging to
+	// the same user before taking the workspace policy row lock.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 9283746))`, o.AccountID); err != nil {
+		return Policy{}, err
+	}
 	_, err := tx.Exec(ctx, `INSERT INTO workbench_quota_policies(account_id,workspace_id) VALUES($1,$2) ON CONFLICT(workspace_id) DO NOTHING`, o.AccountID, o.WorkspaceID)
 	if err != nil {
 		return Policy{}, err
 	}
 	var p Policy
 	err = tx.QueryRow(ctx, `SELECT user_concurrent_runs,workspace_concurrent_runs,monthly_tokens,monthly_compute_millis,storage_bytes,artifact_total_bytes,artifact_single_bytes,run_wall_millis,run_max_steps,run_max_events,event_max_bytes FROM workbench_quota_policies WHERE account_id=$1 AND workspace_id=$2 FOR UPDATE`, o.AccountID, o.WorkspaceID).Scan(&p.UserConcurrent, &p.WorkspaceConcurrent, &p.MonthlyTokens, &p.MonthlyCompute, &p.StorageBytes, &p.ArtifactTotal, &p.ArtifactSingle, &p.RunWallMillis, &p.RunMaxSteps, &p.RunMaxEvents, &p.EventMaxBytes)
+	if err == nil {
+		err = tx.QueryRow(ctx, `SELECT min(user_concurrent_runs) FROM workbench_quota_policies WHERE account_id=$1`, o.AccountID).Scan(&p.UserConcurrent)
+	}
 	return p, err
 }
 
@@ -73,12 +87,43 @@ func (m *Manager) ReserveRunTx(ctx context.Context, tx pgx.Tx, o Owner, runID st
 	if err != nil {
 		return err
 	}
-	var reserved bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workbench_run_reservations WHERE run_id=$1 AND account_id=$2 AND workspace_id=$3)`, runID, o.AccountID, o.WorkspaceID).Scan(&reserved); err != nil || reserved {
+	now := m.now()
+	if err = m.reconcileExpiredTx(ctx, tx, o, now); err != nil {
 		return err
 	}
+	var existingState string
+	err = tx.QueryRow(ctx, `SELECT state FROM workbench_run_reservations WHERE run_id=$1 AND account_id=$2 AND workspace_id=$3`, runID, o.AccountID, o.WorkspaceID).Scan(&existingState)
+	if err == nil {
+		if existingState == "active" {
+			return nil
+		}
+		return limit("quota_run_lease_expired", "start_new_run")
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	month := time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
+	var usedTokens, usedCompute, storage int64
+	err = tx.QueryRow(ctx, `SELECT
+		COALESCE((SELECT tokens FROM workbench_monthly_ledgers WHERE account_id=$1 AND workspace_id=$2 AND month_start=$3),0),
+		COALESCE((SELECT compute_millis FROM workbench_monthly_ledgers WHERE account_id=$1 AND workspace_id=$2 AND month_start=$3),0),
+		COALESCE((SELECT sum(size_bytes) FROM workbench_artifact_reservations WHERE account_id=$1 AND workspace_id=$2 AND state!='released'),0)`, o.AccountID, o.WorkspaceID, month).Scan(&usedTokens, &usedCompute, &storage)
+	if err != nil {
+		return err
+	}
+	if usedTokens >= p.MonthlyTokens {
+		return limit("quota_monthly_tokens", "retry_next_month")
+	}
+	if usedCompute >= p.MonthlyCompute {
+		return limit("quota_monthly_compute", "retry_next_month")
+	}
+	if storage >= p.StorageBytes {
+		return limit("quota_storage", "delete_artifacts")
+	}
 	var users, workspace int64
-	err = tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE account_id=$1),count(*) FROM workbench_run_reservations WHERE workspace_id=$2 AND state='active'`, o.AccountID, o.WorkspaceID).Scan(&users, &workspace)
+	err = tx.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM workbench_run_reservations WHERE account_id=$1 AND state='active'),
+		(SELECT count(*) FROM workbench_run_reservations WHERE workspace_id=$2 AND state='active')`, o.AccountID, o.WorkspaceID).Scan(&users, &workspace)
 	if err != nil {
 		return err
 	}
@@ -88,23 +133,142 @@ func (m *Manager) ReserveRunTx(ctx context.Context, tx pgx.Tx, o Owner, runID st
 	if workspace >= p.WorkspaceConcurrent {
 		return limit("quota_workspace_concurrent_runs", "wait_for_run")
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO workbench_run_reservations(run_id,account_id,workspace_id,started_at) VALUES($1,$2,$3,$4)`, runID, o.AccountID, o.WorkspaceID, started)
+	_, err = tx.Exec(ctx, `INSERT INTO workbench_run_reservations(run_id,account_id,workspace_id,started_at,last_heartbeat_at,expires_at) VALUES($1,$2,$3,$4,$5,$6)`, runID, o.AccountID, o.WorkspaceID, started, now, now.Add(LeaseDuration))
 	return err
 }
 
 // AdmitRun is the independent admission contract used when Lumen and Oasis
 // share PostgreSQL and the durable run row therefore already exists.
-func (m *Manager) AdmitRun(ctx context.Context, o Owner, runID string, started time.Time) (Policy, error) {
+func (m *Manager) AdmitRun(ctx context.Context, o Owner, runID string, started time.Time) (Policy, time.Time, error) {
 	var p Policy
+	var expires time.Time
 	err := m.InTx(ctx, func(tx pgx.Tx) error {
 		var err error
 		p, err = policy(ctx, tx, o)
 		if err != nil {
 			return err
 		}
-		return m.ReserveRunTx(ctx, tx, o, runID, started)
+		if err = m.ReserveRunTx(ctx, tx, o, runID, started); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT expires_at FROM workbench_run_reservations WHERE run_id=$1 AND account_id=$2 AND workspace_id=$3 AND state='active'`, runID, o.AccountID, o.WorkspaceID).Scan(&expires)
 	})
-	return p, err
+	return p, expires, err
+}
+
+func (m *Manager) Heartbeat(ctx context.Context, o Owner, runID string) (time.Time, error) {
+	var expires time.Time
+	err := m.InTx(ctx, func(tx pgx.Tx) error {
+		_, err := policy(ctx, tx, o)
+		if err != nil {
+			return err
+		}
+		now := m.now()
+		if err = m.reconcileExpiredTx(ctx, tx, o, now); err != nil {
+			return err
+		}
+		expires = now.Add(LeaseDuration)
+		ct, err := tx.Exec(ctx, `UPDATE workbench_run_reservations SET last_heartbeat_at=$4,expires_at=$5 WHERE run_id=$1 AND account_id=$2 AND workspace_id=$3 AND state='active'`, runID, o.AccountID, o.WorkspaceID, now, expires)
+		if err != nil {
+			return err
+		}
+		if ct.RowsAffected() != 1 {
+			return limit("quota_run_lease_expired", "start_new_run")
+		}
+		return nil
+	})
+	return expires, err
+}
+
+// Reconcile releases and meters every expired lease. It is safe to run from
+// multiple replicas because the same account advisory lock and row locks used
+// by admission serialize the transition.
+func (m *Manager) Reconcile(ctx context.Context) error {
+	rows, err := m.db.Query(ctx, `SELECT DISTINCT account_id,workspace_id FROM workbench_run_reservations WHERE state='active' AND expires_at<=$1`, m.now())
+	if err != nil {
+		return err
+	}
+	var owners []Owner
+	for rows.Next() {
+		var o Owner
+		if err = rows.Scan(&o.AccountID, &o.WorkspaceID); err != nil {
+			rows.Close()
+			return err
+		}
+		owners = append(owners, o)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	for _, o := range owners {
+		err = m.InTx(ctx, func(tx pgx.Tx) error {
+			if _, e := policy(ctx, tx, o); e != nil {
+				return e
+			}
+			return m.reconcileExpiredTx(ctx, tx, o, m.now())
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) StartReaper(interval time.Duration) func() {
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_ = m.Reconcile(ctx)
+			}
+		}
+	}()
+	return func() { cancel(); wg.Wait() }
+}
+
+func (m *Manager) reconcileExpiredTx(ctx context.Context, tx pgx.Tx, o Owner, at time.Time) error {
+	rows, err := tx.Query(ctx, `SELECT r.run_id,r.workspace_id,r.started_at,r.expires_at,q.run_wall_millis,q.monthly_compute_millis FROM workbench_run_reservations r JOIN workbench_quota_policies q ON q.account_id=r.account_id AND q.workspace_id=r.workspace_id WHERE r.account_id=$1 AND r.state='active' AND r.expires_at<=$2 FOR UPDATE OF r`, o.AccountID, at)
+	if err != nil {
+		return err
+	}
+	type expired struct {
+		id, workspace    string
+		started, expires time.Time
+		wall, monthly    int64
+	}
+	var all []expired
+	for rows.Next() {
+		var v expired
+		if err = rows.Scan(&v.id, &v.workspace, &v.started, &v.expires, &v.wall, &v.monthly); err != nil {
+			rows.Close()
+			return err
+		}
+		all = append(all, v)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	for _, v := range all {
+		ep := Policy{RunWallMillis: v.wall, MonthlyCompute: v.monthly}
+		eo := Owner{AccountID: o.AccountID, WorkspaceID: v.workspace}
+		if err = m.settleReservationTx(ctx, tx, eo, ep, v.id, v.started, v.expires); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m *Manager) CompleteRun(ctx context.Context, o Owner, runID, status string, at time.Time) error {
@@ -135,6 +299,10 @@ func (m *Manager) FinishRunTx(ctx context.Context, tx pgx.Tx, o Owner, runID, st
 	if err != nil {
 		return err
 	}
+	return m.settleReservationTx(ctx, tx, o, p, runID, started, at)
+}
+
+func (m *Manager) settleReservationTx(ctx context.Context, tx pgx.Tx, o Owner, p Policy, runID string, started, at time.Time) error {
 	compute := at.Sub(started).Milliseconds()
 	if compute < 0 {
 		compute = 0
@@ -143,11 +311,11 @@ func (m *Manager) FinishRunTx(ctx context.Context, tx pgx.Tx, o Owner, runID, st
 		compute = p.RunWallMillis
 	}
 	month := time.Date(at.UTC().Year(), at.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
-	_, err = tx.Exec(ctx, `INSERT INTO workbench_monthly_ledgers(account_id,workspace_id,month_start,compute_millis) VALUES($1,$2,$3,$4) ON CONFLICT(account_id,workspace_id,month_start) DO UPDATE SET compute_millis=workbench_monthly_ledgers.compute_millis+EXCLUDED.compute_millis,updated_at=now()`, o.AccountID, o.WorkspaceID, month, compute)
+	_, err := tx.Exec(ctx, `INSERT INTO workbench_monthly_ledgers(account_id,workspace_id,month_start,compute_millis) VALUES($1,$2,$3,$4) ON CONFLICT(account_id,workspace_id,month_start) DO UPDATE SET compute_millis=workbench_monthly_ledgers.compute_millis+LEAST(EXCLUDED.compute_millis,GREATEST(0,$5-workbench_monthly_ledgers.compute_millis)),updated_at=now()`, o.AccountID, o.WorkspaceID, month, compute, p.MonthlyCompute)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE workbench_run_reservations SET state='released',released_at=$4 WHERE run_id=$1 AND account_id=$2 AND workspace_id=$3`, runID, o.AccountID, o.WorkspaceID, at)
+	_, err = tx.Exec(ctx, `UPDATE workbench_run_reservations SET state='released',released_at=$4,expires_at=$4 WHERE run_id=$1 AND account_id=$2 AND workspace_id=$3 AND state='active'`, runID, o.AccountID, o.WorkspaceID, at)
 	return err
 }
 
@@ -196,7 +364,7 @@ func (m *Manager) RecordEvent(ctx context.Context, o Owner, runID, eventID strin
 			return limit("quota_run_events", "start_new_run")
 		}
 		step := int64(0)
-		if eventType == "step" || eventType == "step_started" {
+		if eventType == "step" || eventType == "step_started" || eventType == "tool_dispatch" {
 			step = 1
 		}
 		if steps+step > p.RunMaxSteps {
@@ -229,8 +397,8 @@ func (m *Manager) RecordUsage(ctx context.Context, o Owner, runID, eventID strin
 		if e != nil {
 			return e
 		}
-		var usedT, usedC int64
-		e = tx.QueryRow(ctx, `SELECT tokens,compute_millis FROM workbench_monthly_ledgers WHERE account_id=$1 AND workspace_id=$2 AND month_start=$3 FOR UPDATE`, o.AccountID, o.WorkspaceID, month).Scan(&usedT, &usedC)
+		var usedT, usedC, usedCost int64
+		e = tx.QueryRow(ctx, `SELECT tokens,compute_millis,cost_microunits FROM workbench_monthly_ledgers WHERE account_id=$1 AND workspace_id=$2 AND month_start=$3 FOR UPDATE`, o.AccountID, o.WorkspaceID, month).Scan(&usedT, &usedC, &usedCost)
 		if e != nil {
 			return e
 		}
@@ -239,11 +407,14 @@ func (m *Manager) RecordUsage(ctx context.Context, o Owner, runID, eventID strin
 		if e != nil || exists {
 			return e
 		}
-		if usedT+tokens > p.MonthlyTokens {
+		if exceeds(usedT, tokens, p.MonthlyTokens) {
 			return limit("quota_monthly_tokens", "retry_next_month")
 		}
-		if usedC+compute > p.MonthlyCompute {
+		if exceeds(usedC, compute, p.MonthlyCompute) {
 			return limit("quota_monthly_compute", "retry_next_month")
+		}
+		if exceeds(usedCost, cost, math.MaxInt64) {
+			return limit("quota_cost_overflow", "contact_support")
 		}
 		recorded, e = insert(tx)
 		if e != nil {
@@ -303,22 +474,43 @@ func (m *Manager) ReserveArtifact(ctx context.Context, o Owner, runID, id string
 		if e != nil {
 			return e
 		}
-		if runTotal+size > p.ArtifactTotal {
+		if exceeds(runTotal, size, p.ArtifactTotal) {
 			return limit("quota_artifact_total", "reduce_artifact")
 		}
-		if allTotal+size > p.StorageBytes {
+		if exceeds(allTotal, size, p.StorageBytes) {
 			return limit("quota_storage", "delete_artifacts")
 		}
 		_, e = tx.Exec(ctx, `INSERT INTO workbench_artifact_reservations(artifact_id,run_id,account_id,workspace_id,size_bytes) VALUES($1,$2,$3,$4,$5)`, id, runID, o.AccountID, o.WorkspaceID, size)
 		return e
 	})
 }
+
+func exceeds(used, add, maximum int64) bool {
+	return used < 0 || add < 0 || maximum < 0 || used > maximum || add > maximum-used || used > math.MaxInt64-add
+}
 func (m *Manager) ArtifactState(ctx context.Context, o Owner, runID, id, state string) error {
 	if state != "committed" && state != "released" {
 		return fmt.Errorf("invalid artifact state")
 	}
-	_, e := m.db.Exec(ctx, `UPDATE workbench_artifact_reservations SET state=$5 WHERE artifact_id=$1 AND run_id=$2 AND account_id=$3 AND workspace_id=$4 AND state='reserved'`, id, runID, o.AccountID, o.WorkspaceID, state)
-	return e
+	ct, err := m.db.Exec(ctx, `UPDATE workbench_artifact_reservations SET state=$5,updated_at=now() WHERE artifact_id=$1 AND run_id=$2 AND account_id=$3 AND workspace_id=$4 AND state='reserved'`, id, runID, o.AccountID, o.WorkspaceID, state)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 1 {
+		return nil
+	}
+	var current string
+	err = m.db.QueryRow(ctx, `SELECT state FROM workbench_artifact_reservations WHERE artifact_id=$1 AND run_id=$2 AND account_id=$3 AND workspace_id=$4`, id, runID, o.AccountID, o.WorkspaceID).Scan(&current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrReservationNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if current == state {
+		return nil
+	}
+	return fmt.Errorf("artifact reservation is %s, cannot transition to %s", current, state)
 }
 
 type Summary struct {

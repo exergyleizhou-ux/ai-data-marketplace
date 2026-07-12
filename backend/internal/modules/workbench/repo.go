@@ -23,6 +23,9 @@ type Repository struct {
 func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db, usage: workbenchusage.New(db)}
 }
+func (r *Repository) StartQuotaReaper(interval time.Duration) func() {
+	return r.usage.StartReaper(interval)
+}
 func (r *Repository) GetOrCreatePersonalWorkspace(ctx context.Context, uid string) (Workspace, error) {
 	var w Workspace
 	err := r.db.QueryRow(ctx, `INSERT INTO workbench_workspaces(account_id,slug,display_name) VALUES($1,'personal','Personal') ON CONFLICT(account_id,slug) DO UPDATE SET updated_at=workbench_workspaces.updated_at RETURNING id,account_id,slug,display_name,status`, uid).Scan(&w.ID, &w.AccountID, &w.Slug, &w.DisplayName, &w.Status)
