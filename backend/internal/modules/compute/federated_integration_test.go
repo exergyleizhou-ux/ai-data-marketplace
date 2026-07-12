@@ -228,11 +228,20 @@ func TestComputeFederatedFailureRefund(t *testing.T) {
 	if failed.FailureCode == "" {
 		t.Fatalf("failed federated job should carry a failure code: %+v", failed)
 	}
-	// Both participants refunded to zero usage.
-	e1, _ := repo.GetEntitlement(ctx, ent1.ID)
-	e2, _ := repo.GetEntitlement(ctx, ent2.ID)
-	if e1.JobsUsed != 0 || e2.JobsUsed != 0 {
-		t.Fatalf("federated failure did not refund both: e1=%d e2=%d, want 0/0", e1.JobsUsed, e2.JobsUsed)
+	// Failure status wins the coordinator CAS immediately; refunds complete
+	// directly afterward. Observe the whole eventual transition, not its brief
+	// intermediate state.
+	refundDeadline := time.Now().Add(2 * time.Second)
+	for {
+		e1, _ := repo.GetEntitlement(ctx, ent1.ID)
+		e2, _ := repo.GetEntitlement(ctx, ent2.ID)
+		if e1.JobsUsed == 0 && e2.JobsUsed == 0 {
+			break
+		}
+		if time.Now().After(refundDeadline) {
+			t.Fatalf("federated failure did not refund both: e1=%d e2=%d, want 0/0", e1.JobsUsed, e2.JobsUsed)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
