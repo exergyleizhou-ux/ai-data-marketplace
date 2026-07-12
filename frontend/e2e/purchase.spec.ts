@@ -20,14 +20,12 @@ test("buyer browses a seeded dataset and completes a sandbox purchase", async ({
   const title = `E2E 浏览器数据集 ${datasetId.slice(0, 6)}`;
   seedPublishedDataset({ id: datasetId, sellerId: seller.id, title });
 
-  // Log the buyer in by injecting their real tokens before the app boots.
-  await page.addInitScript(
-    ([a, r]) => {
-      localStorage.setItem("adm_access", a);
-      localStorage.setItem("adm_refresh", r);
-    },
-    [buyer.access, buyer.refresh],
-  );
+  // Browser auth is cookie-only; log in through the real CSRF/session route.
+  await page.goto("/login");
+  await page.getByRole("textbox", { name: "账号" }).fill(buyer.account);
+  await page.getByRole("textbox", { name: "密码" }).fill("password123");
+  await page.getByRole("button", { name: "登录" }).click();
+  await page.waitForURL("**/datasets");
 
   // The seeded, published dataset is visible in the real catalog.
   await page.goto("/datasets");

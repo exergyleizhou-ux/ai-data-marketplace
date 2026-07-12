@@ -1,41 +1,18 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
-import { INFO_PATH } from "./global-setup";
+import { INFO_PATH, type HarnessInfo } from "./global-setup";
 
-// Tear down everything global-setup started: the backend process, and (locally)
-// the ephemeral Postgres + its temp dirs. Best-effort; never throws.
 export default async function globalTeardown() {
   if (!existsSync(INFO_PATH)) return;
-  const info = JSON.parse(readFileSync(INFO_PATH, "utf8"));
-
-  if (info.backendPid) {
-    try {
-      process.kill(info.backendPid, "SIGTERM");
-    } catch {
-      /* already gone */
-    }
+  const info = JSON.parse(readFileSync(INFO_PATH, "utf8")) as HarnessInfo;
+  for (const pid of [...info.pids].reverse()) {
+    try { process.kill(-pid, "SIGTERM"); } catch { try { process.kill(pid, "SIGTERM"); } catch {} }
   }
-
-  if (info.startedPg && info.pgDir) {
-    try {
-      execFileSync("pg_ctl", ["-D", info.pgDir, "stop", "-m", "fast"], { stdio: "ignore" });
-    } catch {
-      /* ignore */
-    }
-    for (const dir of [info.pgDir, info.sockDir, info.storageDir]) {
-      if (dir) {
-        try {
-          rmSync(dir, { recursive: true, force: true });
-        } catch {
-          /* ignore */
-        }
-      }
-    }
+  if (info.postgres?.kind === "native") {
+    try { execFileSync("pg_ctl", ["-D", info.postgres.dataDir, "stop", "-m", "fast"], { stdio: "ignore" }); } catch {}
+  } else if (info.postgres?.kind === "docker") {
+    try { execFileSync("docker", ["rm", "-f", info.postgres.name], { stdio: "ignore" }); } catch {}
   }
-
-  try {
-    rmSync(INFO_PATH, { force: true });
-  } catch {
-    /* ignore */
-  }
+  rmSync(info.tempDir, { recursive: true, force: true });
+  rmSync(INFO_PATH, { force: true });
 }
