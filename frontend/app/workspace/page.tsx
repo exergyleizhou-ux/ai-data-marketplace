@@ -70,7 +70,7 @@ function WorkbenchInner() {
   const [sessionReady,setSessionReady]=useState(false);
   const [sessionError,setSessionError]=useState("");
   const connect=useCallback(async()=>{setSessionReady(false);setSessionError("");try{await establishWorkbenchSession();setSessionReady(true)}catch{setSessionError(t("请登录或重试","Sign in or retry"))}},[t]);
-  useEffect(()=>{void connect()},[connect]);
+  useEffect(()=>{const timer=window.setTimeout(()=>void connect(),0);return()=>window.clearTimeout(timer)},[connect]);
 
   const clearRuntime = useCallback(() => {
     runtimeRequest.current += 1;
