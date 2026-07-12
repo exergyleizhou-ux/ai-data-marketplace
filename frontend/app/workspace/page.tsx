@@ -163,7 +163,7 @@ function WorkbenchInner() {
       if (tab === "science") return;
       const snapshot = parseTrustedWorkbenchMessage(
         event,
-        runtimeOrigin || "null",
+        runtimeOrigin || window.location.origin,
         iframeRef.current?.contentWindow ?? null,
       );
       if (!snapshot) return;
@@ -338,7 +338,7 @@ function WorkbenchInner() {
           aria-labelledby={`workbench-tab-${active.id}`}
           className="min-h-0 w-full flex-1 border-0 bg-paper"
           allow="clipboard-read; clipboard-write"
-          sandbox={`allow-scripts allow-forms allow-popups${runtimeOrigin ? " allow-same-origin" : ""}`}
+          sandbox="allow-scripts allow-forms allow-popups allow-same-origin"
         />}
         </>
       )}
