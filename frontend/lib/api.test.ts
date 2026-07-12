@@ -57,12 +57,14 @@ describe("request envelope + auth", () => {
     expect(user).not.toBeUndefined();
   });
 
-  it("injects a Bearer header when an access token is present", async () => {
+  it("uses credentials without exposing a Bearer token", async () => {
     tokenStore.set({ access_token: "AT", refresh_token: "RT", expires_in: 900 });
     const { calls } = installFetch(() => resp(200, ok({ id: "u1" })));
     await api.me();
     expect(calls[0].url).toContain("/users/me");
-    expect((calls[0].init.headers as Record<string, string>)["Authorization"]).toBe("Bearer AT");
+    expect((calls[0].init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
+    expect(calls[0].init.credentials).toBe("include");
+    expect(localStorage.getItem("adm_access")).toBeNull();
   });
 
   it("omits auth header on public (auth:false) calls", async () => {
@@ -99,7 +101,7 @@ describe("401 → refresh → retry", () => {
     tokenStore.set({ access_token: "OLD", refresh_token: "RT", expires_in: 1 });
     let meCalls = 0;
     const { calls } = installFetch((url) => {
-      if (url.includes("/auth/refresh")) {
+      if (url.includes("/auth/session/refresh")) {
         return resp(200, ok({ user: { id: "u1" }, tokens: { access_token: "NEW", refresh_token: "RT2", expires_in: 900 } }));
       }
       if (url.includes("/users/me")) {
@@ -114,19 +116,17 @@ describe("401 → refresh → retry", () => {
     expect(user).toMatchObject({ id: "u1" });
     // original me, refresh, retried me
     expect(calls.filter((c) => c.url.includes("/users/me")).length).toBe(2);
-    expect(calls.filter((c) => c.url.includes("/auth/refresh")).length).toBe(1);
-    // tokens rotated in storage
-    expect(tokenStore.access).toBe("NEW");
-    expect(tokenStore.refresh).toBe("RT2");
-    // the retry carried the refreshed bearer
+    expect(calls.filter((c) => c.url.includes("/auth/session/refresh")).length).toBe(1);
+    expect(tokenStore.access).toBeNull();
+    expect(tokenStore.refresh).toBeNull();
     const retried = calls.filter((c) => c.url.includes("/users/me"))[1];
-    expect((retried.init.headers as Record<string, string>)["Authorization"]).toBe("Bearer NEW");
+    expect((retried.init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
   });
 
   it("clears tokens and surfaces the error when the refresh itself fails", async () => {
     tokenStore.set({ access_token: "OLD", refresh_token: "BAD", expires_in: 1 });
     installFetch((url) => {
-      if (url.includes("/auth/refresh")) return resp(401, { code: 2000, message: "refresh expired", data: null });
+      if (url.includes("/auth/session/refresh")) return resp(401, { code: 2000, message: "refresh expired", data: null });
       return resp(401, { code: 2000, message: "unauthorized", data: null });
     });
     await expect(api.me()).rejects.toBeInstanceOf(ApiError);
@@ -134,19 +134,19 @@ describe("401 → refresh → retry", () => {
     expect(tokenStore.refresh).toBeNull();
   });
 
-  it("does not attempt a refresh when there is no refresh token", async () => {
-    // access present but refresh missing → a 401 must NOT trigger /auth/refresh.
+  it("does not use legacy localStorage tokens", async () => {
     localStorage.setItem("adm_access", "OLD");
     const { calls } = installFetch(() => resp(401, { code: 2000, message: "unauthorized", data: null }));
     await expect(api.me()).rejects.toBeInstanceOf(ApiError);
-    expect(calls.some((c) => c.url.includes("/auth/refresh"))).toBe(false);
+    expect(calls.some((c) => c.url.includes("/auth/session/refresh"))).toBe(true);
+    expect(localStorage.getItem("adm_access")).toBeNull();
   });
 
   it("coalesces concurrent 401s into a single refresh (singleflight)", async () => {
     tokenStore.set({ access_token: "OLD", refresh_token: "RT", expires_in: 1 });
     const seen: Record<string, number> = {};
     const { calls } = installFetch((url) => {
-      if (url.includes("/auth/refresh")) {
+      if (url.includes("/auth/session/refresh")) {
         seen.refresh = (seen.refresh ?? 0) + 1;
         return resp(200, ok({ user: { id: "u1" }, tokens: { access_token: "NEW", refresh_token: "RT2", expires_in: 900 } }));
       }
@@ -163,6 +163,6 @@ describe("401 → refresh → retry", () => {
     expect(a).toMatchObject({ id: "u1" });
     expect(b).toMatchObject({ id: "u1" });
     // Two concurrent 401s, but only ONE refresh round-trip.
-    expect(calls.filter((c) => c.url.includes("/auth/refresh")).length).toBe(1);
+    expect(calls.filter((c) => c.url.includes("/auth/session/refresh")).length).toBe(1);
   });
 });

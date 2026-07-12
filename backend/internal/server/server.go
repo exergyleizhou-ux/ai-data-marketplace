@@ -38,6 +38,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/verify"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/watchlist"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/withdrawal"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/workbench"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/metrics"
@@ -146,6 +147,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 	// metrics times the whole handler stack.
 	engine.Use(
 		middleware.CORS(cfg.CORSAllowOrigin),
+		middleware.CSRF(),
 		// otelgin starts a span per request (no-op unless tracing.Init enabled
 		// a provider); it must run before TraceID so trace_id == span trace ID.
 		otelgin.Middleware("marketplace-backend"),
@@ -356,6 +358,9 @@ func (s *Server) routes() {
 			auth.WithAudit(rec))
 		lim := s.limiter() // shared rate limiter (auth credential routes + dataset preview)
 		auth.Register(api, authSvc, tm, lim)
+		if s.cfg.WorkbenchJWTSecret != "" {
+			workbench.Register(api, workbench.NewService(workbench.NewRepository(s.db), workbench.NewTokenManager(s.cfg.WorkbenchJWTSecret, s.cfg.WorkbenchJWTTTL)), tm, lim)
+		}
 
 		authMW := auth.Middleware(tm)
 		store := s.objectStorage() // shared by dataset (upload) and delivery (download)

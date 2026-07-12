@@ -1,0 +1,6 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
+import { POST } from "./route";
+afterEach(()=>vi.unstubAllGlobals());
+it("rejects a cross-site origin before contacting backend",async()=>{const fetch=vi.fn();vi.stubGlobal("fetch",fetch);const r=new NextRequest("https://oasis.test/api/workbench/session",{method:"POST",headers:{origin:"https://evil.test"},body:"{}"});expect((await POST(r)).status).toBe(403);expect(fetch).not.toHaveBeenCalled()});
+it("sets an HttpOnly Strict capped workbench cookie and hides the JWT",async()=>{vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({code:0,data:{token:"secret-jwt",workspace_id:"w",expires_in:900}}),{status:200})));const r=new NextRequest("https://oasis.test/api/workbench/session",{method:"POST",headers:{origin:"https://oasis.test",cookie:"oasis_access=a"},body:"{}"});const out=await POST(r);const body=await out.text();expect(JSON.parse(body)).toEqual({workspace_id:"w",expires_in:900});expect(body).not.toContain("secret-jwt");const cookie=out.headers.get("set-cookie")??"";expect(cookie).toContain("oasis_workbench=secret-jwt");expect(cookie).toContain("HttpOnly");expect(cookie).toContain("SameSite=strict");expect(cookie).toContain("Max-Age=300")});

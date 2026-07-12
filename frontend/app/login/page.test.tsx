@@ -15,7 +15,6 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace }) }));
 
 const login = vi.fn();
 const verify2FA = vi.fn();
-const tokenSet = vi.fn();
 const me = vi.fn();
 vi.mock("@/lib/api", () => ({
   api: {
@@ -25,7 +24,7 @@ vi.mock("@/lib/api", () => ({
   },
   // AuthProvider checks tokenStore.access on mount — undefined here makes its
   // initial refresh() a no-op so the test never touches api.me().
-  tokenStore: { set: (...a: unknown[]) => tokenSet(...a), access: undefined },
+  tokenStore: { set: vi.fn(), clear: vi.fn(), access: null },
 }));
 
 const tokens = { access_token: "AT", refresh_token: "RT", expires_in: 900 };
@@ -47,15 +46,15 @@ beforeEach(() => {
 });
 
 describe("LoginPage", () => {
-  it("logs in, stores tokens, and routes to the catalog on success", async () => {
-    login.mockResolvedValue({ tokens, user });
+  it("logs in through the cookie session and routes without storing tokens", async () => {
+    login.mockResolvedValue({ user });
     renderLogin();
     await userEvent.type(screen.getByLabelText("账号"), "a@b.c");
     await userEvent.type(screen.getByLabelText("密码"), "password123");
     await userEvent.click(screen.getByRole("button", { name: "登录" }));
 
     expect(login).toHaveBeenCalledWith("a@b.c", "password123");
-    expect(tokenSet).toHaveBeenCalledWith(tokens);
+    expect(localStorage.getItem("adm_access")).toBeNull();
     expect(push).toHaveBeenCalledWith("/datasets");
   });
 
@@ -74,7 +73,7 @@ describe("LoginPage", () => {
     await userEvent.type(screen.getByRole("textbox"), "123456");
     await userEvent.click(screen.getByRole("button", { name: "验证" }));
     expect(verify2FA).toHaveBeenCalledWith("CHAL", "123456");
-    expect(tokenSet).toHaveBeenCalledWith(tokens);
+    expect(localStorage.getItem("adm_access")).toBeNull();
     expect(push).toHaveBeenCalledWith("/datasets");
   });
 

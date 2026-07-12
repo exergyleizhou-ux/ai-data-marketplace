@@ -25,7 +25,9 @@ const nextConfig = {
     const lumenServe = process.env.LUMEN_SERVE_URL || "http://127.0.0.1:8787";
     const lumenScience = process.env.LUMEN_SCIENCE_URL || "http://127.0.0.1:18990";
     const lumenLab = process.env.LUMEN_LAB_URL || "http://127.0.0.1:18992";
+    const backend = process.env.BACKEND_API_BASE_URL || "http://127.0.0.1:8080/api/v1";
     return [
+      { source: "/api/v1/:path*", destination: `${backend}/:path*` },
       { source: "/lumen", destination: `${lumenServe}/` },
       { source: "/lumen/:path*", destination: `${lumenServe}/:path*` },
       { source: "/lumen-science", destination: `${lumenScience}/` },

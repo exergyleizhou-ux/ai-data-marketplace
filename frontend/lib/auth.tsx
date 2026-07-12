@@ -28,11 +28,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    if (!tokenStore.access) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
     try {
       setUser(await api.me());
     } catch {
@@ -48,28 +43,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (account: string, password: string) => {
     const res = await api.login(account, password);
-    if (res.tokens) {
-      tokenStore.set(res.tokens);
-      if (res.user) setUser(res.user);
-    }
+    if (res.user) setUser(res.user);
     return res;
   }, []);
 
   const register = useCallback(
     async (account: string, accountType: string, password: string, agreements?: { doc: string; version: string }[]) => {
       const res = await api.register(account, accountType, password, agreements);
-      tokenStore.set(res.tokens);
-      setUser(res.user);
+    setUser(res.user);
     },
     [],
   );
 
   const setSession = useCallback((u: User, tokens: Tokens) => {
-    tokenStore.set(tokens);
+    tokenStore.clear();
     setUser(u);
   }, []);
 
   const logout = useCallback(() => {
+    void fetch("/api/v1/auth/session/logout", { method: "POST", credentials: "include" });
     tokenStore.clear();
     setUser(null);
   }, []);

@@ -20,9 +20,11 @@ type Config struct {
 	RedisURL    string // redis URL
 	AutoMigrate bool   // run DB migrations on startup (handy for dev/CI)
 
-	JWTSecret     string        // HMAC signing secret for JWTs
-	JWTAccessTTL  time.Duration // access-token lifetime
-	JWTRefreshTTL time.Duration // refresh-token lifetime
+	JWTSecret          string        // HMAC signing secret for JWTs
+	JWTAccessTTL       time.Duration // access-token lifetime
+	JWTRefreshTTL      time.Duration // refresh-token lifetime
+	WorkbenchJWTSecret string
+	WorkbenchJWTTTL    time.Duration
 
 	PIISecret      string // keyed-hash secret for sensitive fields (e.g. ID numbers)
 	KYCAutoApprove bool   // dev only: auto-verify KYC submissions instead of manual review
@@ -79,9 +81,11 @@ func Load() (*Config, error) {
 		// No default JWT secret — in dev a random secret is generated on every
 		// start (tokens invalidate across restarts). For persistent tokens in
 		// dev, set JWT_SECRET explicitly. Production MUST set JWT_SECRET.
-		JWTSecret:     getenv("JWT_SECRET", ""),
-		JWTAccessTTL:  15 * time.Minute,
-		JWTRefreshTTL: 30 * 24 * time.Hour,
+		JWTSecret:          getenv("JWT_SECRET", ""),
+		JWTAccessTTL:       15 * time.Minute,
+		JWTRefreshTTL:      30 * 24 * time.Hour,
+		WorkbenchJWTSecret: getenv("WORKBENCH_JWT_SECRET", ""),
+		WorkbenchJWTTTL:    5 * time.Minute,
 
 		PIISecret:      getenv("PII_SECRET", "dev-pii-secret"),
 		KYCAutoApprove: getenv("KYC_AUTO_APPROVE", "false") == "true",
@@ -123,6 +127,9 @@ func Load() (*Config, error) {
 		// usable out of the box but not trivially forgeable via a public default.
 		cfg.JWTSecret = randomHex(64)
 		fmt.Fprintln(os.Stderr, "WARNING: JWT_SECRET not set — generated random secret for this session. Tokens will NOT survive a restart.")
+	}
+	if cfg.Env == "production" && cfg.WorkbenchJWTSecret == "" {
+		return nil, fmt.Errorf("WORKBENCH_JWT_SECRET must be set in production")
 	}
 	return cfg, nil
 }
