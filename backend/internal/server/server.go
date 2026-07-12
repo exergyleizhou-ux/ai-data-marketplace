@@ -282,7 +282,9 @@ func (s *Server) objectStorage() storage.Storage {
 			slog.Error("failed to init S3 storage", "err", err)
 			return nil
 		}
-		slog.Info("object storage backend", "type", "s3", "endpoint", s.cfg.S3Endpoint, "bucket", s.cfg.S3Bucket)
+		// Endpoint URLs may contain userinfo or signed query parameters; local
+		// paths reveal host layout. Log only the selected backend kind.
+		slog.Info("object storage backend", "type", "s3")
 		return store
 	default:
 		store, err := storage.NewLocal(s.cfg.StorageDir)
@@ -290,7 +292,7 @@ func (s *Server) objectStorage() storage.Storage {
 			slog.Error("failed to init local storage", "err", err)
 			return nil
 		}
-		slog.Info("object storage backend", "type", "local", "dir", s.cfg.StorageDir)
+		slog.Info("object storage backend", "type", "local")
 		return store
 	}
 }
@@ -458,7 +460,8 @@ func (s *Server) routes() {
 				kinds = []string{"high_risk_action", "repeated_failure"}
 			}
 			anomalyAlerter = anomaly.NewWebhookAlerter(whURL, kinds)
-			slog.Info("anomaly webhook alerting enabled", "url", whURL[:minInt(30, len(whURL))])
+			// Webhook URLs commonly embed bearer material in path/query values.
+			slog.Info("anomaly webhook alerting enabled")
 		}
 		anomalySvc := anomaly.NewService(anomalyRepo, s.db, anomalyAlerter)
 		anomalySvc.StartScanner(context.Background())

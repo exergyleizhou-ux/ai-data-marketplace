@@ -15,4 +15,14 @@ describe("nextConfig rewrites", () => {
       ]),
     );
   });
+
+  it("allows only same-origin workbench framing and denies active external content", async () => {
+    expect(nextConfig.headers).toBeTypeOf("function");
+    const rules = await nextConfig.headers!();
+    const headers = Object.fromEntries(rules[0]!.headers.map(({ key, value }) => [key, value]));
+    expect(headers["X-Frame-Options"]).toBe("SAMEORIGIN");
+    expect(headers["Content-Security-Policy"]).toContain("frame-ancestors 'self'");
+    expect(headers["Content-Security-Policy"]).toContain("object-src 'none'");
+    expect(headers["Content-Security-Policy"]).toContain("connect-src 'self'");
+  });
 });

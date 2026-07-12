@@ -35,6 +35,10 @@ func requireOwner(c *gin.Context, o Owner) bool {
 	return false
 }
 func bindRuntime(c *gin.Context, v any) bool {
+	// Runtime events can contain structured tool output, but accepting an
+	// unbounded body lets a valid machine credential exhaust API memory before
+	// schema validation or quota accounting runs.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20)
 	if err := c.ShouldBindJSON(v); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "invalid_request", "message": "invalid runtime payload"}})
 		return false

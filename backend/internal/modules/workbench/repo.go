@@ -14,6 +14,7 @@ import (
 
 var ErrNotFound = errors.New("workspace not found")
 var ErrConflict = errors.New("version conflict")
+var ErrAccountInactive = errors.New("account is not active")
 
 type Repository struct {
 	db    *pgxpool.Pool
@@ -22,6 +23,14 @@ type Repository struct {
 
 func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db, usage: workbenchusage.New(db)}
+}
+func (r *Repository) AccountActive(ctx context.Context, uid string) (bool, error) {
+	var active bool
+	err := r.db.QueryRow(ctx, `SELECT status='active' FROM users WHERE id=$1`, uid).Scan(&active)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return active, err
 }
 func (r *Repository) StartQuotaReaper(interval time.Duration) func() {
 	return r.usage.StartReaper(interval)

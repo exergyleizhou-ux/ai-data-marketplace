@@ -125,3 +125,39 @@ Verified on 2026-07-12 in `/Users/lei/Documents/Codex/2026-07-12/new-chat-2/work
 - Workbench session creation now forwards the readable CSRF cookie as the
   required header to the same-origin BFF; the short-lived runtime JWT remains
   HttpOnly and is never returned to application JavaScript.
+
+## Phase 7 reliability and security hardening (2026-07-13)
+
+- A user whose authoritative `users.status` is not `active` can no longer mint
+  a new Workbench token through an access token issued before the freeze. The
+  independent Workbench JWT remains capped at five minutes by default (and at
+  ten minutes by configuration validation), bounding already-issued sessions.
+- Browser token requests are capped at 4 KiB and machine runtime payloads at
+  1 MiB before JSON decoding/persistence. Invalid runtime credentials receive a
+  generic response that does not echo credential material.
+- Next responses now enforce a CSP that limits framing, connections, forms and
+  active content to the same origin. `SAMEORIGIN` intentionally permits the
+  same-origin Code/Lab Workbench iframe while cross-origin framing is rejected
+  by both X-Frame-Options and `frame-ancestors 'self'`.
+- Startup logs no longer include object-store endpoint/bucket/path or anomaly
+  webhook URL fragments, because those values may contain infrastructure names,
+  userinfo or signed path/query credentials.
+- Vitest was upgraded from 2.1.9 to 3.2.7 and explicit Vite 6.4.3 was installed
+  in isolated commit `f68c145`. Before and after the upgrade, all 25 frontend
+  files / 94 tests, typecheck, lint (0 errors / 37 existing warnings) and the
+  production build passed.
+- `npm audit --omit=dev` reports zero high and zero critical vulnerabilities.
+  Its two moderate findings are the same PostCSS advisory in Next's bundled
+  dependency chain. npm offers only `--force` to downgrade Next to 9.3.3, which
+  would remove current security fixes and break the application; this unsafe
+  remediation is declined pending a patched stable Next release. The affected
+  PostCSS stringify path is not fed attacker-authored CSS by Oasis.
+- SQL review found all values in Workbench persistence passed as pgx bind
+  parameters. Shared repository column-list concatenations are compile-time
+  constants, not request data. Runtime persistence errors and HTTP responses do
+  not include payloads, prompts, credentials or SQL text.
+- With the hardening test included, frontend verification is 25 files / 95
+  tests plus typecheck and production build. Backend `go test -race ./...`,
+  `go vet ./...`, and `go build ./...` pass. The full race suite also passes
+  against the real Docker Postgres, including Workbench repository/runtime
+  ingest, server integration and asynchronous compute fixtures.

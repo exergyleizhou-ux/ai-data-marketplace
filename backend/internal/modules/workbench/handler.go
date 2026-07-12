@@ -47,6 +47,7 @@ func (h handler) token(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"code": "workbench_unavailable", "message": "workbench identity is not configured"}})
 		return
 	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4096)
 	var q struct {
 		WorkspaceID string `json:"workspace_id"`
 	}
@@ -56,6 +57,10 @@ func (h handler) token(c *gin.Context) {
 	}
 	res, err := h.s.Issue(c.Request.Context(), httpx.UserID(c), q.WorkspaceID)
 	if err != nil {
+		if errors.Is(err, ErrAccountInactive) {
+			httpx.Fail(c, httpx.ErrForbidden.WithMessage("account is not active"))
+			return
+		}
 		httpx.Fail(c, httpx.ErrNotFound)
 		return
 	}

@@ -10,6 +10,7 @@ import (
 )
 
 type workspaceRepo interface {
+	AccountActive(context.Context, string) (bool, error)
 	GetOrCreatePersonalWorkspace(context.Context, string) (Workspace, error)
 	GetOwned(context.Context, string, string) (Workspace, error)
 }
@@ -25,6 +26,13 @@ func NewManagedService(r *Repository, tm *TokenManager, objects storage.Storage)
 	return &Service{repo: r, tm: tm, runtime: r, objects: objects}
 }
 func (s *Service) Issue(ctx context.Context, uid, wid string) (TokenResponse, error) {
+	active, err := s.repo.AccountActive(ctx, uid)
+	if err != nil {
+		return TokenResponse{}, err
+	}
+	if !active {
+		return TokenResponse{}, ErrAccountInactive
+	}
 	var w Workspace
 	var e error
 	if wid == "" {
