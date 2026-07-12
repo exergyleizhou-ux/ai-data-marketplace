@@ -14,7 +14,9 @@ test("unknown routes render the not-found boundary", async ({ page }) => {
 test("security headers are served on app responses", async ({ page }) => {
   const res = await page.goto("/");
   const headers = res!.headers();
-  expect(headers["x-frame-options"]).toBe("DENY");
+  expect(headers["x-frame-options"]).toBe("SAMEORIGIN");
+  expect(headers["content-security-policy"]).toContain("frame-ancestors 'self'");
+  expect(headers["content-security-policy"]).toContain("object-src 'none'");
   expect(headers["x-content-type-options"]).toBe("nosniff");
   expect(headers["strict-transport-security"]).toContain("max-age=");
   expect(headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
