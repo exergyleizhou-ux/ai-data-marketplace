@@ -1,9 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { WorkbenchRuntimePanel } from "@/components/WorkbenchRuntimePanel";
 import { useT } from "@/lib/i18n";
+import {
+  WorkbenchRuntimeError,
+  cancelLabRun,
+  loadLabRuntime,
+  parseTrustedWorkbenchMessage,
+  type LabRuntimeDetail,
+  type WorkbenchSnapshot,
+} from "@/lib/workbench-runtime";
 
 type TabId = "coding" | "science" | "lab";
 
@@ -47,10 +56,36 @@ function WorkbenchInner() {
   const initial = useMemo(() => parseTab(search.get("tab")), [search]);
   const [tab, setTab] = useState<TabId>(initial);
   const [labHealth, setLabHealth] = useState<"ok" | "down" | "loading">("loading");
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const runtimeRequest = useRef(0);
+  const runtimeAbort = useRef<AbortController | null>(null);
+  const runtimeRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runtimeIdentity = useRef("");
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<WorkbenchSnapshot | null>(null);
+  const [runtimeDetail, setRuntimeDetail] = useState<LabRuntimeDetail | null>(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const [runtimeError, setRuntimeError] = useState("");
+  const [runtimeCanceling, setRuntimeCanceling] = useState(false);
+
+  const clearRuntime = useCallback(() => {
+    runtimeRequest.current += 1;
+    runtimeAbort.current?.abort();
+    runtimeAbort.current = null;
+    if (runtimeRefreshTimer.current) clearTimeout(runtimeRefreshTimer.current);
+    runtimeRefreshTimer.current = null;
+    runtimeIdentity.current = "";
+    setRuntimeSnapshot(null);
+    setRuntimeDetail(null);
+    setRuntimeLoading(false);
+    setRuntimeError("");
+    setRuntimeCanceling(false);
+  }, []);
 
   useEffect(() => {
-    setTab(parseTab(search.get("tab")));
-  }, [search]);
+    const nextTab = parseTab(search.get("tab"));
+    setTab(nextTab);
+    if (nextTab !== "lab") clearRuntime();
+  }, [clearRuntime, search]);
 
   useEffect(() => {
     if (tab !== "lab") return;
@@ -70,12 +105,82 @@ function WorkbenchInner() {
 
   const active = TABS.find((x) => x.id === tab) ?? TABS[2];
 
+  const refreshRuntime = useCallback(async (snapshot: WorkbenchSnapshot) => {
+    const requestID = runtimeRequest.current + 1;
+    runtimeRequest.current = requestID;
+    runtimeAbort.current?.abort();
+    const controller = new AbortController();
+    runtimeAbort.current = controller;
+    setRuntimeLoading(true);
+    setRuntimeError("");
+    try {
+      const detail = await loadLabRuntime(snapshot, fetch, controller.signal);
+      if (runtimeRequest.current !== requestID || controller.signal.aborted) return;
+      setRuntimeDetail(detail);
+    } catch (error) {
+      if (controller.signal.aborted || runtimeRequest.current !== requestID) return;
+      const status = error instanceof WorkbenchRuntimeError ? ` (${error.status})` : "";
+      setRuntimeError(t("无法同步 Runtime 状态", "Could not sync runtime state") + status);
+    } finally {
+      if (runtimeRequest.current === requestID && !controller.signal.aborted) {
+        setRuntimeLoading(false);
+      }
+    }
+  }, [t]);
+
+  useEffect(() => {
+    function receiveWorkbenchMessage(event: MessageEvent<unknown>) {
+      if (tab !== "lab") return;
+      const snapshot = parseTrustedWorkbenchMessage(
+        event,
+        window.location.origin,
+        iframeRef.current?.contentWindow ?? null,
+      );
+      if (!snapshot) return;
+      const identity = `${snapshot.project?.id ?? ""}:${snapshot.run?.id ?? ""}`;
+      if (runtimeIdentity.current !== identity) {
+        runtimeIdentity.current = identity;
+        setRuntimeDetail(null);
+      }
+      setRuntimeSnapshot(snapshot);
+      if (runtimeRefreshTimer.current) clearTimeout(runtimeRefreshTimer.current);
+      runtimeRefreshTimer.current = setTimeout(() => {
+        runtimeRefreshTimer.current = null;
+        void refreshRuntime(snapshot);
+      }, 250);
+    }
+    window.addEventListener("message", receiveWorkbenchMessage);
+    return () => window.removeEventListener("message", receiveWorkbenchMessage);
+  }, [refreshRuntime, tab]);
+
+  useEffect(() => () => {
+    runtimeAbort.current?.abort();
+    if (runtimeRefreshTimer.current) clearTimeout(runtimeRefreshTimer.current);
+  }, []);
+
+  const cancelRuntime = useCallback(async () => {
+    const runID = runtimeSnapshot?.run?.id;
+    if (!runID || runtimeCanceling) return;
+    setRuntimeCanceling(true);
+    setRuntimeError("");
+    try {
+      await cancelLabRun(runID);
+      await refreshRuntime(runtimeSnapshot);
+    } catch (error) {
+      const status = error instanceof WorkbenchRuntimeError ? ` (${error.status})` : "";
+      setRuntimeError(t("无法取消 Run", "Could not cancel Run") + status);
+    } finally {
+      setRuntimeCanceling(false);
+    }
+  }, [refreshRuntime, runtimeCanceling, runtimeSnapshot, t]);
+
   const select = useCallback((id: TabId) => {
+    if (id !== "lab") clearRuntime();
     setTab(id);
     const url = new URL(window.location.href);
     url.searchParams.set("tab", id);
     window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}`);
-  }, []);
+  }, [clearRuntime]);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-paper">
@@ -120,7 +225,17 @@ function WorkbenchInner() {
                 : t("探测中…", "Probing…")}
           </span>
         )}
-        <div className="ml-auto flex gap-2 text-xs">
+        <div className="ml-auto flex items-center gap-2 text-xs">
+          {tab === "lab" && (
+            <WorkbenchRuntimePanel
+              snapshot={runtimeSnapshot}
+              detail={runtimeDetail}
+              loading={runtimeLoading}
+              error={runtimeError}
+              canceling={runtimeCanceling}
+              onCancel={() => { void cancelRuntime(); }}
+            />
+          )}
           <Link href="/datasets" className="text-ink/50 hover:text-forest">
             ← {t("数据市场", "Marketplace")}
           </Link>
@@ -139,6 +254,7 @@ function WorkbenchInner() {
         </div>
       ) : (
         <iframe
+          ref={iframeRef}
           key={active.id}
           src={active.src}
           title={t(active.zh, active.en)}

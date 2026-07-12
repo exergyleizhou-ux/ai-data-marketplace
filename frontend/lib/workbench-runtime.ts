@@ -119,6 +119,21 @@ export function parseWorkbenchSnapshot(value: unknown): WorkbenchSnapshot | null
   };
 }
 
+type WorkbenchMessageLike = {
+  origin: string;
+  source: MessageEventSource | null;
+  data: unknown;
+};
+
+export function parseTrustedWorkbenchMessage(
+  event: WorkbenchMessageLike,
+  expectedOrigin: string,
+  expectedSource: MessageEventSource | null,
+): WorkbenchSnapshot | null {
+  if (!expectedSource || event.origin !== expectedOrigin || event.source !== expectedSource) return null;
+  return parseWorkbenchSnapshot(event.data);
+}
+
 export function isTerminalRunStatus(status: string): status is LabRunStatus {
   return TERMINAL_STATUSES.has(status as LabRunStatus);
 }

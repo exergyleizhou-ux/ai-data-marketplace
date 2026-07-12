@@ -6,6 +6,7 @@ import {
   cancelLabRun,
   isTerminalRunStatus,
   loadLabRuntime,
+  parseTrustedWorkbenchMessage,
   parseWorkbenchSnapshot,
 } from "./workbench-runtime";
 
@@ -32,6 +33,15 @@ describe("parseWorkbenchSnapshot", () => {
       parseWorkbenchSnapshot({ ...validMessage, project: { id: "project/a", title: "Project A" } }),
     ).toBeNull();
     expect(parseWorkbenchSnapshot({ ...validMessage, prompt: "do not forward me" })).toBeNull();
+  });
+
+  it("accepts messages only from the expected same-origin iframe source", () => {
+    const source = {} as MessageEventSource;
+    const otherSource = {} as MessageEventSource;
+    const event = { origin: "https://oasis.test", source, data: validMessage };
+    expect(parseTrustedWorkbenchMessage(event, "https://oasis.test", source)).toEqual(validMessage);
+    expect(parseTrustedWorkbenchMessage(event, "https://evil.test", source)).toBeNull();
+    expect(parseTrustedWorkbenchMessage(event, "https://oasis.test", otherSource)).toBeNull();
   });
 });
 
