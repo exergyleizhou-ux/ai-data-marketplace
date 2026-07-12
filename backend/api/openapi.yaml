@@ -51,6 +51,36 @@ security:
   - bearerAuth: []
 
 paths:
+  /auth/session/register:
+    post:
+      tags: [auth]
+      summary: Register and establish an HttpOnly browser session
+      security: []
+      responses: { '200': { description: Browser session established } }
+  /auth/session/login:
+    post:
+      tags: [auth]
+      summary: Login and establish an HttpOnly browser session
+      security: []
+      responses: { '200': { description: Browser session established } }
+  /auth/session/2fa/verify:
+    post:
+      tags: [auth]
+      summary: Complete 2FA and establish an HttpOnly browser session
+      security: []
+      responses: { '200': { description: Browser session established } }
+  /auth/session/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate browser session cookies
+      security: []
+      responses: { '200': { description: Browser session refreshed } }
+  /auth/session/logout:
+    post:
+      tags: [auth]
+      summary: Revoke and clear browser session cookies
+      security: []
+      responses: { '204': { description: Browser session cleared } }
   /workbench/token:
     post:
       tags: [Workbench]
@@ -69,6 +99,84 @@ paths:
           description: Short-lived token for an owned workspace
         '401': { description: Authentication required }
         '404': { description: Workspace not found }
+  /workbench/runs:
+    get:
+      tags: [Workbench]
+      summary: List managed runtime runs in an owned workspace
+      parameters:
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200': { description: Owner-scoped runs }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workbench/runs/{id}:
+    get:
+      tags: [Workbench]
+      summary: Get a managed runtime run
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+      responses:
+        '200': { description: Run }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workbench/runs/{id}/events:
+    get:
+      tags: [Workbench]
+      summary: Read ordered runtime events after a sequence
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+        - { name: after, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+      responses:
+        '200': { description: Events in ascending sequence order }
+  /workbench/runs/{id}/approvals:
+    get:
+      tags: [Workbench]
+      summary: List approvals and their reviewed effects
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+      responses:
+        '200': { description: Approvals }
+  /workbench/approvals/{approvalID}/decision:
+    post:
+      tags: [Workbench]
+      summary: Decide a current, unexpired approval using optimistic concurrency
+      parameters:
+        - { name: approvalID, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, version]
+              properties:
+                decision: { type: string, enum: [approved, rejected] }
+                version: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200': { description: Recorded approval decision }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /workbench/runs/{id}/artifacts:
+    get:
+      tags: [Workbench]
+      summary: List artifact metadata without exposing object keys
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+      responses:
+        '200': { description: Artifacts }
+  /workbench/artifacts/{artifactID}/download:
+    get:
+      tags: [Workbench]
+      summary: Download an owner-checked artifact
+      parameters:
+        - { name: artifactID, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+      responses:
+        '200': { description: Artifact bytes }
+        '404': { $ref: '#/components/responses/NotFound' }
   # =========================================================================
   # AUTH
   # =========================================================================
@@ -2049,6 +2157,13 @@ paths:
 # COMPONENTS
 # ===========================================================================
 components:
+  parameters:
+    WorkbenchWorkspace:
+      name: workspace_id
+      in: query
+      required: true
+      schema: { type: string, format: uuid }
+      description: Owned Workbench workspace tenant boundary
   securitySchemes:
     bearerAuth:
       type: http

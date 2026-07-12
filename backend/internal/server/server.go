@@ -358,12 +358,10 @@ func (s *Server) routes() {
 			auth.WithAudit(rec))
 		lim := s.limiter() // shared rate limiter (auth credential routes + dataset preview)
 		auth.Register(api, authSvc, tm, lim)
-		if s.cfg.WorkbenchJWTSecret != "" {
-			workbench.Register(api, workbench.NewService(workbench.NewRepository(s.db), workbench.NewTokenManager(s.cfg.WorkbenchJWTSecret, s.cfg.WorkbenchJWTTTL)), tm, lim)
-		}
-
 		authMW := auth.Middleware(tm)
 		store := s.objectStorage() // shared by dataset (upload) and delivery (download)
+		workbenchRepo := workbench.NewRepository(s.db)
+		workbench.Register(api, workbench.NewManagedService(workbenchRepo, workbench.NewTokenManager(s.cfg.WorkbenchJWTSecret, s.cfg.WorkbenchJWTTTL), store), tm, lim, s.cfg.WorkbenchJWTSecret != "")
 
 		dsOpts := []dataset.Option{dataset.WithAsyncQuality(2, 128)}
 		if store != nil {
