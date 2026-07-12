@@ -44,14 +44,16 @@ export class WorkbenchPage {
     }, { prompt, mode, key });
     await expect.poll(() => this.page.evaluate(key => ((window as unknown as Record<string, { runID?: string }>)[key]?.runID ?? ""), key)).toMatch(/^run_/);
     const runID = await this.page.evaluate(key => (window as unknown as Record<string, { runID: string }>)[key].runID, key);
-    await this.publishCodeSnapshot(runID);
+    await this.requestCodeRefresh(runID);
     return { runID, key };
   }
-  async publishCodeSnapshot(runID: string) {
-    const response = await this.page.request.get(`/api/lumen/code/v1/runs/${runID}/workbench-snapshot`); expect(response.ok()).toBeTruthy(); const snapshot = await response.json();
-    const handle = await this.page.locator("iframe").elementHandle(); const frame = await handle?.contentFrame(); if (!frame) throw new Error("runtime iframe missing");
-    await frame.evaluate(snapshot => window.parent.postMessage({ kind: "lumen.workbench.snapshot", version: 2, surface: "code", workspace: { id: snapshot.workspace_id }, project: null, run: { id: snapshot.run_id, status: snapshot.status, last_seq: snapshot.last_seq, terminal: snapshot.terminal }, pending_approvals: snapshot.pending_approvals, verification: snapshot.verification, artifact_count: snapshot.artifact_count }, "*"), snapshot);
-    await expect(this.page.getByRole("button", { name: "运行详情", exact: true })).toContainText(new RegExp(String(snapshot.status)));
+  async requestCodeRefresh(runID: string) {
+    const handle = await this.page.locator("iframe").elementHandle(); if (!handle || !await handle.contentFrame()) throw new Error("runtime iframe missing");
+    const frame = await handle.contentFrame();
+    try { await expect.poll(() => frame!.evaluate(() => typeof (window as unknown as { CodeUI?: unknown }).CodeUI)).toBe("object"); }
+    catch (error) { const diagnostic = await frame!.evaluate(() => ({ href: location.href, html: document.documentElement.outerHTML.slice(0, 1000), scripts: [...document.scripts].map(script => script.src) })); throw new Error(`${String(error)} ${JSON.stringify(diagnostic)}`); }
+    await handle.evaluate((element, runID) => (element as HTMLIFrameElement).contentWindow?.postMessage({ kind: "lumen.workbench.refresh", version: 1, run_id: runID }, window.origin), runID);
+    await expect(this.page.getByRole("button", { name: "运行详情", exact: true })).not.toContainText(/空闲|idle/);
   }
   async runCode(prompt: string) {
     const response = await this.page.request.post("/api/lumen/code/v1/chat", { data: { prompt, mode: "bypass" } });

@@ -1,11 +1,14 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { appendFileSync, chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
-export const INFO_PATH = join(tmpdir(), "oasis-e2e-info.json");
+const RUN_ID = process.env.E2E_RUN_ID;
+if (!RUN_ID || !/^[a-f0-9-]{36}$/.test(RUN_ID)) throw new Error("E2E_RUN_ID is required");
+export const INFO_PATH = join(tmpdir(), `oasis-e2e-${RUN_ID}-info.json`);
+export const LOCK_PATH = join(tmpdir(), "oasis-e2e-harness.lock");
 const FRONTEND_PORT = Number(process.env.E2E_FRONTEND_PORT);
 const BACKEND_PORT = Number(process.env.E2E_BACKEND_PORT);
 const BACKEND_BASE = `http://127.0.0.1:${BACKEND_PORT}`;
@@ -58,6 +61,12 @@ export type HarnessInfo = {
 };
 
 export default async function globalSetup() {
+  if (existsSync(LOCK_PATH)) {
+    const owner = Number(readFileSync(LOCK_PATH, "utf8"));
+    try { process.kill(owner, 0); throw new Error(`another E2E harness is active (pid ${owner})`); }
+    catch (error) { if (error instanceof Error && error.message.startsWith("another E2E")) throw error; rmSync(LOCK_PATH, { force: true }); }
+  }
+  writeFileSync(LOCK_PATH, String(process.pid), { flag: "wx" });
   await Promise.all([requireFreePort(BACKEND_PORT), requireFreePort(FRONTEND_PORT)]);
   const backendDir = resolve(process.cwd(), "..", "backend");
   const tempDir = mkdtempSync(join(tmpdir(), "oasis-e2e-"));
@@ -130,7 +139,7 @@ http.createServer((req,res)=>{if(req.url==="/v1/models"){res.setHeader("content-
     const record = (chunk: Buffer) => { try { appendFileSync(log, chunk); } catch {} };
     child.stdout?.on("data", record);
     child.stderr?.on("data", record);
-    child.unref(); if (!child.pid) throw new Error(`failed to launch ${label}`); info.pids.push(child.pid); return child;
+    child.unref(); if (!child.pid) throw new Error(`failed to launch ${label}`); info.pids.push(child.pid); writeFileSync(INFO_PATH, JSON.stringify(info)); return child;
   };
 
   launch(process.execPath, [providerScript], tempDir, process.env, "provider");
@@ -141,12 +150,11 @@ http.createServer((req,res)=>{if(req.url==="/v1/models"){res.setHeader("content-
   process.env.WORKBENCH_CONTROL_PLANE_URL = BACKEND_BASE;
   process.env.WORKBENCH_DATABASE_URL = info.lumenDatabaseUrl;
   launch(apiBin, [], backendDir, { ...process.env, HTTP_ADDR: `127.0.0.1:${BACKEND_PORT}`, APP_ENV: "test", JWT_SECRET: "oasis-e2e-jwt-secret", WORKBENCH_JWT_SECRET: WORKBENCH_SECRET, WORKBENCH_RUNTIME_INGEST_SECRET: INGEST_SECRET, PAYMENT_PROVIDER: "mock", STORAGE_DRIVER: "local", STORAGE_DIR: info.storageDir, KYC_AUTO_APPROVE: "true", AUTO_MIGRATE: "true", DATABASE_URL: info.databaseUrl }, "backend");
-  writeFileSync(INFO_PATH, JSON.stringify(info));
   await waitForReady(`${BACKEND_BASE}/readyz`);
   launch(lumenBin, ["serve", "--addr", `127.0.0.1:${codePort}`], tempDir, common, "code");
   launch(lumenBin, ["science", "lab", "--addr", `127.0.0.1:${labPort}`, "--no-browser"], tempDir, common, "lab");
   await Promise.all([waitForReady(`http://127.0.0.1:${codePort}/`), waitForReady(`http://127.0.0.1:${labPort}/api/lab/health`)]);
-  execFileSync("npm", ["run", "build"], { cwd: process.cwd(), env: { ...process.env, NEXT_OUTPUT_STANDALONE: "0", BACKEND_API_BASE_URL: `${BACKEND_BASE}/api/v1`, LUMEN_SERVE_URL: `http://127.0.0.1:${codePort}`, LUMEN_LAB_URL: `http://127.0.0.1:${labPort}` }, stdio: "inherit" });
-  launch(process.execPath, [join(process.cwd(), "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(FRONTEND_PORT)], process.cwd(), { ...process.env, BACKEND_API_BASE_URL: `${BACKEND_BASE}/api/v1`, LUMEN_SERVE_URL: `http://127.0.0.1:${codePort}`, LUMEN_LAB_URL: `http://127.0.0.1:${labPort}`, LUMEN_PROVIDER_CONFIGURED: "true", WORKBENCH_DATABASE_URL: "e2e", STORAGE_DRIVER: "local", COMPUTE_RUNNER: "controlled" }, "frontend");
+  execFileSync("npm", ["run", "build"], { cwd: process.cwd(), env: { ...process.env, E2E_ALLOW_HTTP: "1", NEXT_OUTPUT_STANDALONE: "0", BACKEND_API_BASE_URL: `${BACKEND_BASE}/api/v1`, LUMEN_SERVE_URL: `http://127.0.0.1:${codePort}`, LUMEN_LAB_URL: `http://127.0.0.1:${labPort}` }, stdio: "inherit" });
+  launch(process.execPath, [join(process.cwd(), "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(FRONTEND_PORT)], process.cwd(), { ...process.env, E2E_ALLOW_HTTP: "1", BACKEND_API_BASE_URL: `${BACKEND_BASE}/api/v1`, LUMEN_SERVE_URL: `http://127.0.0.1:${codePort}`, LUMEN_LAB_URL: `http://127.0.0.1:${labPort}`, LUMEN_PROVIDER_CONFIGURED: "true", WORKBENCH_DATABASE_URL: "e2e", STORAGE_DRIVER: "local", COMPUTE_RUNNER: "controlled" }, "frontend");
   await waitForReady(`http://127.0.0.1:${FRONTEND_PORT}/`);
 }

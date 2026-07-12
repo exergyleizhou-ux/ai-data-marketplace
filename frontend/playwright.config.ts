@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 
 // Full-stack E2E: globalSetup stands up a real backend + Postgres; webServer
 // builds and serves the real Next app (its default API base already points at
@@ -7,6 +8,7 @@ const PORT = Number(process.env.E2E_FRONTEND_PORT ?? 32000 + Math.floor(Math.ran
 const BACKEND_PORT = Number(process.env.E2E_BACKEND_PORT ?? 42000 + Math.floor(Math.random() * 10000));
 process.env.E2E_FRONTEND_PORT = String(PORT);
 process.env.E2E_BACKEND_PORT = String(BACKEND_PORT);
+process.env.E2E_RUN_ID ??= randomUUID();
 
 export default defineConfig({
   testDir: "./e2e",
