@@ -13,7 +13,10 @@ type TokenResponse struct {
 }
 
 // Owner is the mandatory tenant boundary for every managed-runtime operation.
-type Owner struct{ AccountID, WorkspaceID string }
+type Owner struct {
+	AccountID   string `json:"account_id"`
+	WorkspaceID string `json:"workspace_id"`
+}
 
 type Run struct {
 	ID           string          `json:"id"`
@@ -48,6 +51,7 @@ type Approval struct {
 	ApprovalID      string          `json:"approval_id"`
 	RunID           string          `json:"run_id"`
 	ToolCallID      string          `json:"tool_call_id"`
+	StepID          *string         `json:"step_id,omitempty"`
 	AccountID       string          `json:"account_id"`
 	WorkspaceID     string          `json:"workspace_id"`
 	Owner           string          `json:"owner"`
@@ -68,6 +72,9 @@ type Approval struct {
 	CreatedAt       time.Time       `json:"created_at"`
 	ExpiresAt       time.Time       `json:"expires_at"`
 	DecidedAt       *time.Time      `json:"decided_at,omitempty"`
+	ExecutedAt      *time.Time      `json:"executed_at,omitempty"`
+	ExecutionID     *string         `json:"execution_id,omitempty"`
+	ExecutionState  string          `json:"execution_state"`
 }
 
 type Artifact struct {
@@ -84,13 +91,25 @@ type Artifact struct {
 	Provenance  json.RawMessage `json:"provenance"`
 	Metadata    json.RawMessage `json:"metadata"`
 	CreatedAt   time.Time       `json:"created_at"`
+	StepID      *string         `json:"step_id,omitempty"`
+	ToolCallID  *string         `json:"tool_call_id,omitempty"`
+	Model       *string         `json:"model,omitempty"`
+	InputRefs   json.RawMessage `json:"input_refs"`
 }
 
 type Usage struct {
-	RunID, EventID, AccountID, WorkspaceID, Provider, Model string
-	InputTokens, OutputTokens, CacheReadTokens              int64
-	CacheWriteTokens, CostMicrounits                        int64
-	OccurredAt                                              time.Time
+	RunID            string    `json:"run_id"`
+	EventID          string    `json:"event_id"`
+	AccountID        string    `json:"account_id"`
+	WorkspaceID      string    `json:"workspace_id"`
+	Provider         string    `json:"provider"`
+	Model            string    `json:"model"`
+	InputTokens      int64     `json:"input_tokens"`
+	OutputTokens     int64     `json:"output_tokens"`
+	CacheReadTokens  int64     `json:"cache_read_tokens"`
+	CacheWriteTokens int64     `json:"cache_write_tokens"`
+	CostMicrounits   int64     `json:"cost_microunits"`
+	OccurredAt       time.Time `json:"occurred_at"`
 }
 
 type ApprovalDecision struct {

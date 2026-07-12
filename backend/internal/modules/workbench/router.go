@@ -21,3 +21,20 @@ func Register(rg *gin.RouterGroup, s *Service, tm *auth.TokenManager, l ratelimi
 	g.GET("/runs/:id/artifacts", h.artifacts)
 	g.GET("/artifacts/:artifactID/download", h.downloadArtifact)
 }
+
+// RegisterRuntimeIngest exposes the explicit Lumen-to-Oasis persistence contract.
+// It is deliberately separate from browser authentication and always fails
+// closed when its dedicated machine credential is absent.
+func RegisterRuntimeIngest(rg *gin.RouterGroup, s *Service, secret string) {
+	h := runtimeHandler{s: s}
+	g := rg.Group("/workbench/runtime")
+	g.Use(runtimeAuth(secret))
+	g.PUT("/runs/:id", h.createRun)
+	g.POST("/runs/:id/state", h.state)
+	g.POST("/runs/:id/events", h.event)
+	g.POST("/runs/:id/usage", h.usage)
+	g.POST("/runs/:id/approvals", h.approval)
+	g.POST("/approvals/:approvalID/consume", h.consume)
+	g.POST("/approvals/:approvalID/execution", h.complete)
+	g.POST("/runs/:id/artifacts", h.artifact)
+}

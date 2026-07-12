@@ -56,3 +56,25 @@ Verified on 2026-07-12 in `/Users/lei/Documents/Codex/2026-07-12/new-chat-2/work
 - `DATABASE_URL=... go test -race ./internal/modules/workbench ./internal/server`: PASS.
 - `go vet ./...`: PASS.
 - `go build ./...`: PASS.
+
+## Phase 4 production-ingest reacceptance (2026-07-13)
+
+- A dedicated, fail-closed Lumen machine contract now calls the production
+  persistence methods for run creation/CAS transitions, ordered events, usage,
+  approvals and artifacts. It uses `WORKBENCH_RUNTIME_INGEST_SECRET`, which is
+  distinct from user JWT signing material, compared in constant time, required
+  in production and rejected when absent or shorter than 32 bytes.
+- Artifact ingestion writes through the server's existing configured local/S3
+  `storage.Storage`, constructs owner/run/artifact keys server-side, enforces a
+  byte limit, records the object digest/size and removes bytes on metadata
+  failure. Replays return existing owner-scoped metadata without rewriting.
+- Migration `000037_workbench_runtime_execution` atomically binds approval
+  consumption and execution outcomes to a unique execution ID and checked
+  lifecycle. Approvals carry run/step/tool-call identity; artifacts carry
+  step/tool-call/model/input references with nullable-safe uniqueness.
+- The full authenticated ingest integration test exercises anonymous rejection,
+  idempotent run/event/usage/artifact calls, real local object storage, approval
+  decision, args-hash/version-bound consumption and executed completion.
+- `TestComputePSIIntegration` now migrates and runs asynchronous workers in a
+  unique temporary Postgres schema, rather than racing other packages' shared
+  fixtures; three consecutive real-Postgres runs pass.

@@ -72,6 +72,7 @@ services:
       AUTO_MIGRATE: "true" # first boot creates the schema; safe to leave on
       JWT_SECRET: ${JWT_SECRET}
       WORKBENCH_JWT_SECRET: ${WORKBENCH_JWT_SECRET}
+      WORKBENCH_RUNTIME_INGEST_SECRET: ${WORKBENCH_RUNTIME_INGEST_SECRET}
       PII_SECRET: ${PII_SECRET}
       METRICS_TOKEN: ${METRICS_TOKEN}
       KYC_AUTO_APPROVE: "false" # manual ops review (honest substitute for a KYC vendor)

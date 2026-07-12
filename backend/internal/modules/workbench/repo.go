@@ -88,7 +88,7 @@ func (r *Repository) Events(ctx context.Context, o Owner, runID string, after in
 }
 
 func (r *Repository) ListApprovals(ctx context.Context, o Owner, runID string) ([]Approval, error) {
-	rows, err := r.db.Query(ctx, `SELECT approval_id,run_id,tool_call_id,account_id,workspace_id,owner,risk_level,reason,effects,command,file_scope,remote_target,network_targets,estimated_cost,expected_outputs,args_hash,editable_args,version,created_at,expires_at,decided_at,decided_by,decision FROM workbench_approvals WHERE run_id=$1 AND account_id=$2 AND workspace_id=$3 ORDER BY created_at`, runID, o.AccountID, o.WorkspaceID)
+	rows, err := r.db.Query(ctx, `SELECT approval_id,run_id,tool_call_id,step_id,account_id,workspace_id,owner,risk_level,reason,effects,command,file_scope,remote_target,network_targets,estimated_cost,expected_outputs,args_hash,editable_args,version,created_at,expires_at,decided_at,decided_by,decision,executed_at,execution_id,execution_state FROM workbench_approvals WHERE run_id=$1 AND account_id=$2 AND workspace_id=$3 ORDER BY created_at`, runID, o.AccountID, o.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (r *Repository) ListApprovals(ctx context.Context, o Owner, runID string) (
 	out := make([]Approval, 0)
 	for rows.Next() {
 		var a Approval
-		if err := rows.Scan(&a.ApprovalID, &a.RunID, &a.ToolCallID, &a.AccountID, &a.WorkspaceID, &a.Owner, &a.RiskLevel, &a.Reason, &a.Effects, &a.Command, &a.FileScope, &a.RemoteTarget, &a.NetworkTargets, &a.EstimatedCost, &a.ExpectedOutputs, &a.ArgsHash, &a.EditableArgs, &a.Version, &a.CreatedAt, &a.ExpiresAt, &a.DecidedAt, &a.DecidedBy, &a.Decision); err != nil {
+		if err := rows.Scan(&a.ApprovalID, &a.RunID, &a.ToolCallID, &a.StepID, &a.AccountID, &a.WorkspaceID, &a.Owner, &a.RiskLevel, &a.Reason, &a.Effects, &a.Command, &a.FileScope, &a.RemoteTarget, &a.NetworkTargets, &a.EstimatedCost, &a.ExpectedOutputs, &a.ArgsHash, &a.EditableArgs, &a.Version, &a.CreatedAt, &a.ExpiresAt, &a.DecidedAt, &a.DecidedBy, &a.Decision, &a.ExecutedAt, &a.ExecutionID, &a.ExecutionState); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -106,7 +106,7 @@ func (r *Repository) ListApprovals(ctx context.Context, o Owner, runID string) (
 
 func (r *Repository) DecideApproval(ctx context.Context, o Owner, id, actor, decision string, version int64) (Approval, error) {
 	var a Approval
-	err := r.db.QueryRow(ctx, `UPDATE workbench_approvals SET decision=$5,decided_at=now(),decided_by=$4,version=version+1 WHERE approval_id=$1 AND account_id=$2 AND workspace_id=$3 AND version=$6 AND decision IS NULL AND expires_at>now() RETURNING approval_id,run_id,tool_call_id,account_id,workspace_id,owner,risk_level,reason,effects,command,file_scope,remote_target,network_targets,estimated_cost,expected_outputs,args_hash,editable_args,version,created_at,expires_at,decided_at,decided_by,decision`, id, o.AccountID, o.WorkspaceID, actor, decision, version).Scan(&a.ApprovalID, &a.RunID, &a.ToolCallID, &a.AccountID, &a.WorkspaceID, &a.Owner, &a.RiskLevel, &a.Reason, &a.Effects, &a.Command, &a.FileScope, &a.RemoteTarget, &a.NetworkTargets, &a.EstimatedCost, &a.ExpectedOutputs, &a.ArgsHash, &a.EditableArgs, &a.Version, &a.CreatedAt, &a.ExpiresAt, &a.DecidedAt, &a.DecidedBy, &a.Decision)
+	err := r.db.QueryRow(ctx, `UPDATE workbench_approvals SET decision=$5,decided_at=now(),decided_by=$4,version=version+1 WHERE approval_id=$1 AND account_id=$2 AND workspace_id=$3 AND version=$6 AND decision IS NULL AND expires_at>now() RETURNING approval_id,run_id,tool_call_id,account_id,workspace_id,owner,risk_level,reason,effects,command,file_scope,remote_target,network_targets,estimated_cost,expected_outputs,args_hash,editable_args,version,created_at,expires_at,decided_at,decided_by,decision,executed_at,execution_id,execution_state`, id, o.AccountID, o.WorkspaceID, actor, decision, version).Scan(&a.ApprovalID, &a.RunID, &a.ToolCallID, &a.AccountID, &a.WorkspaceID, &a.Owner, &a.RiskLevel, &a.Reason, &a.Effects, &a.Command, &a.FileScope, &a.RemoteTarget, &a.NetworkTargets, &a.EstimatedCost, &a.ExpectedOutputs, &a.ArgsHash, &a.EditableArgs, &a.Version, &a.CreatedAt, &a.ExpiresAt, &a.DecidedAt, &a.DecidedBy, &a.Decision, &a.ExecutedAt, &a.ExecutionID, &a.ExecutionState)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var n int
 		e := r.db.QueryRow(ctx, `SELECT 1 FROM workbench_approvals WHERE approval_id=$1 AND account_id=$2 AND workspace_id=$3`, id, o.AccountID, o.WorkspaceID).Scan(&n)
@@ -119,7 +119,7 @@ func (r *Repository) DecideApproval(ctx context.Context, o Owner, id, actor, dec
 }
 
 func (r *Repository) ListArtifacts(ctx context.Context, o Owner, runID string) ([]Artifact, error) {
-	rows, err := r.db.Query(ctx, `SELECT id,run_id,account_id,workspace_id,name,kind,media_type,object_key,sha256,size_bytes,provenance,metadata,created_at FROM workbench_artifacts WHERE run_id=$1 AND account_id=$2 AND workspace_id=$3 ORDER BY created_at,id`, runID, o.AccountID, o.WorkspaceID)
+	rows, err := r.db.Query(ctx, `SELECT id,run_id,account_id,workspace_id,name,kind,media_type,object_key,sha256,size_bytes,provenance,metadata,created_at,step_id,tool_call_id,model,input_refs FROM workbench_artifacts WHERE run_id=$1 AND account_id=$2 AND workspace_id=$3 ORDER BY created_at,id`, runID, o.AccountID, o.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (r *Repository) ListArtifacts(ctx context.Context, o Owner, runID string) (
 	out := make([]Artifact, 0)
 	for rows.Next() {
 		var a Artifact
-		if err := rows.Scan(&a.ID, &a.RunID, &a.AccountID, &a.WorkspaceID, &a.Name, &a.Kind, &a.MediaType, &a.ObjectKey, &a.SHA256, &a.SizeBytes, &a.Provenance, &a.Metadata, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.RunID, &a.AccountID, &a.WorkspaceID, &a.Name, &a.Kind, &a.MediaType, &a.ObjectKey, &a.SHA256, &a.SizeBytes, &a.Provenance, &a.Metadata, &a.CreatedAt, &a.StepID, &a.ToolCallID, &a.Model, &a.InputRefs); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -137,7 +137,7 @@ func (r *Repository) ListArtifacts(ctx context.Context, o Owner, runID string) (
 
 func (r *Repository) GetArtifact(ctx context.Context, o Owner, id string) (Artifact, error) {
 	var a Artifact
-	err := r.db.QueryRow(ctx, `SELECT id,run_id,account_id,workspace_id,name,kind,media_type,object_key,sha256,size_bytes,provenance,metadata,created_at FROM workbench_artifacts WHERE id=$1 AND account_id=$2 AND workspace_id=$3`, id, o.AccountID, o.WorkspaceID).Scan(&a.ID, &a.RunID, &a.AccountID, &a.WorkspaceID, &a.Name, &a.Kind, &a.MediaType, &a.ObjectKey, &a.SHA256, &a.SizeBytes, &a.Provenance, &a.Metadata, &a.CreatedAt)
+	err := r.db.QueryRow(ctx, `SELECT id,run_id,account_id,workspace_id,name,kind,media_type,object_key,sha256,size_bytes,provenance,metadata,created_at,step_id,tool_call_id,model,input_refs FROM workbench_artifacts WHERE id=$1 AND account_id=$2 AND workspace_id=$3`, id, o.AccountID, o.WorkspaceID).Scan(&a.ID, &a.RunID, &a.AccountID, &a.WorkspaceID, &a.Name, &a.Kind, &a.MediaType, &a.ObjectKey, &a.SHA256, &a.SizeBytes, &a.Provenance, &a.Metadata, &a.CreatedAt, &a.StepID, &a.ToolCallID, &a.Model, &a.InputRefs)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Artifact{}, ErrNotFound
 	}

@@ -177,6 +177,62 @@ paths:
       responses:
         '200': { description: Artifact bytes }
         '404': { $ref: '#/components/responses/NotFound' }
+  /workbench/runtime/runs/{id}:
+    put:
+      tags: [Workbench]
+      summary: Idempotently ingest a Lumen runtime run
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Existing run }, '201': { description: Run persisted }, '401': { description: Invalid machine credential }, '503': { description: Ingest is not configured } }
+  /workbench/runtime/runs/{id}/state:
+    post:
+      tags: [Workbench]
+      summary: Compare-and-swap a Lumen run state
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: State persisted }, '409': { $ref: '#/components/responses/Conflict' } }
+  /workbench/runtime/runs/{id}/events:
+    post:
+      tags: [Workbench]
+      summary: Idempotently append an ordered runtime event
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Event persisted or already present } }
+  /workbench/runtime/runs/{id}/usage:
+    post:
+      tags: [Workbench]
+      summary: Idempotently ingest model usage
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Usage persisted or already present } }
+  /workbench/runtime/runs/{id}/approvals:
+    post:
+      tags: [Workbench]
+      summary: Idempotently ingest a fully-bound approval
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Approval persisted or already present } }
+  /workbench/runtime/approvals/{approvalID}/consume:
+    post:
+      tags: [Workbench]
+      summary: Atomically consume an approved args hash before execution
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: approvalID, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Approval consumed }, '409': { $ref: '#/components/responses/Conflict' } }
+  /workbench/runtime/approvals/{approvalID}/execution:
+    post:
+      tags: [Workbench]
+      summary: Atomically record executed or failed approval outcome
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: approvalID, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Execution outcome persisted }, '409': { $ref: '#/components/responses/Conflict' } }
+  /workbench/runtime/runs/{id}/artifacts:
+    post:
+      tags: [Workbench]
+      summary: Persist artifact bytes and metadata via configured object storage
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Existing artifact }, '201': { description: Artifact persisted } }
   # =========================================================================
   # AUTH
   # =========================================================================
@@ -2165,6 +2221,10 @@ components:
       schema: { type: string, format: uuid }
       description: Owned Workbench workspace tenant boundary
   securitySchemes:
+    runtimeIngestAuth:
+      type: http
+      scheme: bearer
+      description: Dedicated Lumen machine credential, separate from user JWT signing keys
     bearerAuth:
       type: http
       scheme: bearer
