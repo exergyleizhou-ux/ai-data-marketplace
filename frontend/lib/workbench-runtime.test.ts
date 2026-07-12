@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   WorkbenchRuntimeError,
   cancelLabRun,
+  decideRuntimeApproval,
   isTerminalRunStatus,
   loadLabRuntime,
   parseTrustedWorkbenchMessage,
@@ -56,6 +57,12 @@ describe("Workbench v2 union", () => {
     expect(parseWorkbenchSnapshot({ ...v2, verification: "success" })).toBeNull();
     expect(parseWorkbenchSnapshot({ ...v2, run: { ...v2.run, status: "done" } })).toBeNull();
     expect(parseWorkbenchSnapshot({ ...v2, workspace: { id: "../escape" } })).toBeNull();
+  });
+  it("posts approval decisions without exposing review content", async () => {
+    const fetcher = vi.fn(async () => Response.json({ ok: true }));
+    const snapshot = parseWorkbenchSnapshot(v2)!;
+    await decideRuntimeApproval(snapshot, "approval_1", false, fetcher);
+    expect(fetcher).toHaveBeenCalledWith("/api/lumen/code/v1/approve", expect.objectContaining({ method: "POST", body: JSON.stringify({ id: "approval_1", allow: false }) }));
   });
 });
 

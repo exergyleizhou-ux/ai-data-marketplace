@@ -107,3 +107,21 @@ Verified on 2026-07-12 in `/Users/lei/Documents/Codex/2026-07-12/new-chat-2/work
   touched workspace page was removed, reducing the prior baseline by one.
 - `npm run build`: PASS, including dynamic `/api/workbench/status` output.
 - `git diff --check`: PASS.
+
+### Phase 5 accessibility and security reacceptance
+
+- Runtime approvals are now fetched from the owner-scoped Lumen review API and
+  rendered as bounded risk/effect/cost cards with explicit approve/reject
+  actions. The Workbench does not expose command, args, prompt, path or target
+  content. Code/Lab artifact links use owned run and opaque artifact IDs.
+- The Runtime summary is a modal dialog with initial focus, focus containment,
+  Escape close and focus return. Workbench tabs implement roving tab stops,
+  ArrowLeft/ArrowRight/Home/End navigation and labelled tabpanel semantics;
+  session loading and failure states are announced.
+- The embedded runtime no longer combines `allow-scripts` with
+  `allow-same-origin`. Its opaque `null` origin is accepted only together with
+  the exact iframe `contentWindow`; the Lumen bridge still targets the explicit
+  parent origin and never uses `*`.
+- Workbench session creation now forwards the readable CSRF cookie as the
+  required header to the same-origin BFF; the short-lived runtime JWT remains
+  HttpOnly and is never returned to application JavaScript.

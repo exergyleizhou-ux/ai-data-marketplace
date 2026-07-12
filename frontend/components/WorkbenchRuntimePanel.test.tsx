@@ -135,4 +135,19 @@ describe("WorkbenchRuntimePanel", () => {
     await userEvent.click(submit);
     expect(onRetry).toHaveBeenCalledWith("Fix the failing verification");
   });
+
+  it("renders approval review cards and submits explicit decisions", async () => {
+    const onApprovalDecision = vi.fn();
+    renderPanel({ snapshot: { ...runningSnapshot, version: 2, workspace: { id: "ws_1" }, run: { ...runningSnapshot.run!, status: "waiting_approval" }, verification: "not_run", artifact_count: 0 }, detail: { ...runningDetail, approvals: [{ id: "approval_1", run_id: "run_123", step_id: "step_1", tool_call_id: "tool_1", risk_level: "high", effects: { commands: true, charge: false }, estimated_cost_micros: 2500, created_at: "2026-07-13T00:00:00Z", expires_at: "2026-07-13T00:05:00Z", decision: null, execution_state: "pending" }] }, onApprovalDecision });
+    await userEvent.click(await screen.findByRole("button", { name: /runtime details/i }));
+    expect(screen.getByText(/commands/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /approve/i }));
+    expect(onApprovalDecision).toHaveBeenCalledWith("approval_1", true);
+  });
+
+  it("acts as a keyboard dialog and returns focus on Escape", async () => {
+    renderPanel(); const toggle = await screen.findByRole("button", { name: /runtime details/i });
+    await userEvent.click(toggle); expect(screen.getByRole("dialog")).toBeInTheDocument(); expect(screen.getByRole("button", { name: /close runtime details/i })).toHaveFocus();
+    await userEvent.keyboard("{Escape}"); expect(screen.queryByRole("dialog")).toBeNull(); expect(toggle).toHaveFocus();
+  });
 });
