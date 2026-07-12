@@ -131,6 +131,9 @@ func Load() (*Config, error) {
 	if cfg.Env == "production" && cfg.WorkbenchJWTSecret == "" {
 		return nil, fmt.Errorf("WORKBENCH_JWT_SECRET must be set in production")
 	}
+	if cfg.WorkbenchJWTSecret != "" && len(cfg.WorkbenchJWTSecret) < 32 {
+		return nil, fmt.Errorf("WORKBENCH_JWT_SECRET must be at least 32 bytes")
+	}
 	return cfg, nil
 }
 

@@ -61,7 +61,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
-    void fetch("/api/v1/auth/session/logout", { method: "POST", credentials: "include" });
+    const csrf=document.cookie.split("; ").find(v=>v.startsWith("oasis_csrf="))?.split("=")[1];
+    void fetch("/api/v1/auth/session/logout", { method: "POST", credentials: "include",headers:csrf?{"X-CSRF-Token":decodeURIComponent(csrf)}:{} });
     tokenStore.clear();
     setUser(null);
   }, []);

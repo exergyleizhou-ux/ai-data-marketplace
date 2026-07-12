@@ -20,7 +20,7 @@ type Props = {
 
 function artifactHref(projectID: string, artifact: LabArtifact): string {
   const query = new URLSearchParams({ project_id: projectID, path: artifact.path });
-  return `/lumen-lab/api/lab/files/download?${query.toString()}`;
+  return `/api/lumen/lab/api/lab/files/download?${query.toString()}`;
 }
 
 export function WorkbenchRuntimePanel({

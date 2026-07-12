@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useSearchParams } from "next/navigation";
 import { WorkbenchRuntimePanel } from "@/components/WorkbenchRuntimePanel";
 import { useT } from "@/lib/i18n";
+import { establishWorkbenchSession } from "@/lib/workbench-session";
 import {
   WorkbenchRuntimeError,
   cancelLabRun,
@@ -21,7 +22,7 @@ const TABS: { id: TabId; zh: string; en: string; src: string; blurbZh: string; b
     id: "coding",
     zh: "编程智能体",
     en: "Coding agent",
-    src: "/lumen/",
+    src: "/api/lumen/code/",
     blurbZh: "对标 Claude Code · 终端/桌面编程",
     blurbEn: "Claude Code–class coding agent",
   },
@@ -29,7 +30,7 @@ const TABS: { id: TabId; zh: string; en: string; src: string; blurbZh: string; b
     id: "science",
     zh: "Science 桥",
     en: "Science bridge",
-    src: "/lumen-science/?embed=1&oasis=1",
+    src: "/api/lumen/science/?embed=1&oasis=1",
     blurbZh: "国产模型接入 Claude Science",
     blurbEn: "Domestic models → Claude Science",
   },
@@ -37,7 +38,7 @@ const TABS: { id: TabId; zh: string; en: string; src: string; blurbZh: string; b
     id: "lab",
     zh: "实验室",
     en: "Lab",
-    src: "/lumen-lab/?embed=1&oasis=1",
+    src: "/api/lumen/lab/?embed=1&oasis=1",
     blurbZh: "自主科研工作台 · 审批 · 5-ship MCP",
     blurbEn: "Autonomous lab · approvals · 5-ship MCP",
   },
@@ -66,6 +67,10 @@ function WorkbenchInner() {
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [runtimeError, setRuntimeError] = useState("");
   const [runtimeCanceling, setRuntimeCanceling] = useState(false);
+  const [sessionReady,setSessionReady]=useState(false);
+  const [sessionError,setSessionError]=useState("");
+  const connect=useCallback(async()=>{setSessionReady(false);setSessionError("");try{await establishWorkbenchSession();setSessionReady(true)}catch{setSessionError(t("请登录或重试","Sign in or retry"))}},[t]);
+  useEffect(()=>{void connect()},[connect]);
 
   const clearRuntime = useCallback(() => {
     runtimeRequest.current += 1;
@@ -253,7 +258,9 @@ function WorkbenchInner() {
           </p>
         </div>
       ) : (
-        <iframe
+        <>
+        {sessionError && <div role="alert"><p>{sessionError}</p><button type="button" onClick={()=>void connect()}>{t("重试","Retry")}</button></div>}
+        {sessionReady && <iframe
           ref={iframeRef}
           key={active.id}
           src={active.src}
@@ -261,7 +268,8 @@ function WorkbenchInner() {
           className="min-h-0 w-full flex-1 border-0 bg-paper"
           allow="clipboard-read; clipboard-write"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-        />
+        />}
+        </>
       )}
     </div>
   );

@@ -100,7 +100,7 @@ describe("WorkbenchRuntimePanel", () => {
     expect(screen.queryByRole("button", { name: /cancel run/i })).toBeNull();
     expect(screen.getByRole("link", { name: "result 1.md" })).toHaveAttribute(
       "href",
-      "/lumen-lab/api/lab/files/download?project_id=project-a&path=reports%2Fresult+1.md",
+      "/api/lumen/lab/api/lab/files/download?project_id=project-a&path=reports%2Fresult+1.md",
     );
   });
 

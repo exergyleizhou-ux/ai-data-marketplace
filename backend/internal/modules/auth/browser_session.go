@@ -50,6 +50,35 @@ func (h *handler) sessionLogin(c *gin.Context) {
 	res.Tokens = nil
 	httpx.OK(c, res)
 }
+func (h *handler) sessionRegister(c *gin.Context) {
+	var req registerRequest
+	if c.ShouldBindJSON(&req) != nil {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	res, e := h.svc.Register(c.Request.Context(), req.Account, req.AccountType, req.Password, toAgreements(req.Agreements)...)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	setBrowserCookies(c, res.Tokens)
+	res.Tokens = Tokens{}
+	httpx.OK(c, res)
+}
+func (h *handler) sessionVerify2FA(c *gin.Context) {
+	var req twoFAChallengeReq
+	if c.ShouldBindJSON(&req) != nil || req.ChallengeToken == "" || req.Code == "" {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	tokens, user, e := h.svc.Verify2FAChallenge(c.Request.Context(), req.ChallengeToken, req.Code)
+	if e != nil {
+		fail(c, e)
+		return
+	}
+	setBrowserCookies(c, tokens)
+	httpx.OK(c, gin.H{"user": user})
+}
 func (h *handler) sessionRefresh(c *gin.Context) {
 	raw, e := c.Cookie(RefreshCookie)
 	if e != nil {

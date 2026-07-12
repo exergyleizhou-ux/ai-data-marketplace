@@ -4,7 +4,9 @@ const backend = process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8080/api/v
 
 export async function POST(req: NextRequest) {
   const origin = req.headers.get("origin");
-  if (origin && new URL(origin).host !== req.nextUrl.host) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  let validOrigin=false; try { validOrigin=!!origin&&new URL(origin).origin===req.nextUrl.origin } catch {}
+  const csrf=req.cookies.get("oasis_csrf")?.value;
+  if (!validOrigin || !csrf || req.headers.get("x-csrf-token")!==csrf) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const response = await fetch(`${backend}/workbench/token`, {
     method: "POST", headers: { "content-type": "application/json", cookie: req.headers.get("cookie") ?? "" },
     body: await req.text() || "{}", cache: "no-store",

@@ -475,7 +475,7 @@ export const api = {
     password: string,
     agreements?: { doc: string; version: string }[],
   ) =>
-    request<AuthResult>("/auth/register", { body: { account, account_type, password, agreements }, auth: false }),
+    request<AuthResult>("/auth/session/register", { body: { account, account_type, password, agreements }, auth: false }),
   listAgreements: () =>
     request<{ items: { doc: string; version: string; agreed_at: string }[] }>("/users/me/agreements"),
   recordAgreements: (agreements: { doc: string; version: string }[]) =>
@@ -483,7 +483,7 @@ export const api = {
   login: (account: string, password: string) =>
     request<LoginResult>("/auth/session/login", { body: { account, password }, auth: false }),
   verify2FA: (challengeToken: string, code: string) =>
-    request<{ user: User; tokens: Tokens }>("/auth/2fa/verify", { body: { challenge_token: challengeToken, code }, auth: false }),
+    request<{ user: User; tokens: Tokens }>("/auth/session/2fa/verify", { body: { challenge_token: challengeToken, code }, auth: false }),
   enroll2FA: () => request<Enroll2FAResult>("/auth/2fa/enroll"),
   verify2FAEnrollment: (code: string) =>
     request<{ ok: boolean }>("/auth/2fa/verify-enrollment", { body: { code } }),
