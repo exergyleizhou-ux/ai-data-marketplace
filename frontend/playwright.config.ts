@@ -3,7 +3,10 @@ import { defineConfig, devices } from "@playwright/test";
 // Full-stack E2E: globalSetup stands up a real backend + Postgres; webServer
 // builds and serves the real Next app (its default API base already points at
 // the backend on :8080). Tests then drive the browser against the live stack.
-const PORT = 3100;
+const PORT = Number(process.env.E2E_FRONTEND_PORT ?? 32000 + Math.floor(Math.random() * 10000));
+const BACKEND_PORT = Number(process.env.E2E_BACKEND_PORT ?? 42000 + Math.floor(Math.random() * 10000));
+process.env.E2E_FRONTEND_PORT = String(PORT);
+process.env.E2E_BACKEND_PORT = String(BACKEND_PORT);
 
 export default defineConfig({
   testDir: "./e2e",
@@ -27,21 +30,4 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: {
-    command: `npm run build && npm run start -- -p ${PORT}`,
-    // Build a non-standalone bundle so `next start` serves it directly.
-    env: {
-      NEXT_OUTPUT_STANDALONE: "0",
-      BACKEND_API_BASE_URL: "http://127.0.0.1:8080/api/v1",
-      LUMEN_SERVE_URL: "http://127.0.0.1:8787",
-      LUMEN_LAB_URL: "http://127.0.0.1:18992",
-      LUMEN_PROVIDER_CONFIGURED: "true",
-      WORKBENCH_DATABASE_URL: "e2e",
-      STORAGE_DRIVER: "local",
-      COMPUTE_RUNNER: "controlled",
-    },
-    url: `http://localhost:${PORT}`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 240_000,
-  },
 });
