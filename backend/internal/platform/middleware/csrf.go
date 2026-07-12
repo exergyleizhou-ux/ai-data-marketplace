@@ -19,7 +19,14 @@ func CSRF() gin.HandlerFunc {
 		origin := c.GetHeader("Origin")
 		if origin != "" {
 			u, e := url.Parse(origin)
-			if e != nil || !strings.EqualFold(u.Host, c.Request.Host) {
+			host := c.Request.Host
+			// The public host is preserved by the front proxy while the upstream
+			// Host names this private process.  Use only the first forwarded host;
+			// the edge overwrites this header before it reaches the application.
+			if forwarded := strings.TrimSpace(strings.Split(c.GetHeader("X-Forwarded-Host"), ",")[0]); forwarded != "" {
+				host = forwarded
+			}
+			if e != nil || !strings.EqualFold(u.Host, host) {
 				httpx.Fail(c, httpx.ErrForbidden)
 				c.Abort()
 				return

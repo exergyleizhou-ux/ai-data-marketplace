@@ -20,6 +20,20 @@ func TestCSRFRejectsCrossSite(t *testing.T) {
 		t.Fatalf("status=%d", w.Code)
 	}
 }
+
+func TestCSRFAcceptsSameOriginThroughFrontProxy(t *testing.T) {
+	r := gin.New()
+	r.POST("/", CSRF(), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	q := httptest.NewRequest(http.MethodPost, "http://backend.internal/", nil)
+	q.Host = "backend.internal"
+	q.Header.Set("Origin", "https://oasis.example")
+	q.Header.Set("X-Forwarded-Host", "oasis.example")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, q)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", w.Code)
+	}
+}
 func TestCSRFRequiresDoubleSubmitForSession(t *testing.T) {
 	r := gin.New()
 	r.POST("/", CSRF(), func(c *gin.Context) { c.Status(204) })
