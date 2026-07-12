@@ -233,6 +233,64 @@ paths:
       security: [{ runtimeIngestAuth: [] }]
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses: { '200': { description: Existing artifact }, '201': { description: Artifact persisted } }
+  /workbench/runtime/quota/runs/{id}/admit:
+    post:
+      tags: [Workbench]
+      summary: Atomically reserve tenant Run capacity and return runtime limits
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkbenchQuotaAdmission' }
+      responses:
+        '200': { description: Idempotent admission and authoritative quota policy }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
+  /workbench/runtime/quota/runs/{id}/usage:
+    post:
+      tags: [Workbench]
+      summary: Idempotently debit tenant model usage
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Usage debit recorded or already present }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
+  /workbench/runtime/quota/runs/{id}/complete:
+    post:
+      tags: [Workbench]
+      summary: Release Run capacity and settle terminal compute exactly once
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Run reservation released } }
+  /workbench/runtime/quota/runs/{id}/artifacts/reserve:
+    post:
+      tags: [Workbench]
+      summary: Atomically reserve artifact and workspace storage capacity
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Artifact reservation recorded or already present }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
+  /workbench/runtime/quota/runs/{id}/artifacts/release:
+    post:
+      tags: [Workbench]
+      summary: Release an uncommitted artifact reservation
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Artifact reservation released } }
+  /admin/workbench/usage:
+    get:
+      tags: [Workbench]
+      summary: Read aggregate tenant usage without file or event content
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: account_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: workspace_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: month, in: query, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+      responses:
+        '200': { description: Aggregate token, compute, cost, storage, and active Run counters }
+        '403': { $ref: '#/components/responses/Forbidden' }
   # =========================================================================
   # AUTH
   # =========================================================================
@@ -2236,6 +2294,17 @@ components:
       description: "Oasis Verify API key (sk_live_…). Also accepted as Authorization: Bearer sk_live_…"
 
   schemas:
+    WorkbenchQuotaAdmission:
+      type: object
+      required: [owner, started_at]
+      properties:
+        owner:
+          type: object
+          required: [account_id, workspace_id]
+          properties:
+            account_id: { type: string, format: uuid }
+            workspace_id: { type: string, format: uuid }
+        started_at: { type: string, format: date-time }
     Envelope:
       type: object
       properties:
@@ -2275,6 +2344,20 @@ components:
         user:            { type: object }
 
   responses:
+    QuotaExceeded:
+      description: A hard tenant quota was exceeded
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                required: [code, message, next_action]
+                properties:
+                  code: { type: string }
+                  message: { type: string }
+                  next_action: { type: string }
     OK:
       description: Success
       content:
