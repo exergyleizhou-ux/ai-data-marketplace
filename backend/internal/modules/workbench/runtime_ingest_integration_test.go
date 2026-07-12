@@ -103,3 +103,51 @@ func TestRuntimeIngestFailsClosedWhenUnconfigured(t *testing.T) {
 		t.Fatalf("status=%d", w.Code)
 	}
 }
+
+func TestQuotaMachineContractAdmitsBeforeRunAndReturnsStableErrors(t *testing.T) {
+	repo, pool, owner, _ := runtimeRepo(t)
+	_, err := pool.Exec(context.Background(), `INSERT INTO workbench_quota_policies(account_id,workspace_id,user_concurrent_runs,workspace_concurrent_runs,monthly_tokens) VALUES($1,$2,1,1,10)`, owner.AccountID, owner.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewManagedService(repo, NewTokenManager("unused", time.Minute), nil)
+	gin.SetMode(gin.TestMode)
+	e := gin.New()
+	secret := "runtime-ingest-secret-at-least-32-bytes"
+	RegisterRuntimeIngest(e.Group("/api/v1"), svc, secret)
+	do := func(path string, body any) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
+		req.Header.Set("Authorization", "Bearer "+secret)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		e.ServeHTTP(w, req)
+		return w
+	}
+	admission := quotaAdmissionInput{Owner: owner, StartedAt: time.Now()}
+	path := "/api/v1/workbench/runtime/quota/runs/pre-persist/admit"
+	if w := do(path, admission); w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte(`"run_max_steps"`)) {
+		t.Fatalf("admit=%d %s", w.Code, w.Body)
+	}
+	if w := do(path, admission); w.Code != 200 { // same reservation is idempotent
+		t.Fatalf("repeat admit=%d %s", w.Code, w.Body)
+	}
+	if w := do("/api/v1/workbench/runtime/quota/runs/second/admit", admission); w.Code != 429 || !bytes.Contains(w.Body.Bytes(), []byte(`"code":"quota_user_concurrent_runs"`)) || !bytes.Contains(w.Body.Bytes(), []byte(`"next_action":"wait_for_run"`)) {
+		t.Fatalf("limit=%d %s", w.Code, w.Body)
+	}
+	complete := quotaCompletionInput{Owner: owner, Status: "failed", CompletedAt: time.Now().Add(time.Second)}
+	if w := do("/api/v1/workbench/runtime/quota/runs/pre-persist/complete", complete); w.Code != 200 {
+		t.Fatalf("complete=%d %s", w.Code, w.Body)
+	}
+	if w := do("/api/v1/workbench/runtime/quota/runs/second/admit", admission); w.Code != 200 {
+		t.Fatalf("admit after release=%d %s", w.Code, w.Body)
+	}
+	usage := RuntimeUsageInput{Owner: owner, Usage: Usage{EventID: "usage-1", InputTokens: 8, CostMicrounits: 3, OccurredAt: time.Now()}}
+	usagePath := "/api/v1/workbench/runtime/quota/runs/second/usage"
+	if w := do(usagePath, usage); w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte(`"recorded":true`)) {
+		t.Fatalf("usage=%d %s", w.Code, w.Body)
+	}
+	if w := do(usagePath, usage); w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte(`"recorded":false`)) {
+		t.Fatalf("usage duplicate=%d %s", w.Code, w.Body)
+	}
+}

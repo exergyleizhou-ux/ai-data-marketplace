@@ -6,14 +6,40 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/workbenchusage"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
 )
 
 type handler struct {
 	s            *Service
 	tokenEnabled bool
+}
+
+func (h handler) usageSummary(c *gin.Context) {
+	accountID := c.Query("account_id")
+	workspaceID := c.Query("workspace_id")
+	if accountID == "" || workspaceID == "" {
+		httpx.Fail(c, httpx.ErrInvalidParam)
+		return
+	}
+	at := time.Now()
+	if month := c.Query("month"); month != "" {
+		parsed, err := time.Parse("2006-01", month)
+		if err != nil {
+			httpx.Fail(c, httpx.ErrInvalidParam)
+			return
+		}
+		at = parsed
+	}
+	summary, err := h.s.runtime.usage.Summary(c, workbenchusage.Owner{AccountID: accountID, WorkspaceID: workspaceID}, at)
+	if err != nil {
+		httpx.Fail(c, httpx.ErrInternal)
+		return
+	}
+	httpx.OK(c, summary)
 }
 
 func (h handler) token(c *gin.Context) {

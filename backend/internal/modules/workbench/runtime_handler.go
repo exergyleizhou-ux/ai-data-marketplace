@@ -1,11 +1,13 @@
 package workbench
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/workbenchusage"
 )
 
 type runtimeHandler struct{ s *Service }
@@ -40,13 +42,122 @@ func bindRuntime(c *gin.Context, v any) bool {
 	return true
 }
 func runtimeFailure(c *gin.Context, e error) {
-	if e == ErrNotFound {
+	var quota *workbenchusage.LimitError
+	if errors.As(e, &quota) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": gin.H{"code": quota.Code, "message": "quota exceeded", "next_action": quota.NextAction}})
+	} else if e == ErrNotFound {
 		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"code": "not_found", "message": "resource not found"}})
 	} else if e == ErrConflict {
 		c.JSON(http.StatusConflict, gin.H{"error": gin.H{"code": "version_conflict", "message": "resource changed or is not executable"}})
 	} else {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"code": "runtime_persistence_failed", "message": "runtime state was not persisted"}})
 	}
+}
+
+type quotaAdmissionInput struct {
+	Owner     Owner     `json:"owner"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+func (h runtimeHandler) admit(c *gin.Context) {
+	var in quotaAdmissionInput
+	if !bindRuntime(c, &in) || !requireOwner(c, in.Owner) {
+		return
+	}
+	if in.StartedAt.IsZero() {
+		in.StartedAt = time.Now()
+	}
+	p, err := h.s.runtime.usage.AdmitRun(c, usageOwner(in.Owner), c.Param("id"), in.StartedAt)
+	if err != nil {
+		runtimeFailure(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": gin.H{"quota": p}})
+}
+
+type quotaCompletionInput struct {
+	Owner       Owner     `json:"owner"`
+	Status      string    `json:"status"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
+func (h runtimeHandler) settle(c *gin.Context) {
+	var in quotaCompletionInput
+	if !bindRuntime(c, &in) || !requireOwner(c, in.Owner) {
+		return
+	}
+	if in.CompletedAt.IsZero() {
+		in.CompletedAt = time.Now()
+	}
+	if !workbenchusage.IsTerminal(in.Status) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "invalid_request", "message": "terminal status is required"}})
+		return
+	}
+	if err := h.s.runtime.usage.CompleteRun(c, usageOwner(in.Owner), c.Param("id"), in.Status, in.CompletedAt); err != nil {
+		runtimeFailure(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"released": true})
+}
+
+func (h runtimeHandler) chargeUsage(c *gin.Context) {
+	var in RuntimeUsageInput
+	if !bindRuntime(c, &in) || !requireOwner(c, in.Owner) {
+		return
+	}
+	u := in.Usage
+	if u.OccurredAt.IsZero() {
+		u.OccurredAt = time.Now()
+	}
+	tokens, tokenErr := usageTokens(u)
+	if tokenErr != nil || u.ComputeMillis < 0 || u.CostMicrounits < 0 || u.EventID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "invalid_request", "message": "non-negative usage and event_id are required"}})
+		return
+	}
+	recorded, err := h.s.runtime.usage.ChargeUsage(c, usageOwner(in.Owner), c.Param("id"), u.EventID, tokens, u.ComputeMillis, u.CostMicrounits, u.OccurredAt)
+	if err != nil {
+		runtimeFailure(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"recorded": recorded})
+}
+
+type quotaArtifactInput struct {
+	Owner      Owner  `json:"owner"`
+	ArtifactID string `json:"artifact_id"`
+	SizeBytes  int64  `json:"size_bytes"`
+}
+
+func (h runtimeHandler) reserveArtifact(c *gin.Context) {
+	var in quotaArtifactInput
+	if !bindRuntime(c, &in) || !requireOwner(c, in.Owner) {
+		return
+	}
+	if in.ArtifactID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "invalid_request", "message": "artifact_id is required"}})
+		return
+	}
+	if err := h.s.runtime.usage.ReserveArtifact(c, usageOwner(in.Owner), c.Param("id"), in.ArtifactID, in.SizeBytes); err != nil {
+		runtimeFailure(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"reserved": true})
+}
+
+func (h runtimeHandler) releaseArtifact(c *gin.Context) {
+	var in quotaArtifactInput
+	if !bindRuntime(c, &in) || !requireOwner(c, in.Owner) {
+		return
+	}
+	if in.ArtifactID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "invalid_request", "message": "artifact_id is required"}})
+		return
+	}
+	if err := h.s.runtime.usage.ArtifactState(c, usageOwner(in.Owner), c.Param("id"), in.ArtifactID, "released"); err != nil {
+		runtimeFailure(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"released": true})
 }
 
 func (h runtimeHandler) createRun(c *gin.Context) {

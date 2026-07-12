@@ -109,6 +109,7 @@ type Usage struct {
 	CacheReadTokens  int64     `json:"cache_read_tokens"`
 	CacheWriteTokens int64     `json:"cache_write_tokens"`
 	CostMicrounits   int64     `json:"cost_microunits"`
+	ComputeMillis    int64     `json:"compute_millis"`
 	OccurredAt       time.Time `json:"occurred_at"`
 }
 

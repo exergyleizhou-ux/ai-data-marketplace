@@ -29,6 +29,11 @@ func RegisterRuntimeIngest(rg *gin.RouterGroup, s *Service, secret string) {
 	h := runtimeHandler{s: s}
 	g := rg.Group("/workbench/runtime")
 	g.Use(runtimeAuth(secret))
+	g.POST("/quota/runs/:id/admit", h.admit)
+	g.POST("/quota/runs/:id/usage", h.chargeUsage)
+	g.POST("/quota/runs/:id/complete", h.settle)
+	g.POST("/quota/runs/:id/artifacts/reserve", h.reserveArtifact)
+	g.POST("/quota/runs/:id/artifacts/release", h.releaseArtifact)
 	g.PUT("/runs/:id", h.createRun)
 	g.POST("/runs/:id/state", h.state)
 	g.POST("/runs/:id/events", h.event)
@@ -37,4 +42,13 @@ func RegisterRuntimeIngest(rg *gin.RouterGroup, s *Service, secret string) {
 	g.POST("/approvals/:approvalID/consume", h.consume)
 	g.POST("/approvals/:approvalID/execution", h.complete)
 	g.POST("/runs/:id/artifacts", h.artifact)
+}
+
+// RegisterUsageOps exposes aggregate counters only; it never joins artifacts
+// or user-authored event payloads.
+func RegisterUsageOps(rg *gin.RouterGroup, s *Service, authMW, opsGate gin.HandlerFunc) {
+	h := handler{s: s}
+	g := rg.Group("/admin/workbench")
+	g.Use(authMW, opsGate)
+	g.GET("/usage", h.usageSummary)
 }

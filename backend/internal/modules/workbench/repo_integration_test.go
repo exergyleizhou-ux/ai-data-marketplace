@@ -29,6 +29,14 @@ func runtimeRepo(t *testing.T) (*Repository, *pgxpool.Pool, Owner, Owner) {
 	}
 	t.Cleanup(p.Close)
 	ctx := context.Background()
+	lock, err := p.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = lock.Exec(ctx, `SELECT pg_advisory_lock(9283746)`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = lock.Exec(context.Background(), `SELECT pg_advisory_unlock(9283746)`); lock.Release() })
 	_, _ = p.Exec(ctx, `TRUNCATE workbench_usage,workbench_artifacts,workbench_approvals,workbench_events,workbench_runs,workbench_workspaces CASCADE`)
 	seed := func(n int) Owner {
 		var uid, wid string
@@ -48,6 +56,10 @@ func runtimeRepo(t *testing.T) (*Repository, *pgxpool.Pool, Owner, Owner) {
 func seedRun(t *testing.T, p *pgxpool.Pool, o Owner, id string) {
 	t.Helper()
 	_, err := p.Exec(context.Background(), `INSERT INTO workbench_runs(id,account_id,workspace_id,profile,status,request) VALUES($1,$2,$3,'code','running','{}')`, id, o.AccountID, o.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = p.Exec(context.Background(), `INSERT INTO workbench_run_reservations(run_id,account_id,workspace_id,started_at) VALUES($1,$2,$3,now()) ON CONFLICT DO NOTHING`, id, o.AccountID, o.WorkspaceID)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -364,6 +364,7 @@ func (s *Server) routes() {
 		workbenchSvc := workbench.NewManagedService(workbenchRepo, workbench.NewTokenManager(s.cfg.WorkbenchJWTSecret, s.cfg.WorkbenchJWTTTL), store)
 		workbench.Register(api, workbenchSvc, tm, lim, s.cfg.WorkbenchJWTSecret != "")
 		workbench.RegisterRuntimeIngest(api, workbenchSvc, s.cfg.WorkbenchRuntimeIngestSecret)
+		workbench.RegisterUsageOps(api, workbenchSvc, authMW, auth.RequireRole("ops", "admin"))
 
 		dsOpts := []dataset.Option{dataset.WithAsyncQuality(2, 128)}
 		if store != nil {

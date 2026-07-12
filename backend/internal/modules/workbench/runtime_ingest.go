@@ -6,11 +6,10 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"github.com/jackc/pgx/v5"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/workbenchusage"
 	"time"
 )
-
-const maxArtifactBytes = 8 << 20
 
 type RuntimeRunInput struct {
 	Owner Owner `json:"owner"`
@@ -60,7 +59,33 @@ func ValidRuntimeCredential(got, want string) bool {
 }
 
 func (r *Repository) CreateRun(ctx context.Context, o Owner, v Run) (Run, bool, error) {
-	ct, err := r.db.Exec(ctx, `INSERT INTO workbench_runs(id,account_id,workspace_id,profile,status,version,title,request,result,created_at,started_at,finished_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(id) DO NOTHING`, v.ID, o.AccountID, o.WorkspaceID, v.Profile, v.Status, v.Version, v.Title, v.Request, v.Result, v.CreatedAt, v.StartedAt, v.FinishedAt, v.UpdatedAt)
+	var created bool
+	err := r.usage.InTx(ctx, func(tx pgx.Tx) error {
+		var exists bool
+		if e := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workbench_runs WHERE id=$1)`, v.ID).Scan(&exists); e != nil {
+			return e
+		}
+		if exists {
+			if !workbenchusage.IsTerminal(v.Status) {
+				started := v.CreatedAt
+				if v.StartedAt != nil {
+					started = *v.StartedAt
+				}
+				return r.usage.ReserveRunTx(ctx, tx, usageOwner(o), v.ID, started)
+			}
+			return nil
+		}
+		ct, e := tx.Exec(ctx, `INSERT INTO workbench_runs(id,account_id,workspace_id,profile,status,version,title,request,result,created_at,started_at,finished_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, v.ID, o.AccountID, o.WorkspaceID, v.Profile, v.Status, v.Version, v.Title, v.Request, v.Result, v.CreatedAt, v.StartedAt, v.FinishedAt, v.UpdatedAt)
+		if e != nil {
+			return e
+		}
+		created = ct.RowsAffected() == 1
+		started := v.CreatedAt
+		if v.StartedAt != nil {
+			started = *v.StartedAt
+		}
+		return r.usage.ReserveRunTx(ctx, tx, usageOwner(o), v.ID, started)
+	})
 	if err != nil {
 		return Run{}, false, err
 	}
@@ -68,7 +93,7 @@ func (r *Repository) CreateRun(ctx context.Context, o Owner, v Run) (Run, bool, 
 	if err != nil {
 		return Run{}, false, err
 	}
-	return got, ct.RowsAffected() == 1, nil
+	return got, created, nil
 }
 func (r *Repository) CreateApproval(ctx context.Context, o Owner, a Approval) (bool, error) {
 	ct, err := r.db.Exec(ctx, `INSERT INTO workbench_approvals(approval_id,run_id,tool_call_id,step_id,account_id,workspace_id,owner,risk_level,reason,effects,command,file_scope,remote_target,network_targets,estimated_cost,expected_outputs,args_hash,editable_args,version,created_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) ON CONFLICT(approval_id) DO NOTHING`, a.ApprovalID, a.RunID, a.ToolCallID, a.StepID, o.AccountID, o.WorkspaceID, a.Owner, a.RiskLevel, a.Reason, a.Effects, a.Command, a.FileScope, a.RemoteTarget, a.NetworkTargets, a.EstimatedCost, a.ExpectedOutputs, a.ArgsHash, a.EditableArgs, a.Version, a.CreatedAt, a.ExpiresAt)
@@ -122,12 +147,18 @@ func (s *Service) StoreArtifact(ctx context.Context, in RuntimeArtifactInput) (A
 	a := in.Artifact
 	a.AccountID = in.Owner.AccountID
 	a.WorkspaceID = in.Owner.WorkspaceID
-	if len(in.Content) > maxArtifactBytes {
-		return Artifact{}, false, fmt.Errorf("artifact exceeds %d bytes", maxArtifactBytes)
-	}
 	if got, e := s.runtime.GetArtifact(ctx, in.Owner, a.ID); e == nil {
 		return got, false, nil
 	}
+	if e := s.runtime.usage.ReserveArtifact(ctx, usageOwner(in.Owner), a.RunID, a.ID, int64(len(in.Content))); e != nil {
+		return Artifact{}, false, e
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = s.runtime.usage.ArtifactState(context.Background(), usageOwner(in.Owner), a.RunID, a.ID, "released")
+		}
+	}()
 	key, e := ArtifactObjectKey(in.Owner, a.RunID, a.ID)
 	if e != nil {
 		return Artifact{}, false, e
@@ -166,5 +197,9 @@ func (s *Service) StoreArtifact(ctx context.Context, in RuntimeArtifactInput) (A
 		got, err := s.runtime.GetArtifact(ctx, in.Owner, a.ID)
 		return got, false, err
 	}
+	if e = s.runtime.usage.ArtifactState(ctx, usageOwner(in.Owner), a.RunID, a.ID, "committed"); e != nil {
+		return Artifact{}, false, e
+	}
+	committed = true
 	return a, true, nil
 }

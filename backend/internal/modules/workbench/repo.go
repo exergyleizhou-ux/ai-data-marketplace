@@ -3,17 +3,26 @@ package workbench
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/workbenchusage"
 )
 
 var ErrNotFound = errors.New("workspace not found")
 var ErrConflict = errors.New("version conflict")
 
-type Repository struct{ db *pgxpool.Pool }
+type Repository struct {
+	db    *pgxpool.Pool
+	usage *workbenchusage.Manager
+}
 
-func NewRepository(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
+func NewRepository(db *pgxpool.Pool) *Repository {
+	return &Repository{db: db, usage: workbenchusage.New(db)}
+}
 func (r *Repository) GetOrCreatePersonalWorkspace(ctx context.Context, uid string) (Workspace, error) {
 	var w Workspace
 	err := r.db.QueryRow(ctx, `INSERT INTO workbench_workspaces(account_id,slug,display_name) VALUES($1,'personal','Personal') ON CONFLICT(account_id,slug) DO UPDATE SET updated_at=workbench_workspaces.updated_at RETURNING id,account_id,slug,display_name,status`, uid).Scan(&w.ID, &w.AccountID, &w.Slug, &w.DisplayName, &w.Status)
@@ -52,7 +61,18 @@ func (r *Repository) ListRuns(ctx context.Context, o Owner, limit int) ([]Run, e
 // UpdateRunCAS prevents concurrent runtime writers from silently overwriting state.
 func (r *Repository) UpdateRunCAS(ctx context.Context, o Owner, id string, oldVersion int64, status string, result []byte) (Run, error) {
 	var v Run
-	err := r.db.QueryRow(ctx, `UPDATE workbench_runs SET status=$5,result=$6,version=version+1,updated_at=now() WHERE id=$1 AND account_id=$2 AND workspace_id=$3 AND version=$4 RETURNING id,account_id,workspace_id,profile,status,version,title,request,result,error_code,error_message,created_at,started_at,finished_at,updated_at`, id, o.AccountID, o.WorkspaceID, oldVersion, status, result).Scan(&v.ID, &v.AccountID, &v.WorkspaceID, &v.Profile, &v.Status, &v.Version, &v.Title, &v.Request, &v.Result, &v.ErrorCode, &v.ErrorMessage, &v.CreatedAt, &v.StartedAt, &v.FinishedAt, &v.UpdatedAt)
+	err := r.usage.InTx(ctx, func(tx pgx.Tx) error {
+		if !workbenchusage.IsTerminal(status) {
+			if _, e := r.usage.CheckRunWallTx(ctx, tx, usageOwner(o), id, time.Now()); e != nil {
+				return e
+			}
+		}
+		e := tx.QueryRow(ctx, `UPDATE workbench_runs SET status=$5,result=$6,version=version+1,updated_at=now(),finished_at=CASE WHEN $5 IN ('completed','failed','canceled','cancelled') THEN now() ELSE finished_at END WHERE id=$1 AND account_id=$2 AND workspace_id=$3 AND version=$4 RETURNING id,account_id,workspace_id,profile,status,version,title,request,result,error_code,error_message,created_at,started_at,finished_at,updated_at`, id, o.AccountID, o.WorkspaceID, oldVersion, status, result).Scan(&v.ID, &v.AccountID, &v.WorkspaceID, &v.Profile, &v.Status, &v.Version, &v.Title, &v.Request, &v.Result, &v.ErrorCode, &v.ErrorMessage, &v.CreatedAt, &v.StartedAt, &v.FinishedAt, &v.UpdatedAt)
+		if e != nil {
+			return e
+		}
+		return r.usage.FinishRunTx(ctx, tx, usageOwner(o), id, status, time.Now())
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		if _, e := r.GetRun(ctx, o, id); errors.Is(e, ErrNotFound) {
 			return Run{}, ErrNotFound
@@ -63,8 +83,10 @@ func (r *Repository) UpdateRunCAS(ctx context.Context, o Owner, id string, oldVe
 }
 
 func (r *Repository) AppendEvent(ctx context.Context, e Event) (bool, error) {
-	ct, err := r.db.Exec(ctx, `INSERT INTO workbench_events(id,run_id,account_id,workspace_id,seq,type,payload,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(run_id,seq) DO NOTHING`, e.ID, e.RunID, e.AccountID, e.WorkspaceID, e.Seq, e.Type, e.Payload, e.CreatedAt)
-	return ct.RowsAffected() == 1, err
+	return r.usage.RecordEvent(ctx, usageOwner(Owner{e.AccountID, e.WorkspaceID}), e.RunID, e.ID, e.Seq, e.Type, int64(len(e.Payload)), func(tx pgx.Tx) (bool, error) {
+		ct, err := tx.Exec(ctx, `INSERT INTO workbench_events(id,run_id,account_id,workspace_id,seq,type,payload,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(run_id,seq) DO NOTHING`, e.ID, e.RunID, e.AccountID, e.WorkspaceID, e.Seq, e.Type, e.Payload, e.CreatedAt)
+		return ct.RowsAffected() == 1, err
+	})
 }
 
 func (r *Repository) Events(ctx context.Context, o Owner, runID string, after int64, limit int) ([]Event, error) {
@@ -145,8 +167,29 @@ func (r *Repository) GetArtifact(ctx context.Context, o Owner, id string) (Artif
 }
 
 func (r *Repository) RecordUsage(ctx context.Context, u Usage) (bool, error) {
-	ct, err := r.db.Exec(ctx, `INSERT INTO workbench_usage(run_id,event_id,account_id,workspace_id,provider,model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,cost_microunits,occurred_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(run_id,event_id) DO NOTHING`, u.RunID, u.EventID, u.AccountID, u.WorkspaceID, u.Provider, u.Model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.CostMicrounits, u.OccurredAt)
-	return ct.RowsAffected() == 1, err
+	tokens, err := usageTokens(u)
+	if err != nil {
+		return false, err
+	}
+	return r.usage.RecordUsage(ctx, usageOwner(Owner{u.AccountID, u.WorkspaceID}), u.RunID, u.EventID, tokens, u.ComputeMillis, u.CostMicrounits, u.OccurredAt, func(tx pgx.Tx) (bool, error) {
+		ct, execErr := tx.Exec(ctx, `INSERT INTO workbench_usage(run_id,event_id,account_id,workspace_id,provider,model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens,cost_microunits,compute_millis,occurred_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(run_id,event_id) DO NOTHING`, u.RunID, u.EventID, u.AccountID, u.WorkspaceID, u.Provider, u.Model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.CostMicrounits, u.ComputeMillis, u.OccurredAt)
+		return ct.RowsAffected() == 1, execErr
+	})
+}
+
+func usageTokens(u Usage) (int64, error) {
+	var total int64
+	for _, value := range []int64{u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens} {
+		if value < 0 || value > math.MaxInt64-total {
+			return 0, fmt.Errorf("invalid token usage")
+		}
+		total += value
+	}
+	return total, nil
+}
+
+func usageOwner(o Owner) workbenchusage.Owner {
+	return workbenchusage.Owner{AccountID: o.AccountID, WorkspaceID: o.WorkspaceID}
 }
 func (r *Repository) GetOwned(ctx context.Context, id, uid string) (Workspace, error) {
 	var w Workspace
