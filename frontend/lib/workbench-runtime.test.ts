@@ -45,6 +45,20 @@ describe("parseWorkbenchSnapshot", () => {
   });
 });
 
+describe("Workbench v2 union", () => {
+  const v2 = { kind: "lumen.workbench.snapshot", version: 2, surface: "code", workspace: { id: "ws_1" }, project: null, run: { id: "run_2", last_seq: 8, status: "verifying", terminal: false }, pending_approvals: 1, verification: "running", artifact_count: 3 };
+  it("accepts the exact Code and Lab contracts", () => {
+    expect(parseWorkbenchSnapshot(v2)).toEqual(v2);
+    expect(parseWorkbenchSnapshot({ ...v2, surface: "lab", project: { id: "p_1", title: "Study" } })?.surface).toBe("lab");
+  });
+  it("rejects unknown, sensitive, and invalid union fields", () => {
+    expect(parseWorkbenchSnapshot({ ...v2, prompt: "secret" })).toBeNull();
+    expect(parseWorkbenchSnapshot({ ...v2, verification: "success" })).toBeNull();
+    expect(parseWorkbenchSnapshot({ ...v2, run: { ...v2.run, status: "done" } })).toBeNull();
+    expect(parseWorkbenchSnapshot({ ...v2, workspace: { id: "../escape" } })).toBeNull();
+  });
+});
+
 describe("Lab runtime client", () => {
   it("loads the authoritative Run, events, and artifacts with encoded identifiers", async () => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {

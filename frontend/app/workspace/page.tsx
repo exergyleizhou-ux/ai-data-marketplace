@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { WorkbenchRuntimePanel } from "@/components/WorkbenchRuntimePanel";
+import { WorkbenchRuntimePanel, type RuntimeService } from "@/components/WorkbenchRuntimePanel";
 import { useT } from "@/lib/i18n";
 import { establishWorkbenchSession } from "@/lib/workbench-session";
 import {
   WorkbenchRuntimeError,
-  cancelLabRun,
+  cancelRuntimeRun,
   loadLabRuntime,
   parseTrustedWorkbenchMessage,
   type LabRuntimeDetail,
@@ -67,6 +67,8 @@ function WorkbenchInner() {
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [runtimeError, setRuntimeError] = useState("");
   const [runtimeCanceling, setRuntimeCanceling] = useState(false);
+  const [runtimeRetrying, setRuntimeRetrying] = useState(false);
+  const [services, setServices] = useState<Record<string, RuntimeService>>({});
   const [sessionReady,setSessionReady]=useState(false);
   const [sessionError,setSessionError]=useState("");
   const connect=useCallback(async()=>{setSessionReady(false);setSessionError("");try{await establishWorkbenchSession();setSessionReady(true)}catch{setSessionError(t("请登录或重试","Sign in or retry"))}},[t]);
@@ -88,8 +90,11 @@ function WorkbenchInner() {
 
   useEffect(() => {
     const nextTab = parseTab(search.get("tab"));
-    setTab(nextTab);
-    if (nextTab !== "lab") clearRuntime();
+    const timer = window.setTimeout(() => {
+      setTab(nextTab);
+      if (nextTab === "science") clearRuntime();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [clearRuntime, search]);
 
   useEffect(() => {
@@ -107,6 +112,17 @@ function WorkbenchInner() {
       cancelled = true;
     };
   }, [tab]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    const controller = new AbortController();
+    void fetch("/api/workbench/status", { cache: "no-store", signal: controller.signal }).then(async response => {
+      if (!response.ok) return;
+      const value = await response.json() as { services?: Record<string, RuntimeService> };
+      if (value.services) setServices(value.services);
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [sessionReady]);
 
   const active = TABS.find((x) => x.id === tab) ?? TABS[2];
 
@@ -135,14 +151,15 @@ function WorkbenchInner() {
 
   useEffect(() => {
     function receiveWorkbenchMessage(event: MessageEvent<unknown>) {
-      if (tab !== "lab") return;
+      if (tab === "science") return;
       const snapshot = parseTrustedWorkbenchMessage(
         event,
         window.location.origin,
         iframeRef.current?.contentWindow ?? null,
       );
       if (!snapshot) return;
-      const identity = `${snapshot.project?.id ?? ""}:${snapshot.run?.id ?? ""}`;
+      if ((tab === "lab" && snapshot.surface !== "lab") || (tab === "coding" && snapshot.surface !== "code")) return;
+      const identity = `${snapshot.surface}:${snapshot.workspace?.id ?? ""}:${snapshot.project?.id ?? ""}:${snapshot.run?.id ?? ""}`;
       if (runtimeIdentity.current !== identity) {
         runtimeIdentity.current = identity;
         setRuntimeDetail(null);
@@ -169,7 +186,7 @@ function WorkbenchInner() {
     setRuntimeCanceling(true);
     setRuntimeError("");
     try {
-      await cancelLabRun(runID);
+      await cancelRuntimeRun(runtimeSnapshot);
       await refreshRuntime(runtimeSnapshot);
     } catch (error) {
       const status = error instanceof WorkbenchRuntimeError ? ` (${error.status})` : "";
@@ -179,8 +196,25 @@ function WorkbenchInner() {
     }
   }, [refreshRuntime, runtimeCanceling, runtimeSnapshot, t]);
 
+  const retryRuntime = useCallback(async (prompt: string) => {
+    const snapshot = runtimeSnapshot; const runID = snapshot?.run?.id;
+    if (!snapshot || !runID || runtimeRetrying) return;
+    setRuntimeRetrying(true); setRuntimeError("");
+    try {
+      if (!prompt.trim()) throw new WorkbenchRuntimeError(400, "retry prompt");
+      const url = snapshot.surface === "lab" ? "/api/lumen/lab/api/lab/chat" : "/api/lumen/code/v1/chat";
+      const body = snapshot.surface === "lab" ? { project_id: snapshot.project?.id, prompt: prompt.trim(), parent_run_id: runID } : { prompt: prompt.trim(), parent_run_id: runID };
+      if (snapshot.surface === "lab" && !snapshot.project?.id) throw new WorkbenchRuntimeError(400, "retry project");
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body) });
+      if (!response.ok) throw new WorkbenchRuntimeError(response.status, "retry");
+    } catch (error) {
+      const status = error instanceof WorkbenchRuntimeError ? ` (${error.status})` : "";
+      setRuntimeError(t("无法创建重试 Run", "Could not create retry Run") + status);
+    } finally { setRuntimeRetrying(false); }
+  }, [runtimeRetrying, runtimeSnapshot, t]);
+
   const select = useCallback((id: TabId) => {
-    if (id !== "lab") clearRuntime();
+    if (id === "science") clearRuntime();
     setTab(id);
     const url = new URL(window.location.href);
     url.searchParams.set("tab", id);
@@ -231,14 +265,17 @@ function WorkbenchInner() {
           </span>
         )}
         <div className="ml-auto flex items-center gap-2 text-xs">
-          {tab === "lab" && (
+          {tab !== "science" && (
             <WorkbenchRuntimePanel
               snapshot={runtimeSnapshot}
               detail={runtimeDetail}
               loading={runtimeLoading}
               error={runtimeError}
               canceling={runtimeCanceling}
+              retrying={runtimeRetrying}
+              services={services}
               onCancel={() => { void cancelRuntime(); }}
+              onRetry={(prompt) => { void retryRuntime(prompt); }}
             />
           )}
           <Link href="/datasets" className="text-ink/50 hover:text-forest">

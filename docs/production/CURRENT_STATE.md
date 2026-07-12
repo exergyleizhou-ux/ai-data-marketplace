@@ -78,3 +78,32 @@ Verified on 2026-07-12 in `/Users/lei/Documents/Codex/2026-07-12/new-chat-2/work
 - `TestComputePSIIntegration` now migrates and runs asynchronous workers in a
   unique temporary Postgres schema, rather than racing other packages' shared
   fixtures; three consecutive real-Postgres runs pass.
+
+## Phase 5 unified Workbench summary (2026-07-13)
+
+- The bridge parser remains strictly compatible with the exact Lab v1 shape and
+  now accepts the exact v2 Code/Lab discriminated union. Unknown fields,
+  sensitive payload additions, invalid identifiers, statuses and verification
+  values fail closed. Both surfaces share one loader, timeline and summary UI.
+- The authenticated same-origin `/api/workbench/status` handler probes Oasis,
+  Code, Lab and the Science bridge and reports configuration readiness for the
+  workspace store, model provider, object storage and compute runner. It emits
+  only bounded `ok|degraded|down`, `reason_code` and `next_action` fields; raw
+  upstream bodies, stack traces, keys and paths are never forwarded.
+- The responsive Runtime panel presents terminal state, ordered event timeline,
+  pending approval action, explicit verification state, artifact and evidence
+  downloads, cancellation, and actionable degraded services. Terminal retries
+  require a fresh user-entered prompt and create a new owner-scoped Run through
+  the Lumen chat contract with `parent_run_id`; old prompts are never recovered.
+- Mobile controls use a 390px-safe fixed panel and 44px minimum targets; forms,
+  status/error announcements, labels, focus indicators and semantic timeline
+  markup support keyboard and screen-reader use.
+
+### Verification evidence
+
+- `npm test`: PASS, 25 files / 91 tests.
+- `npm run typecheck`: PASS.
+- `npm run lint`: PASS, 0 errors / 37 pre-existing warnings; the warning in the
+  touched workspace page was removed, reducing the prior baseline by one.
+- `npm run build`: PASS, including dynamic `/api/workbench/status` output.
+- `git diff --check`: PASS.

@@ -124,4 +124,15 @@ describe("WorkbenchRuntimePanel", () => {
     expect(screen.getByText("<img src=x onerror=alert(1)>")).toBeInTheDocument();
     expect(container.querySelector("img")).toBeNull();
   });
+
+  it("requires a fresh prompt before retrying a terminal Run", async () => {
+    const onRetry = vi.fn();
+    renderPanel({ snapshot: { ...runningSnapshot, version: 2, workspace: { id: "ws_1" }, run: { ...runningSnapshot.run!, status: "failed", terminal: true }, verification: "failed", artifact_count: 0 }, detail: { ...runningDetail, run: { ...runningDetail.run!, status: "failed" } }, onRetry });
+    await userEvent.click(await screen.findByRole("button", { name: /runtime details/i }));
+    const submit = screen.getByRole("button", { name: /create linked run/i });
+    expect(submit).toBeDisabled();
+    await userEvent.type(screen.getByLabelText(/new retry prompt/i), "Fix the failing verification");
+    await userEvent.click(submit);
+    expect(onRetry).toHaveBeenCalledWith("Fix the failing verification");
+  });
 });
