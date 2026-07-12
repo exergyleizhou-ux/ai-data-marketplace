@@ -18,7 +18,7 @@ type AuthState = {
   // the standard login() path (2FA verify, future SSO) must call it so the
   // nav re-renders synchronously instead of waiting for a page reload.
   setSession: (user: User, tokens: Tokens) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   refresh: () => Promise<void>;
 };
 
@@ -61,14 +61,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(u);
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     const csrf=document.cookie.split("; ").find(v=>v.startsWith("oasis_csrf="))?.split("=")[1];
-    void Promise.allSettled([
+    const revocations = Promise.allSettled([
       fetch("/api/v1/auth/session/logout", { method: "POST", credentials: "include",headers:csrf?{"X-CSRF-Token":decodeURIComponent(csrf)}:{} }),
       revokeWorkbenchSession(),
     ]);
     tokenStore.clear();
     setUser(null);
+    await revocations;
   }, []);
 
   return (
