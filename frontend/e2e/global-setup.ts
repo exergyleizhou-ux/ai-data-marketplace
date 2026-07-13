@@ -125,12 +125,16 @@ http.createServer((req,res)=>{if(req.url==="/v1/models"){res.setHeader("content-
 
   const home = join(tempDir, "home");
   const configDir = join(home, ".lumen");
+  const xdgConfigHome = join(home, ".config");
+  const linuxConfigDir = join(xdgConfigHome, "lumen");
   const macConfigDir = join(home, "Library", "Application Support", "lumen");
-  execFileSync("mkdir", ["-p", configDir, macConfigDir, info.storageDir]);
+  execFileSync("mkdir", ["-p", configDir, linuxConfigDir, macConfigDir, info.storageDir]);
   const lumenConfig = `default_model = "e2e-model"\n[[providers]]\nname = "e2e"\nkind = "openai"\nbase_url = "http://127.0.0.1:${providerPort}/v1"\nmodel = "e2e-model"\napi_key = "e2e-key"\n`;
   writeFileSync(join(configDir, "lumen.toml"), lumenConfig);
+  writeFileSync(join(linuxConfigDir, "lumen.toml"), lumenConfig);
   writeFileSync(join(macConfigDir, "lumen.toml"), lumenConfig);
   chmodSync(join(configDir, "lumen.toml"), 0o600);
+  chmodSync(join(linuxConfigDir, "lumen.toml"), 0o600);
   chmodSync(join(macConfigDir, "lumen.toml"), 0o600);
 
   const launch = (command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, label: string) => {
@@ -144,7 +148,7 @@ http.createServer((req,res)=>{if(req.url==="/v1/models"){res.setHeader("content-
 
   launch(process.execPath, [providerScript], tempDir, process.env, "provider");
   const lumenDatabase = new URL(info.lumenDatabaseUrl); lumenDatabase.searchParams.set("application_name", `lumen-e2e-${randomUUID().slice(0, 8)}`);
-  const common = { ...process.env, HOME: home, LUMEN_HOSTED: "true", HOSTED_WORKSPACE_ROOT: join(tempDir, "workspaces"), WORKBENCH_JWT_SECRET: WORKBENCH_SECRET, WORKBENCH_DATABASE_URL: lumenDatabase.toString(), WORKBENCH_CONTROL_PLANE_URL: BACKEND_BASE, WORKBENCH_RUNTIME_INGEST_SECRET: INGEST_SECRET, WORKBENCH_OBJECT_DIR: info.storageDir, E2E_LUMEN_BUILD_MARKER: `worktree-${randomUUID()}` };
+  const common = { ...process.env, HOME: home, XDG_CONFIG_HOME: xdgConfigHome, LUMEN_HOSTED: "true", HOSTED_WORKSPACE_ROOT: join(tempDir, "workspaces"), WORKBENCH_JWT_SECRET: WORKBENCH_SECRET, WORKBENCH_DATABASE_URL: lumenDatabase.toString(), WORKBENCH_CONTROL_PLANE_URL: BACKEND_BASE, WORKBENCH_RUNTIME_INGEST_SECRET: INGEST_SECRET, WORKBENCH_OBJECT_DIR: info.storageDir, E2E_LUMEN_BUILD_MARKER: `worktree-${randomUUID()}` };
   // Lumen's config loader consults the parent process environment while
   // resolving its dotenv before command dispatch; keep both views identical.
   process.env.WORKBENCH_CONTROL_PLANE_URL = BACKEND_BASE;
