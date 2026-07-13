@@ -70,3 +70,16 @@ services to those images without changing the current schema, verifies
 readiness/read-only frontend compatibility, restores the candidate images, and
 writes a timestamped transcript containing both exact Git revisions. Preserve
 that transcript with the release evidence bundle; do not commit live secrets.
+
+## Phase 10 promotion checklist
+
+Require every row in `TEST_EVIDENCE.md` to be final and passing, confirm
+`git diff --check`, and deploy an immutable reviewed commit. Re-run
+`npm audit --omit=dev`; any high/critical production finding blocks promotion.
+Confirm current/previous image digests, schema version 39, a restorable snapshot
+and object-store versioning before the one-shot migration service runs.
+
+After rollout, verify public Caddy/TLS, security headers, health/readiness,
+cookie login/logout, one Code Run, one Lab Run, approval rejection,
+artifact/evidence download, cancellation and cross-tenant 404. This host gate
+was not run locally because public deployment was excluded from authorization.

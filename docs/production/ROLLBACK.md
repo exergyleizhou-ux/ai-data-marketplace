@@ -46,3 +46,17 @@ COMPOSE_PROJECT_NAME=oasis-phase9_rehearsal \
 ```
 
 This is an evidence rehearsal, not authorization to mutate a public host.
+
+## Phase 10 rollback acceptance
+
+The candidate/parent-image rehearsal is recorded in
+`evidence/PHASE9-ROLLBACK-REHEARSAL.md` and commits `0cf7e06`/`4016b89`.
+Phase 10 independently reruns migration up/down/up through schema 39 on isolated
+PostgreSQL; its exact result is in `TEST_EVIDENCE.md`.
+
+Retain schema 39 by default and replace only application images after proving
+the previous image can read it. Down migrations 36-39 destroy Workbench state
+and require stopped writers, a verified snapshot and an explicit data-loss
+decision. Health alone is insufficient: require readiness, login/logout,
+owner isolation, Run recovery/cancel, approval and artifact/evidence smoke
+checks before traffic resumes.
