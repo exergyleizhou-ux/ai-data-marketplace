@@ -5,7 +5,11 @@ const backend = process.env.BACKEND_API_BASE_URL ?? "http://127.0.0.1:8080/api/v
 function csrfValid(req: NextRequest) {
   const origin = req.headers.get("origin");
   let validOrigin = false;
-  try { validOrigin = !!origin && new URL(origin).origin === req.nextUrl.origin; } catch {}
+  try {
+    const configured = process.env.WORKBENCH_PARENT_ORIGIN?.trim();
+    const expected = configured ? new URL(configured).origin : req.nextUrl.origin;
+    validOrigin = !!origin && new URL(origin).origin === expected;
+  } catch {}
   const csrf = req.cookies.get("oasis_csrf")?.value;
   return validOrigin && !!csrf && req.headers.get("x-csrf-token") === csrf;
 }
