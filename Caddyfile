@@ -15,10 +15,16 @@
 
 	# Lumen Lab: page + API (before generic /api/* backend rule)
 	handle /api/lab/* {
-		reverse_proxy {$LUMEN_LAB_UPSTREAM:lumen-lab:18992}
+		reverse_proxy {$LUMEN_LAB_UPSTREAM:lumen-lab:18992} {
+			flush_interval -1
+			transport http { read_timeout 10m }
+		}
 	}
 	handle /lumen-lab/* {
-		reverse_proxy {$LUMEN_LAB_UPSTREAM:lumen-lab:18992}
+		reverse_proxy {$LUMEN_LAB_UPSTREAM:lumen-lab:18992} {
+			flush_interval -1
+			transport http { read_timeout 10m }
+		}
 	}
 	handle /lumen-lab {
 		redir /lumen-lab/ 302
@@ -34,7 +40,10 @@
 
 	# Lumen coding agent UI
 	handle /lumen/* {
-		reverse_proxy {$LUMEN_SERVE_UPSTREAM:lumen-serve:8787}
+		reverse_proxy {$LUMEN_SERVE_UPSTREAM:lumen-serve:8787} {
+			flush_interval -1
+			transport http { read_timeout 10m }
+		}
 	}
 	handle /lumen {
 		redir /lumen/ 302

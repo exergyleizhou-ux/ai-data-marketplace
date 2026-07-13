@@ -172,3 +172,36 @@ Verified on 2026-07-12 in `/Users/lei/Documents/Codex/2026-07-12/new-chat-2/work
   cleanup of both metadata and bytes when the quota commit step fails. Runtime
   handlers propagate Postgres/storage errors as generic failures and never
   report a Run or Artifact success after its durable write fails.
+
+## Phase 9 deployment candidate (2026-07-13)
+
+- Production Compose now uses an explicit one-shot migration service and keeps
+  application auto-migration disabled. Backend, frontend, database and Lumen
+  ports are private or loopback-only; Caddy is the sole intended public entry.
+- Deployment inputs require immutable current/previous image tags and distinct
+  browser JWT, runtime-ingest, PII and metrics secrets. Caddy keeps Host,
+  Origin and Cookie semantics and disables SSE buffering with a bounded
+  upstream timeout.
+- Deployment, rollback and incident runbooks define readiness gates, safe
+  application rollback versus forward-fix, secret rotation, request/run/user
+  hash correlation and bounded Prometheus alert labels.
+- Structured request logs now include `request_id`, `run_id` and an irreversible
+  64-bit user hash; they do not log request bodies, prompts, cookies or keys.
+- A real production-image stack migrated a fresh Postgres database independently
+  through schema 39. `/healthz` returned `{"status":"ok"}`, `/readyz` returned
+  `{"env":"production","status":"ready"}`, and the loopback frontend returned
+  production HTML. Real registration and Workbench token issuance succeeded.
+- Upgrade rehearsal created a separate database, migrated it to 39, applied the
+  reviewed 39→35 down path, reset the migration version to 35, then ran the
+  candidate migrator to 39. The result contained 11 `workbench_*` tables.
+- Full browser E2E passed: 14/14, including authenticated session/logout,
+  approval, cross-tenant isolation, Code/Lab Run, artifact/evidence, mobile,
+  recovery and cancellation. The rehearsal found a real logout race: clearing
+  the authenticated React tree could abort server session revocation. Revocation
+  now completes before local state is cleared; the focused test and full suite
+  pass.
+- On this Mac, starting the Caddy container with host port publication repeatedly
+  wedged Docker Desktop's container-start operation. No public endpoint was
+  used. Caddy routing was jointly exercised through the Lumen loopback staging
+  proxy (unauthenticated Code 401 and Lab readiness 200); production host binding
+  remains an environment-specific staging/host acceptance gate.

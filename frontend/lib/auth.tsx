@@ -63,13 +63,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     const csrf=document.cookie.split("; ").find(v=>v.startsWith("oasis_csrf="))?.split("=")[1];
-    const revocations = Promise.allSettled([
+    // Complete server-side revocation before removing the authenticated tree.
+    // Unmounting it first can abort both fetches during navigation and leave the
+    // HttpOnly session valid even though the UI appears signed out.
+    await Promise.allSettled([
       fetch("/api/v1/auth/session/logout", { method: "POST", credentials: "include",headers:csrf?{"X-CSRF-Token":decodeURIComponent(csrf)}:{} }),
       revokeWorkbenchSession(),
     ]);
     tokenStore.clear();
     setUser(null);
-    await revocations;
   }, []);
 
   return (
