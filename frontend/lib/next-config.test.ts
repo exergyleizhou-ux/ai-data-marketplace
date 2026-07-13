@@ -25,4 +25,14 @@ describe("nextConfig rewrites", () => {
     expect(headers["Content-Security-Policy"]).toContain("object-src 'none'");
     expect(headers["Content-Security-Policy"]).toContain("connect-src 'self'");
   });
+
+  it("allows only the Lumen UI's current external style assets on the authenticated proxy", async () => {
+    const rules = await nextConfig.headers!();
+    const lumen = rules.find((rule) => rule.source === "/api/lumen/:path*");
+    const headers = Object.fromEntries((lumen?.headers ?? []).map(({ key, value }) => [key, value]));
+    expect(headers["Content-Security-Policy"]).toContain("script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com");
+    expect(headers["Content-Security-Policy"]).toContain("style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net");
+    expect(headers["Content-Security-Policy"]).toContain("font-src 'self' data: https://cdn.jsdelivr.net");
+    expect(headers["Content-Security-Policy"]).not.toContain("script-src https:");
+  });
 });
