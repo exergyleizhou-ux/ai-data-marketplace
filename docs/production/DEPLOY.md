@@ -65,6 +65,8 @@ COMPOSE_PROJECT_NAME=oasis-phase9_rehearsal \
 
 The command builds and starts the clean local stack, checks backend health and
 readiness plus frontend HTML, executes the embedded migration up/down/up test,
-restarts the application without changing the schema as the safe rollback
-rehearsal, rechecks readiness, and writes a timestamped transcript. Preserve
+builds the actual parent commit as `previous` images, switches both application
+services to those images without changing the current schema, verifies
+readiness/read-only frontend compatibility, restores the candidate images, and
+writes a timestamped transcript containing both exact Git revisions. Preserve
 that transcript with the release evidence bundle; do not commit live secrets.

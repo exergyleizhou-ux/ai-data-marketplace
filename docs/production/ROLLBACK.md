@@ -35,8 +35,9 @@ pass; container state alone is insufficient.
 
 ## Local replay command
 
-Before promotion, replay the isolated application rollback and migration
-roundtrip and retain its timestamped transcript:
+Before promotion, replay the isolated rollback to images built from the actual
+parent commit, restore the candidate, run the migration roundtrip, and retain
+the timestamped transcript:
 
 ```bash
 COMPOSE_PROJECT_NAME=oasis-phase9_rehearsal \
