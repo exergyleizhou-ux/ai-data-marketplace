@@ -12,22 +12,24 @@
 #   3) docker compose -f docker-compose.prod.yml --env-file .env up -d
 #
 # Images: build & push to your registry first (see docs/部署手册.md), then set
-# REGISTRY and TAG.
+# REGISTRY and immutable TAG. `latest` is deliberately rejected by the deploy
+# script; PREVIOUS_TAG is recorded before every rollout.
 
 services:
   migrate:
-    image: ${REGISTRY:-local}/ai-data-marketplace-backend:${TAG:-latest}
+    image: ${REGISTRY:?set REGISTRY}/ai-data-marketplace-backend:${TAG:?set immutable TAG}
     command: ["--migrate"]
-    env_file: [.env]
+    env_file:
+      - "${ENV_FILE:?set ENV_FILE to the host secret env file}"
     restart: "no"
 
   backend:
-    image: ${REGISTRY:-local}/ai-data-marketplace-backend:${TAG:-latest}
-    env_file: [.env]
+    image: ${REGISTRY:?set REGISTRY}/ai-data-marketplace-backend:${TAG:?set immutable TAG}
+    env_file:
+      - "${ENV_FILE:?set ENV_FILE to the host secret env file}"
     environment:
       AUTO_MIGRATE: "false" # migrations run via the one-shot `migrate` service above
-    ports:
-      - "8080:8080"
+    expose: ["8080"]
     healthcheck:
       test: ["CMD", "/api", "--healthcheck"]
       interval: 15s
@@ -37,10 +39,33 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${REGISTRY:-local}/ai-data-marketplace-frontend:${TAG:-latest}
-    env_file: [.env]
-    ports:
-      - "3000:3000"
+    image: ${REGISTRY:?set REGISTRY}/ai-data-marketplace-frontend:${TAG:?set immutable TAG}
+    env_file:
+      - "${ENV_FILE:?set ENV_FILE to the host secret env file}"
+    expose: ["3000"]
     depends_on:
-      - backend
+      backend: { condition: service_healthy }
     restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10.0-alpine
+    env_file:
+      - "${ENV_FILE:?set ENV_FILE to the host secret env file}"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN}
+      LUMEN_LAB_UPSTREAM: ${LUMEN_LAB_UPSTREAM:-lumen-lab:18992}
+      LUMEN_SCIENCE_UPSTREAM: ${LUMEN_SCIENCE_UPSTREAM:-lumen-science:18990}
+      LUMEN_SERVE_UPSTREAM: ${LUMEN_SERVE_UPSTREAM:-lumen-serve:8787}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ../Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      backend: { condition: service_healthy }
+      frontend: { condition: service_started }
+    restart: unless-stopped
+
+volumes:
+  caddydata:
+  caddyconfig:

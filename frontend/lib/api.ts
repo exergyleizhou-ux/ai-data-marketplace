@@ -2,7 +2,7 @@
 // envelope { code, message, data, request_id }, Bearer auth, and one automatic
 // access-token refresh on 401.
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
+const BASE = typeof window === "undefined" ? (process.env.BACKEND_API_BASE_URL ?? "http://localhost:8080/api/v1") : "/api/v1";
 // Origin without the /api/v1 suffix — for absolute links the API returns (e.g. download_url).
 export const API_ORIGIN = BASE.replace(/\/api\/v1\/?$/, "");
 
@@ -376,19 +376,11 @@ export type NotificationPreference = {
 };
 
 export const tokenStore = {
-  get access() {
-    return typeof window === "undefined" ? null : localStorage.getItem(ACCESS_KEY);
-  },
-  get refresh() {
-    return typeof window === "undefined" ? null : localStorage.getItem(REFRESH_KEY);
-  },
-  set(t: Tokens) {
-    localStorage.setItem(ACCESS_KEY, t.access_token);
-    localStorage.setItem(REFRESH_KEY, t.refresh_token);
-  },
+  get access() { return null; },
+  get refresh() { return null; },
+  set(_t: Tokens) { this.clear(); },
   clear() {
-    localStorage.removeItem(ACCESS_KEY);
-    localStorage.removeItem(REFRESH_KEY);
+    if (typeof window !== "undefined") { localStorage.removeItem(ACCESS_KEY); localStorage.removeItem(REFRESH_KEY); }
   },
 };
 
@@ -402,7 +394,7 @@ type ReqOpts = {
 };
 
 function buildURL(path: string, query?: ReqOpts["query"]): string {
-  const url = new URL(BASE + path);
+  const url = new URL(BASE + path, typeof window !== "undefined" ? window.location.origin : "http://localhost");
   if (query) {
     for (const [k, v] of Object.entries(query)) {
       if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
@@ -423,15 +415,20 @@ async function request<T>(path: string, opts: ReqOpts = {}): Promise<T> {
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(opts.body);
   }
+  if (body && typeof document !== "undefined") {
+    const csrf = document.cookie.split("; ").find((v) => v.startsWith("oasis_csrf="))?.split("=")[1];
+    if (csrf) headers["X-CSRF-Token"] = decodeURIComponent(csrf);
+  }
 
   const res = await fetch(buildURL(path, opts.query), {
     method: opts.method ?? (body ? "POST" : "GET"),
     headers,
     body,
+    credentials: "include",
   });
 
   // Try a single refresh on auth failure, then retry the original request.
-  if (res.status === 401 && opts.auth !== false && !opts._retried && tokenStore.refresh) {
+  if (res.status === 401 && opts.auth !== false && !opts._retried) {
     const refreshed = await tryRefresh();
     if (refreshed) return request<T>(path, { ...opts, _retried: true });
   }
@@ -453,12 +450,11 @@ function tryRefresh(): Promise<boolean> {
   if (refreshing) return refreshing;
   refreshing = (async () => {
     try {
-      const data = await request<AuthResult>("/auth/refresh", {
+      await request<AuthResult>("/auth/session/refresh", {
         method: "POST",
-        body: { refresh_token: tokenStore.refresh },
+        body: {},
         auth: false,
       });
-      tokenStore.set(data.tokens);
       return true;
     } catch {
       tokenStore.clear();
@@ -479,15 +475,15 @@ export const api = {
     password: string,
     agreements?: { doc: string; version: string }[],
   ) =>
-    request<AuthResult>("/auth/register", { body: { account, account_type, password, agreements }, auth: false }),
+    request<AuthResult>("/auth/session/register", { body: { account, account_type, password, agreements }, auth: false }),
   listAgreements: () =>
     request<{ items: { doc: string; version: string; agreed_at: string }[] }>("/users/me/agreements"),
   recordAgreements: (agreements: { doc: string; version: string }[]) =>
     request<{ recorded: number }>("/users/me/agreements", { body: { agreements } }),
   login: (account: string, password: string) =>
-    request<LoginResult>("/auth/login", { body: { account, password }, auth: false }),
+    request<LoginResult>("/auth/session/login", { body: { account, password }, auth: false }),
   verify2FA: (challengeToken: string, code: string) =>
-    request<{ user: User; tokens: Tokens }>("/auth/2fa/verify", { body: { challenge_token: challengeToken, code }, auth: false }),
+    request<{ user: User; tokens: Tokens }>("/auth/session/2fa/verify", { body: { challenge_token: challengeToken, code }, auth: false }),
   enroll2FA: () => request<Enroll2FAResult>("/auth/2fa/enroll"),
   verify2FAEnrollment: (code: string) =>
     request<{ ok: boolean }>("/auth/2fa/verify-enrollment", { body: { code } }),

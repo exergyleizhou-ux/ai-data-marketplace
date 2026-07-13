@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api, tokenStore, type LoginResult, type Tokens, type User } from "./api";
+import { revokeWorkbenchSession } from "./workbench-session";
 
 type AuthState = {
   user: User | null;
@@ -17,7 +18,7 @@ type AuthState = {
   // the standard login() path (2FA verify, future SSO) must call it so the
   // nav re-renders synchronously instead of waiting for a page reload.
   setSession: (user: User, tokens: Tokens) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   refresh: () => Promise<void>;
 };
 
@@ -28,11 +29,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    if (!tokenStore.access) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
     try {
       setUser(await api.me());
     } catch {
@@ -48,28 +44,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (account: string, password: string) => {
     const res = await api.login(account, password);
-    if (res.tokens) {
-      tokenStore.set(res.tokens);
-      if (res.user) setUser(res.user);
-    }
+    if (res.user) setUser(res.user);
     return res;
   }, []);
 
   const register = useCallback(
     async (account: string, accountType: string, password: string, agreements?: { doc: string; version: string }[]) => {
       const res = await api.register(account, accountType, password, agreements);
-      tokenStore.set(res.tokens);
-      setUser(res.user);
+    setUser(res.user);
     },
     [],
   );
 
   const setSession = useCallback((u: User, tokens: Tokens) => {
-    tokenStore.set(tokens);
+    tokenStore.clear();
     setUser(u);
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    const csrf=document.cookie.split("; ").find(v=>v.startsWith("oasis_csrf="))?.split("=")[1];
+    // Complete server-side revocation before removing the authenticated tree.
+    // Unmounting it first can abort both fetches during navigation and leave the
+    // HttpOnly session valid even though the UI appears signed out.
+    await Promise.allSettled([
+      fetch("/api/v1/auth/session/logout", { method: "POST", credentials: "include",headers:csrf?{"X-CSRF-Token":decodeURIComponent(csrf)}:{} }),
+      revokeWorkbenchSession(),
+    ]);
     tokenStore.clear();
     setUser(null);
   }, []);

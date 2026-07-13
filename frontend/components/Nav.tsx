@@ -148,8 +148,8 @@ export function Nav() {
                 <Badge>{kycLabel(user.kyc_status, t)}</Badge>
               </Link>
               <button
-                onClick={() => {
-                  logout();
+                onClick={async () => {
+                  await logout();
                   router.push("/");
                 }}
                 className="text-neutral-500 hover:text-neutral-900 whitespace-nowrap"

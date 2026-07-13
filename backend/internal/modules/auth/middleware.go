@@ -19,6 +19,9 @@ func Middleware(tm *TokenManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token, ok := strings.CutPrefix(c.GetHeader("Authorization"), "Bearer ")
 		if !ok || token == "" {
+			token, _ = c.Cookie(AccessCookie)
+		}
+		if token == "" {
 			httpx.Fail(c, httpx.ErrUnauthorized)
 			c.Abort()
 			return

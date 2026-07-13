@@ -38,6 +38,7 @@ import (
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/verify"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/watchlist"
 	"github.com/lei/ai-data-marketplace/backend/internal/modules/withdrawal"
+	"github.com/lei/ai-data-marketplace/backend/internal/modules/workbench"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/audit"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/httpx"
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/metrics"
@@ -146,6 +147,7 @@ func New(cfg *config.Config, db *pgxpool.Pool) *Server {
 	// metrics times the whole handler stack.
 	engine.Use(
 		middleware.CORS(cfg.CORSAllowOrigin),
+		middleware.CSRF(),
 		// otelgin starts a span per request (no-op unless tracing.Init enabled
 		// a provider); it must run before TraceID so trace_id == span trace ID.
 		otelgin.Middleware("marketplace-backend"),
@@ -280,7 +282,9 @@ func (s *Server) objectStorage() storage.Storage {
 			slog.Error("failed to init S3 storage", "err", err)
 			return nil
 		}
-		slog.Info("object storage backend", "type", "s3", "endpoint", s.cfg.S3Endpoint, "bucket", s.cfg.S3Bucket)
+		// Endpoint URLs may contain userinfo or signed query parameters; local
+		// paths reveal host layout. Log only the selected backend kind.
+		slog.Info("object storage backend", "type", "s3")
 		return store
 	default:
 		store, err := storage.NewLocal(s.cfg.StorageDir)
@@ -288,7 +292,7 @@ func (s *Server) objectStorage() storage.Storage {
 			slog.Error("failed to init local storage", "err", err)
 			return nil
 		}
-		slog.Info("object storage backend", "type", "local", "dir", s.cfg.StorageDir)
+		slog.Info("object storage backend", "type", "local")
 		return store
 	}
 }
@@ -356,9 +360,14 @@ func (s *Server) routes() {
 			auth.WithAudit(rec))
 		lim := s.limiter() // shared rate limiter (auth credential routes + dataset preview)
 		auth.Register(api, authSvc, tm, lim)
-
 		authMW := auth.Middleware(tm)
 		store := s.objectStorage() // shared by dataset (upload) and delivery (download)
+		workbenchRepo := workbench.NewRepository(s.db)
+		s.closers = append(s.closers, workbenchRepo.StartQuotaReaper(time.Minute))
+		workbenchSvc := workbench.NewManagedService(workbenchRepo, workbench.NewTokenManager(s.cfg.WorkbenchJWTSecret, s.cfg.WorkbenchJWTTTL), store)
+		workbench.Register(api, workbenchSvc, tm, lim, s.cfg.WorkbenchJWTSecret != "")
+		workbench.RegisterRuntimeIngest(api, workbenchSvc, s.cfg.WorkbenchRuntimeIngestSecret)
+		workbench.RegisterUsageOps(api, workbenchSvc, authMW, auth.RequireRole("ops", "admin"))
 
 		dsOpts := []dataset.Option{dataset.WithAsyncQuality(2, 128)}
 		if store != nil {
@@ -451,7 +460,8 @@ func (s *Server) routes() {
 				kinds = []string{"high_risk_action", "repeated_failure"}
 			}
 			anomalyAlerter = anomaly.NewWebhookAlerter(whURL, kinds)
-			slog.Info("anomaly webhook alerting enabled", "url", whURL[:minInt(30, len(whURL))])
+			// Webhook URLs commonly embed bearer material in path/query values.
+			slog.Info("anomaly webhook alerting enabled")
 		}
 		anomalySvc := anomaly.NewService(anomalyRepo, s.db, anomalyAlerter)
 		anomalySvc.StartScanner(context.Background())

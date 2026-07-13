@@ -4,7 +4,11 @@
 const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
   { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "X-Frame-Options", value: "DENY" },
+  // Workbench surfaces are deliberately same-origin framed. DENY would break
+  // that contract; SAMEORIGIN plus frame-ancestors 'self' rejects every
+  // cross-origin embedding attempt.
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  { key: "Content-Security-Policy", value: `default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; frame-src 'self'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'${process.env.E2E_ALLOW_HTTP === "1" ? "" : "; upgrade-insecure-requests"}` },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ];
@@ -25,7 +29,9 @@ const nextConfig = {
     const lumenServe = process.env.LUMEN_SERVE_URL || "http://127.0.0.1:8787";
     const lumenScience = process.env.LUMEN_SCIENCE_URL || "http://127.0.0.1:18990";
     const lumenLab = process.env.LUMEN_LAB_URL || "http://127.0.0.1:18992";
+    const backend = process.env.BACKEND_API_BASE_URL || "http://127.0.0.1:8080/api/v1";
     return [
+      { source: "/api/v1/:path*", destination: `${backend}/:path*` },
       { source: "/lumen", destination: `${lumenServe}/` },
       { source: "/lumen/:path*", destination: `${lumenServe}/:path*` },
       { source: "/lumen-science", destination: `${lumenScience}/` },

@@ -31,6 +31,11 @@ func Register(rg *gin.RouterGroup, svc *Service, tm *TokenManager, limiter ratel
 	pub.POST("/logout",
 		middleware.RateLimit(limiter, middleware.RateLimitConfig{Name: "logout", Limit: 30, Window: time.Minute}),
 		h.logout)
+	pub.POST("/session/login", middleware.CSRF(), h.sessionLogin)
+	pub.POST("/session/register", middleware.CSRF(), h.sessionRegister)
+	pub.POST("/session/2fa/verify", middleware.CSRF(), h.sessionVerify2FA)
+	pub.POST("/session/refresh", middleware.CSRF(), h.sessionRefresh)
+	pub.POST("/session/logout", middleware.CSRF(), h.sessionLogout)
 
 	// Protected routes require a valid access token.
 	authed := rg.Group("")

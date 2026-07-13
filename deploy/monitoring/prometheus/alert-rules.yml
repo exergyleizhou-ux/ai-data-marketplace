@@ -76,6 +76,44 @@ groups:
 # ---------------------------------------------------------------------------
 - name: business
   rules:
+    - alert: WorkbenchRunFailureRateHigh
+      expr: |
+        sum(rate(marketplace_http_requests_total{route=~".*/workbench/.*|.*/runs/.*",status=~"5.."}[10m]))
+        /
+        clamp_min(sum(rate(marketplace_http_requests_total{route=~".*/workbench/.*|.*/runs/.*"}[10m])), 0.001)
+        > 0.05
+      for: 5m
+      labels: { severity: critical }
+      annotations:
+        summary: "Workbench Run/API failure rate above 5%"
+        description: "Stop the rollout; correlate request_id, run_id and user_hash without logging prompts or keys."
+
+    - alert: WorkbenchRunLatencyHigh
+      expr: |
+        histogram_quantile(0.95,
+          sum by (le) (rate(marketplace_http_request_duration_seconds_bucket{route=~".*/workbench/.*|.*/runs/.*"}[10m]))) > 10
+      for: 10m
+      labels: { severity: warning }
+      annotations:
+        summary: "Workbench API p95 exceeds 10 seconds"
+        description: "Check durable Run state, approval waits, provider health and tenant queue saturation."
+
+    - alert: WorkbenchApprovalEndpointFailing
+      expr: sum(rate(marketplace_http_requests_total{route=~".*approval.*",status=~"5.."}[10m])) > 0
+      for: 5m
+      labels: { severity: warning }
+      annotations:
+        summary: "Workbench approval endpoint is failing"
+        description: "Inspect approval expiry/CAS conflicts and database availability."
+
+    - alert: WorkbenchDatabaseOrStorageFailure
+      expr: up{job=~"backend|postgres"} == 0
+      for: 2m
+      labels: { severity: critical }
+      annotations:
+        summary: "Workbench database or backend dependency unavailable"
+        description: "Stop writes, verify readyz and storage independently, then use the rollback/forward-fix runbook."
+
     - alert: ComputeJobFailureSpike
       expr: |
         (

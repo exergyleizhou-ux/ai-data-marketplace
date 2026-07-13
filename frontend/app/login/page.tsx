@@ -37,7 +37,7 @@ export default function LoginPage() {
       if (res.need_2fa && res.challenge_token) {
         setNeed2FA(true);
         setChallenge(res.challenge_token);
-      } else if (res.tokens && res.user) {
+      } else if (res.user) {
         router.push("/datasets");
       }
     } catch (e) { setErr((e as Error).message); }

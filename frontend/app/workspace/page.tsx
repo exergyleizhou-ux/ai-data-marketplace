@@ -1,9 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { WorkbenchRuntimePanel, type RuntimeService } from "@/components/WorkbenchRuntimePanel";
 import { useT } from "@/lib/i18n";
+import { establishWorkbenchSession } from "@/lib/workbench-session";
+import {
+  WorkbenchRuntimeError,
+  cancelRuntimeRun,
+  decideRuntimeApproval,
+  loadLabRuntime,
+  parseTrustedWorkbenchMessage,
+  type LabRuntimeDetail,
+  type WorkbenchSnapshot,
+} from "@/lib/workbench-runtime";
 
 type TabId = "coding" | "science" | "lab";
 
@@ -12,7 +23,7 @@ const TABS: { id: TabId; zh: string; en: string; src: string; blurbZh: string; b
     id: "coding",
     zh: "编程智能体",
     en: "Coding agent",
-    src: "/lumen/",
+    src: "/api/lumen/code/",
     blurbZh: "对标 Claude Code · 终端/桌面编程",
     blurbEn: "Claude Code–class coding agent",
   },
@@ -20,7 +31,7 @@ const TABS: { id: TabId; zh: string; en: string; src: string; blurbZh: string; b
     id: "science",
     zh: "Science 桥",
     en: "Science bridge",
-    src: "/lumen-science/?embed=1&oasis=1",
+    src: "/api/lumen/science/?embed=1&oasis=1",
     blurbZh: "国产模型接入 Claude Science",
     blurbEn: "Domestic models → Claude Science",
   },
@@ -28,11 +39,12 @@ const TABS: { id: TabId; zh: string; en: string; src: string; blurbZh: string; b
     id: "lab",
     zh: "实验室",
     en: "Lab",
-    src: "/lumen-lab/?embed=1&oasis=1",
+    src: "/api/lumen/lab/?embed=1&oasis=1",
     blurbZh: "自主科研工作台 · 审批 · 5-ship MCP",
     blurbEn: "Autonomous lab · approvals · 5-ship MCP",
   },
 ];
+const configuredRuntimeOrigin = (process.env.NEXT_PUBLIC_LUMEN_WORKBENCH_ORIGIN ?? "").replace(/\/$/, "");
 
 function parseTab(raw: string | null): TabId {
   if (raw === "science" || raw === "lumen-science") return "science";
@@ -47,10 +59,47 @@ function WorkbenchInner() {
   const initial = useMemo(() => parseTab(search.get("tab")), [search]);
   const [tab, setTab] = useState<TabId>(initial);
   const [labHealth, setLabHealth] = useState<"ok" | "down" | "loading">("loading");
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const tabRefs = useRef<Record<TabId, HTMLButtonElement | null>>({ coding: null, science: null, lab: null });
+  const runtimeRequest = useRef(0);
+  const runtimeAbort = useRef<AbortController | null>(null);
+  const runtimeRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const runtimeIdentity = useRef("");
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<WorkbenchSnapshot | null>(null);
+  const [runtimeDetail, setRuntimeDetail] = useState<LabRuntimeDetail | null>(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const [runtimeError, setRuntimeError] = useState("");
+  const [runtimeCanceling, setRuntimeCanceling] = useState(false);
+  const [runtimeRetrying, setRuntimeRetrying] = useState(false);
+  const [decidingApproval, setDecidingApproval] = useState("");
+  const [services, setServices] = useState<Record<string, RuntimeService>>({});
+  const [sessionReady,setSessionReady]=useState(false);
+  const [sessionError,setSessionError]=useState("");
+  const connect=useCallback(async()=>{setSessionReady(false);setSessionError("");try{await establishWorkbenchSession();setSessionReady(true)}catch{setSessionError(t("请登录或重试","Sign in or retry"))}},[t]);
+  useEffect(()=>{const timer=window.setTimeout(()=>void connect(),0);return()=>window.clearTimeout(timer)},[connect]);
+
+  const clearRuntime = useCallback(() => {
+    runtimeRequest.current += 1;
+    runtimeAbort.current?.abort();
+    runtimeAbort.current = null;
+    if (runtimeRefreshTimer.current) clearTimeout(runtimeRefreshTimer.current);
+    runtimeRefreshTimer.current = null;
+    runtimeIdentity.current = "";
+    setRuntimeSnapshot(null);
+    setRuntimeDetail(null);
+    setRuntimeLoading(false);
+    setRuntimeError("");
+    setRuntimeCanceling(false);
+  }, []);
 
   useEffect(() => {
-    setTab(parseTab(search.get("tab")));
-  }, [search]);
+    const nextTab = parseTab(search.get("tab"));
+    const timer = window.setTimeout(() => {
+      setTab(nextTab);
+      if (nextTab === "science") clearRuntime();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [clearRuntime, search]);
 
   useEffect(() => {
     if (tab !== "lab") return;
@@ -68,14 +117,132 @@ function WorkbenchInner() {
     };
   }, [tab]);
 
+  useEffect(() => {
+    if (!sessionReady) return;
+    const controller = new AbortController();
+    void fetch("/api/workbench/status", { cache: "no-store", signal: controller.signal }).then(async response => {
+      if (!response.ok) return;
+      const value = await response.json() as { services?: Record<string, RuntimeService> };
+      if (value.services) setServices(value.services);
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [sessionReady]);
+
   const active = TABS.find((x) => x.id === tab) ?? TABS[2];
+  const runtimeOrigin = useMemo(() => {
+    if (!configuredRuntimeOrigin) return "";
+    try { const origin = new URL(configuredRuntimeOrigin).origin; return origin === window.location.origin ? "" : origin; } catch { return ""; }
+  }, []);
+  const activeSrc = `${runtimeOrigin}${active.src}`;
+
+  const refreshRuntime = useCallback(async (snapshot: WorkbenchSnapshot) => {
+    const requestID = runtimeRequest.current + 1;
+    runtimeRequest.current = requestID;
+    runtimeAbort.current?.abort();
+    const controller = new AbortController();
+    runtimeAbort.current = controller;
+    setRuntimeLoading(true);
+    setRuntimeError("");
+    try {
+      const detail = await loadLabRuntime(snapshot, fetch, controller.signal);
+      if (runtimeRequest.current !== requestID || controller.signal.aborted) return;
+      setRuntimeDetail(detail);
+    } catch (error) {
+      if (controller.signal.aborted || runtimeRequest.current !== requestID) return;
+      const status = error instanceof WorkbenchRuntimeError ? ` (${error.status})` : "";
+      setRuntimeError(t("无法同步 Runtime 状态", "Could not sync runtime state") + status);
+    } finally {
+      if (runtimeRequest.current === requestID && !controller.signal.aborted) {
+        setRuntimeLoading(false);
+      }
+    }
+  }, [t]);
+
+  useEffect(() => {
+    function receiveWorkbenchMessage(event: MessageEvent<unknown>) {
+      if (tab === "science") return;
+      const snapshot = parseTrustedWorkbenchMessage(
+        event,
+        runtimeOrigin || window.location.origin,
+        iframeRef.current?.contentWindow ?? null,
+      );
+      if (!snapshot) return;
+      if ((tab === "lab" && snapshot.surface !== "lab") || (tab === "coding" && snapshot.surface !== "code")) return;
+      const identity = `${snapshot.surface}:${snapshot.workspace?.id ?? ""}:${snapshot.project?.id ?? ""}:${snapshot.run?.id ?? ""}`;
+      if (runtimeIdentity.current !== identity) {
+        runtimeIdentity.current = identity;
+        setRuntimeDetail(null);
+      }
+      setRuntimeSnapshot(snapshot);
+      if (runtimeRefreshTimer.current) clearTimeout(runtimeRefreshTimer.current);
+      runtimeRefreshTimer.current = setTimeout(() => {
+        runtimeRefreshTimer.current = null;
+        void refreshRuntime(snapshot);
+      }, 250);
+    }
+    window.addEventListener("message", receiveWorkbenchMessage);
+    return () => window.removeEventListener("message", receiveWorkbenchMessage);
+  }, [refreshRuntime, runtimeOrigin, tab]);
+
+  useEffect(() => () => {
+    runtimeAbort.current?.abort();
+    if (runtimeRefreshTimer.current) clearTimeout(runtimeRefreshTimer.current);
+  }, []);
+
+  const cancelRuntime = useCallback(async () => {
+    const runID = runtimeSnapshot?.run?.id;
+    if (!runID || runtimeCanceling) return;
+    setRuntimeCanceling(true);
+    setRuntimeError("");
+    try {
+      await cancelRuntimeRun(runtimeSnapshot);
+      await refreshRuntime(runtimeSnapshot);
+    } catch (error) {
+      const status = error instanceof WorkbenchRuntimeError ? ` (${error.status})` : "";
+      setRuntimeError(t("无法取消 Run", "Could not cancel Run") + status);
+    } finally {
+      setRuntimeCanceling(false);
+    }
+  }, [refreshRuntime, runtimeCanceling, runtimeSnapshot, t]);
+
+  const retryRuntime = useCallback(async (prompt: string) => {
+    const snapshot = runtimeSnapshot; const runID = snapshot?.run?.id;
+    if (!snapshot || !runID || runtimeRetrying) return;
+    setRuntimeRetrying(true); setRuntimeError("");
+    try {
+      if (!prompt.trim()) throw new WorkbenchRuntimeError(400, "retry prompt");
+      const url = snapshot.surface === "lab" ? "/api/lumen/lab/api/lab/chat" : "/api/lumen/code/v1/chat";
+      const body = snapshot.surface === "lab" ? { project_id: snapshot.project?.id, prompt: prompt.trim(), parent_run_id: runID } : { prompt: prompt.trim(), parent_run_id: runID };
+      if (snapshot.surface === "lab" && !snapshot.project?.id) throw new WorkbenchRuntimeError(400, "retry project");
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body) });
+      if (!response.ok) throw new WorkbenchRuntimeError(response.status, "retry");
+    } catch (error) {
+      const status = error instanceof WorkbenchRuntimeError ? ` (${error.status})` : "";
+      setRuntimeError(t("无法创建重试 Run", "Could not create retry Run") + status);
+    } finally { setRuntimeRetrying(false); }
+  }, [runtimeRetrying, runtimeSnapshot, t]);
+
+  const decideApproval = useCallback(async (id: string, allow: boolean) => {
+    if (!runtimeSnapshot || decidingApproval) return;
+    setDecidingApproval(id); setRuntimeError("");
+    try { await decideRuntimeApproval(runtimeSnapshot, id, allow); await refreshRuntime(runtimeSnapshot); }
+    catch (error) { const status = error instanceof WorkbenchRuntimeError ? ` (${error.status})` : ""; setRuntimeError(t("审批决定失败", "Approval decision failed") + status); }
+    finally { setDecidingApproval(""); }
+  }, [decidingApproval, refreshRuntime, runtimeSnapshot, t]);
 
   const select = useCallback((id: TabId) => {
+    if (id === "science") clearRuntime();
     setTab(id);
     const url = new URL(window.location.href);
     url.searchParams.set("tab", id);
     window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}`);
-  }, []);
+  }, [clearRuntime]);
+
+  const navigateTabs = useCallback((event: React.KeyboardEvent, current: TabId) => {
+    const ids: TabId[] = ["coding", "science", "lab"]; let index = ids.indexOf(current);
+    if (event.key === "Home") index = 0; else if (event.key === "End") index = ids.length - 1; else if (event.key === "ArrowRight") index = (index + 1) % ids.length; else if (event.key === "ArrowLeft") index = (index + ids.length - 1) % ids.length; else return;
+    event.preventDefault(); select(ids[index]); tabRefs.current[ids[index]]?.focus();
+  }, [select]);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-paper">
@@ -89,8 +256,13 @@ function WorkbenchInner() {
                 key={tb.id}
                 type="button"
                 role="tab"
+                id={`workbench-tab-${tb.id}`}
+                aria-controls={`workbench-panel-${tb.id}`}
                 aria-selected={on}
+                tabIndex={on ? 0 : -1}
+                ref={element => { tabRefs.current[tb.id] = element; }}
                 onClick={() => select(tb.id)}
+                onKeyDown={event => navigateTabs(event, tb.id)}
                 className={`rounded-md px-3 py-1.5 text-sm transition ${
                   on
                     ? "bg-forest/15 font-medium text-forest"
@@ -120,7 +292,22 @@ function WorkbenchInner() {
                 : t("探测中…", "Probing…")}
           </span>
         )}
-        <div className="ml-auto flex gap-2 text-xs">
+        <div className="ml-auto flex items-center gap-2 text-xs">
+          {tab !== "science" && (
+            <WorkbenchRuntimePanel
+              snapshot={runtimeSnapshot}
+              detail={runtimeDetail}
+              loading={runtimeLoading}
+              error={runtimeError}
+              canceling={runtimeCanceling}
+              retrying={runtimeRetrying}
+              decidingApproval={decidingApproval}
+              services={services}
+              onCancel={() => { void cancelRuntime(); }}
+              onRetry={(prompt) => { void retryRuntime(prompt); }}
+              onApprovalDecision={(id, allow) => { void decideApproval(id, allow); }}
+            />
+          )}
           <Link href="/datasets" className="text-ink/50 hover:text-forest">
             ← {t("数据市场", "Marketplace")}
           </Link>
@@ -138,14 +325,22 @@ function WorkbenchInner() {
           </p>
         </div>
       ) : (
-        <iframe
+        <>
+        {sessionError && <div role="alert" className="p-4 text-center"><p>{sessionError}</p><button className="mt-2 min-h-11 rounded border px-4" type="button" onClick={()=>void connect()}>{t("重试","Retry")}</button></div>}
+        {!sessionReady && !sessionError && <p role="status" aria-live="polite" className="p-4 text-center text-sm">{t("正在建立安全工作台会话…", "Establishing secure Workbench session…")}</p>}
+        {sessionReady && <iframe
+          ref={iframeRef}
           key={active.id}
-          src={active.src}
+          src={activeSrc}
           title={t(active.zh, active.en)}
+          role="tabpanel"
+          id={`workbench-panel-${active.id}`}
+          aria-labelledby={`workbench-tab-${active.id}`}
           className="min-h-0 w-full flex-1 border-0 bg-paper"
           allow="clipboard-read; clipboard-write"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-        />
+          sandbox="allow-scripts allow-forms allow-popups allow-same-origin"
+        />}
+        </>
       )}
     </div>
   );

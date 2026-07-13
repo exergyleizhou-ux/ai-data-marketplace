@@ -3,10 +3,8 @@ import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { INFO_PATH } from "./global-setup";
 
-export const API = "http://localhost:8080/api/v1";
-
 function info() {
-  return JSON.parse(readFileSync(INFO_PATH, "utf8")) as { databaseUrl: string; devsqlBin: string };
+  return JSON.parse(readFileSync(INFO_PATH, "utf8")) as { databaseUrl: string; backendBase: string; devsqlBin: string };
 }
 
 // Run one or more raw SQL statements via the backend's cmd/devsql helper (which
@@ -42,9 +40,12 @@ export type RegisteredUser = { id: string; account: string; access: string; refr
 // Register a fresh user through the real API and return their id + tokens.
 export async function apiRegister(prefix: string): Promise<RegisteredUser> {
   const account = `${prefix}-${randomUUID().slice(0, 8)}@e2e.local`;
-  const res = await fetch(`${API}/auth/register`, {
+  const octet = 10 + Math.floor(Math.random() * 220);
+  const res = await fetch(`${info().backendBase}/api/v1/auth/register`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // The real edge assigns a client IP. Give each isolated E2E actor one too,
+    // so repeat runs exercise rate limiting without sharing a synthetic peer.
+    headers: { "Content-Type": "application/json", "X-Forwarded-For": `198.51.100.${octet}` },
     body: JSON.stringify({ account, password: "password123", account_type: "email" }),
   });
   const json = await res.json();

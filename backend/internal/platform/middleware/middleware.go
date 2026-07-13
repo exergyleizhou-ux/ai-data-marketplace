@@ -4,8 +4,11 @@
 package middleware
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +36,15 @@ func Logger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
+		userHash := ""
+		if userID := httpx.UserID(c); userID != "" {
+			sum := sha256.Sum256([]byte(userID))
+			userHash = hex.EncodeToString(sum[:8])
+		}
+		runID := c.Param("run_id")
+		if runID == "" && strings.Contains(c.FullPath(), "/workbench/runs/:id") {
+			runID = c.Param("id")
+		}
 		slog.Info("http_request",
 			"method", c.Request.Method,
 			"path", c.Request.URL.Path,
@@ -40,6 +52,8 @@ func Logger() gin.HandlerFunc {
 			"latency_ms", time.Since(start).Milliseconds(),
 			"client_ip", c.ClientIP(),
 			"request_id", httpx.RequestID(c),
+			"run_id", runID,
+			"user_hash", userHash,
 			"trace_id", c.GetString("trace_id"),
 		)
 	}

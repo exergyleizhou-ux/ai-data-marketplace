@@ -51,6 +51,264 @@ security:
   - bearerAuth: []
 
 paths:
+  /auth/session/register:
+    post:
+      tags: [auth]
+      summary: Register and establish an HttpOnly browser session
+      security: []
+      responses: { '200': { description: Browser session established } }
+  /auth/session/login:
+    post:
+      tags: [auth]
+      summary: Login and establish an HttpOnly browser session
+      security: []
+      responses: { '200': { description: Browser session established } }
+  /auth/session/2fa/verify:
+    post:
+      tags: [auth]
+      summary: Complete 2FA and establish an HttpOnly browser session
+      security: []
+      responses: { '200': { description: Browser session established } }
+  /auth/session/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate browser session cookies
+      security: []
+      responses: { '200': { description: Browser session refreshed } }
+  /auth/session/logout:
+    post:
+      tags: [auth]
+      summary: Revoke and clear browser session cookies
+      security: []
+      responses: { '204': { description: Browser session cleared } }
+  /workbench/token:
+    post:
+      tags: [Workbench]
+      summary: Issue a short-lived Lumen Workbench identity token
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workspace_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Short-lived token for an owned workspace
+        '401': { description: Authentication required }
+        '404': { description: Workspace not found }
+  /workbench/runs:
+    get:
+      tags: [Workbench]
+      summary: List managed runtime runs in an owned workspace
+      parameters:
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200': { description: Owner-scoped runs }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workbench/runs/{id}:
+    get:
+      tags: [Workbench]
+      summary: Get a managed runtime run
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+      responses:
+        '200': { description: Run }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workbench/runs/{id}/events:
+    get:
+      tags: [Workbench]
+      summary: Read ordered runtime events after a sequence
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+        - { name: after, in: query, schema: { type: integer, format: int64, minimum: 0 } }
+      responses:
+        '200': { description: Events in ascending sequence order }
+  /workbench/runs/{id}/approvals:
+    get:
+      tags: [Workbench]
+      summary: List approvals and their reviewed effects
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+      responses:
+        '200': { description: Approvals }
+  /workbench/approvals/{approvalID}/decision:
+    post:
+      tags: [Workbench]
+      summary: Decide a current, unexpired approval using optimistic concurrency
+      parameters:
+        - { name: approvalID, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, version]
+              properties:
+                decision: { type: string, enum: [approved, rejected] }
+                version: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200': { description: Recorded approval decision }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /workbench/runs/{id}/artifacts:
+    get:
+      tags: [Workbench]
+      summary: List artifact metadata without exposing object keys
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+      responses:
+        '200': { description: Artifacts }
+  /workbench/artifacts/{artifactID}/download:
+    get:
+      tags: [Workbench]
+      summary: Download an owner-checked artifact
+      parameters:
+        - { name: artifactID, in: path, required: true, schema: { type: string } }
+        - $ref: '#/components/parameters/WorkbenchWorkspace'
+      responses:
+        '200': { description: Artifact bytes }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /workbench/runtime/runs/{id}:
+    put:
+      tags: [Workbench]
+      summary: Idempotently ingest a Lumen runtime run
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Existing run }, '201': { description: Run persisted }, '401': { description: Invalid machine credential }, '503': { description: Ingest is not configured } }
+  /workbench/runtime/runs/{id}/state:
+    post:
+      tags: [Workbench]
+      summary: Compare-and-swap a Lumen run state
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: State persisted }, '409': { $ref: '#/components/responses/Conflict' } }
+  /workbench/runtime/runs/{id}/events:
+    post:
+      tags: [Workbench]
+      summary: Idempotently append an ordered runtime event
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Event persisted or already present } }
+  /workbench/runtime/runs/{id}/usage:
+    post:
+      tags: [Workbench]
+      summary: Idempotently ingest model usage
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Usage persisted or already present } }
+  /workbench/runtime/runs/{id}/approvals:
+    post:
+      tags: [Workbench]
+      summary: Idempotently ingest a fully-bound approval
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Approval persisted or already present } }
+  /workbench/runtime/approvals/{approvalID}/consume:
+    post:
+      tags: [Workbench]
+      summary: Atomically consume an approved args hash before execution
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: approvalID, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Approval consumed }, '409': { $ref: '#/components/responses/Conflict' } }
+  /workbench/runtime/approvals/{approvalID}/execution:
+    post:
+      tags: [Workbench]
+      summary: Atomically record executed or failed approval outcome
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: approvalID, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Execution outcome persisted }, '409': { $ref: '#/components/responses/Conflict' } }
+  /workbench/runtime/runs/{id}/artifacts:
+    post:
+      tags: [Workbench]
+      summary: Persist artifact bytes and metadata via configured object storage
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Existing artifact }, '201': { description: Artifact persisted } }
+  /workbench/runtime/quota/runs/{id}/admit:
+    post:
+      tags: [Workbench]
+      summary: Atomically reserve tenant Run capacity and return runtime limits
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkbenchQuotaAdmission' }
+      responses:
+        '200': { description: Idempotent admission and authoritative quota policy }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
+  /workbench/runtime/quota/runs/{id}/usage:
+    post:
+      tags: [Workbench]
+      summary: Idempotently debit tenant model usage
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Usage debit recorded or already present }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
+  /workbench/runtime/quota/runs/{id}/heartbeat:
+    post:
+      tags: [Workbench]
+      summary: Extend an active Run admission lease
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Lease extended for 120 seconds }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
+  /workbench/runtime/quota/runs/{id}/complete:
+    post:
+      tags: [Workbench]
+      summary: Release Run capacity and settle terminal compute exactly once
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Run reservation released } }
+  /workbench/runtime/quota/runs/{id}/artifacts/reserve:
+    post:
+      tags: [Workbench]
+      summary: Atomically reserve artifact and workspace storage capacity
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Artifact reservation recorded or already present }
+        '429': { $ref: '#/components/responses/QuotaExceeded' }
+  /workbench/runtime/quota/runs/{id}/artifacts/release:
+    post:
+      tags: [Workbench]
+      summary: Release an uncommitted artifact reservation
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Artifact reservation released } }
+  /workbench/runtime/quota/runs/{id}/artifacts/commit:
+    post:
+      tags: [Workbench]
+      summary: Commit storage quota after object and metadata are durable
+      security: [{ runtimeIngestAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Artifact reservation committed }
+        '409': { description: Artifact reservation is missing or not committable }
+  /admin/workbench/usage:
+    get:
+      tags: [Workbench]
+      summary: Read aggregate tenant usage without file or event content
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: account_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: workspace_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: month, in: query, schema: { type: string, pattern: '^\d{4}-\d{2}$' } }
+      responses:
+        '200': { description: Aggregate token, compute, cost, storage, and active Run counters }
+        '403': { $ref: '#/components/responses/Forbidden' }
   # =========================================================================
   # AUTH
   # =========================================================================
@@ -2031,7 +2289,18 @@ paths:
 # COMPONENTS
 # ===========================================================================
 components:
+  parameters:
+    WorkbenchWorkspace:
+      name: workspace_id
+      in: query
+      required: true
+      schema: { type: string, format: uuid }
+      description: Owned Workbench workspace tenant boundary
   securitySchemes:
+    runtimeIngestAuth:
+      type: http
+      scheme: bearer
+      description: Dedicated Lumen machine credential, separate from user JWT signing keys
     bearerAuth:
       type: http
       scheme: bearer
@@ -2043,6 +2312,17 @@ components:
       description: "Oasis Verify API key (sk_live_…). Also accepted as Authorization: Bearer sk_live_…"
 
   schemas:
+    WorkbenchQuotaAdmission:
+      type: object
+      required: [owner, started_at]
+      properties:
+        owner:
+          type: object
+          required: [account_id, workspace_id]
+          properties:
+            account_id: { type: string, format: uuid }
+            workspace_id: { type: string, format: uuid }
+        started_at: { type: string, format: date-time }
     Envelope:
       type: object
       properties:
@@ -2082,6 +2362,20 @@ components:
         user:            { type: object }
 
   responses:
+    QuotaExceeded:
+      description: A hard tenant quota was exceeded
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                required: [code, message, next_action]
+                properties:
+                  code: { type: string }
+                  message: { type: string }
+                  next_action: { type: string }
     OK:
       description: Success
       content:

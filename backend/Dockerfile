@@ -14,6 +14,13 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./c
 
 # --- runtime stage ---
 FROM gcr.io/distroless/static-debian12:nonroot
+ARG OCI_REVISION=unknown
+ARG OCI_VERSION=dev
+ARG OCI_SOURCE=https://github.com/exergyleizhou-ux/ai-data-marketplace
+LABEL org.opencontainers.image.title="Oasis backend" \
+      org.opencontainers.image.source="${OCI_SOURCE}" \
+      org.opencontainers.image.revision="${OCI_REVISION}" \
+      org.opencontainers.image.version="${OCI_VERSION}"
 COPY --from=build /out/api /api
 EXPOSE 8080
 USER nonroot:nonroot

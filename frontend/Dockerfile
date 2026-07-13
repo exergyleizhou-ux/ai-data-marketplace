@@ -23,6 +23,13 @@ RUN npm run build
 
 # --- runtime (Next.js standalone output) ---
 FROM node:20-alpine AS runtime
+ARG OCI_REVISION=unknown
+ARG OCI_VERSION=dev
+ARG OCI_SOURCE=https://github.com/exergyleizhou-ux/ai-data-marketplace
+LABEL org.opencontainers.image.title="Oasis frontend" \
+      org.opencontainers.image.source="${OCI_SOURCE}" \
+      org.opencontainers.image.revision="${OCI_REVISION}" \
+      org.opencontainers.image.version="${OCI_VERSION}"
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
 COPY --from=build /app/public ./public

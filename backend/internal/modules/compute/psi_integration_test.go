@@ -3,11 +3,15 @@ package compute
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/lei/ai-data-marketplace/backend/internal/platform/db"
@@ -26,6 +30,27 @@ func TestComputePSIIntegration(t *testing.T) {
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping real-DB integration test")
 	}
+	// This test starts asynchronous workers, so a transaction cannot safely
+	// contain its fixtures. Give it a dedicated schema instead of sharing and
+	// truncating the suite database while other integration tests are active.
+	base, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("base pool: %v", err)
+	}
+	defer base.Close()
+	schema := "test_psi_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err = base.Exec(context.Background(), fmt.Sprintf(`CREATE SCHEMA %q`, schema)); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	defer func() { _, _ = base.Exec(context.Background(), fmt.Sprintf(`DROP SCHEMA %q CASCADE`, schema)) }()
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("parse dsn: %v", err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	dsn = u.String()
 	if err := db.RunMigrations(dsn); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
