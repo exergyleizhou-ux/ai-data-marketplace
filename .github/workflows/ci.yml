@@ -137,6 +137,13 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout verified Lumen runtime
+        uses: actions/checkout@v4
+        with:
+          repository: exergyleizhou-ux/lumen
+          # Pin the cross-repository E2E dependency to the reviewed release commit.
+          ref: 5925940d4a6ed5cf2388be9819cbb3f466edd593
+          path: .e2e-lumen
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
