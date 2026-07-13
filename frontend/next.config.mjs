@@ -12,6 +12,7 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ];
+const lumenProxyCsp = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' data: https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self'; upgrade-insecure-requests";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -21,7 +22,10 @@ const nextConfig = {
   // real production build directly without assembling the standalone tree.
   output: process.env.NEXT_OUTPUT_STANDALONE === "0" ? undefined : "standalone",
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      { source: "/api/lumen/:path*", headers: [{ key: "Content-Security-Policy", value: lumenProxyCsp }] },
+    ];
   },
   async rewrites() {
     // Dev convenience: proxy Lumen services through the Next dev server.
