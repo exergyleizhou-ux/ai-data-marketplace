@@ -17,13 +17,17 @@
 	handle /api/lab/* {
 		reverse_proxy {$LUMEN_LAB_UPSTREAM:lumen-lab:18992} {
 			flush_interval -1
-			transport http { read_timeout 10m }
+			transport http {
+				read_timeout 10m
+			}
 		}
 	}
 	handle /lumen-lab/* {
 		reverse_proxy {$LUMEN_LAB_UPSTREAM:lumen-lab:18992} {
 			flush_interval -1
-			transport http { read_timeout 10m }
+			transport http {
+				read_timeout 10m
+			}
 		}
 	}
 	handle /lumen-lab {
@@ -42,7 +46,9 @@
 	handle /lumen/* {
 		reverse_proxy {$LUMEN_SERVE_UPSTREAM:lumen-serve:8787} {
 			flush_interval -1
-			transport http { read_timeout 10m }
+			transport http {
+				read_timeout 10m
+			}
 		}
 	}
 	handle /lumen {
@@ -52,7 +58,12 @@
 	# Backend: marketplace API + ops/health/metrics/docs.
 	@backend path /api/* /healthz /readyz /metrics /docs /docs/*
 	handle @backend {
-		reverse_proxy backend:8080
+		reverse_proxy backend:8080 {
+			flush_interval -1
+			transport http {
+				read_timeout 10m
+			}
+		}
 	}
 
 	# Everything else is the Next.js app.

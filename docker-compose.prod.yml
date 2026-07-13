@@ -21,7 +21,12 @@
 
 services:
   migrate:
-    build: ./backend
+    build:
+      context: ./backend
+      args: &oci-args
+        OCI_REVISION: ${OASIS_IMAGE_TAG:?set OASIS_IMAGE_TAG to a git SHA}
+        OCI_VERSION: ${OASIS_IMAGE_TAG}
+        OCI_SOURCE: ${OCI_SOURCE:-https://github.com/exergyleizhou-ux/ai-data-marketplace}
     command: ["--migrate"]
     restart: "no"
     environment: &backend-env
@@ -80,7 +85,7 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:latest
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-04-22T22-12-26Z}
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -95,7 +100,9 @@ services:
       retries: 20
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      args: *oci-args
     restart: unless-stopped
     environment: *backend-env
     expose: ["8080"]
@@ -115,6 +122,7 @@ services:
     build:
       context: ./frontend
       args:
+        <<: *oci-args
         # Same-origin API: Caddy proxies /api/* to the backend, so the browser
         # bundle just calls a relative path. No hardcoded host.
         NEXT_PUBLIC_API_BASE_URL: "/api/v1"
@@ -125,17 +133,49 @@ services:
     expose: ["3000"]
     ports: ["127.0.0.1:${FRONTEND_HOST_PORT:-3000}:3000"]
 
-  # Optional Lumen workbench (profile: lumen).
+  # Optional Lumen workbench (profile: lumen). All services are hosted-mode,
+  # fail closed, private, and share the same durable state/control plane.
   #   docker compose --env-file .env.prod -f docker-compose.prod.yml --profile lumen up -d
   # Point LUMEN_LAB_UPSTREAM at host-run lab if not using the profile:
   #   LUMEN_LAB_UPSTREAM=host.docker.internal:18992
+  lumen-serve:
+    profiles: ["lumen"]
+    image: ${LUMEN_IMAGE:?set LUMEN_IMAGE to an immutable tag or digest}
+    restart: unless-stopped
+    command: ["serve", "--addr", "0.0.0.0:8787"]
+    environment: &lumen-env
+      LUMEN_HOSTED: "true"
+      WORKBENCH_JWT_SECRET: ${WORKBENCH_JWT_SECRET}
+      WORKBENCH_RUNTIME_INGEST_SECRET: ${WORKBENCH_RUNTIME_INGEST_SECRET}
+      # Lumen deliberately accepts only the origin and appends the fixed,
+      # machine-authenticated runtime/quota path itself.
+      WORKBENCH_CONTROL_PLANE_URL: http://backend:8080
+      WORKBENCH_DATABASE_URL: "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      WORKBENCH_OBJECT_DIR: /data/objects
+      WORKBENCH_PARENT_ORIGIN: "https://${DOMAIN}"
+      LUMEN_SCIENCE_DIR: /data/science
+      LUMEN_PROVIDER: ${LUMEN_PROVIDER:?set hosted LUMEN_PROVIDER}
+      LUMEN_MODEL: ${LUMEN_MODEL:?set hosted LUMEN_MODEL}
+      LUMEN_API_KEY: ${LUMEN_API_KEY:?set hosted LUMEN_API_KEY via secret environment}
+    working_dir: /run/secrets
+    secrets: &lumen-secrets
+      - source: lumen_config
+        target: lumen.toml
+    volumes:
+      - lumendata:/data
+    expose: ["8787"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      backend: { condition: service_healthy }
+
   lumen-lab:
     profiles: ["lumen"]
-    image: ${LUMEN_IMAGE:-lumen:local}
+    image: ${LUMEN_IMAGE:?set LUMEN_IMAGE to an immutable tag or digest}
     restart: unless-stopped
-    command: ["science", "lab", "--addr", "0.0.0.0:18992"]
-    environment:
-      LUMEN_SCIENCE_DIR: /data/science
+    command: ["science", "lab", "--no-browser", "--addr", "0.0.0.0:18992"]
+    environment: *lumen-env
+    working_dir: /run/secrets
+    secrets: *lumen-secrets
     volumes:
       - lumendata:/data
     expose:
@@ -143,18 +183,19 @@ services:
 
   lumen-science:
     profiles: ["lumen"]
-    image: ${LUMEN_IMAGE:-lumen:local}
+    image: ${LUMEN_IMAGE:?set LUMEN_IMAGE to an immutable tag or digest}
     restart: unless-stopped
     command: ["science", "gui", "--no-browser", "--addr", "0.0.0.0:18990"]
-    environment:
-      LUMEN_SCIENCE_DIR: /data/science
+    environment: *lumen-env
+    working_dir: /run/secrets
+    secrets: *lumen-secrets
     volumes:
       - lumendata:/data
     expose:
       - "18990"
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.10.0-alpine
     restart: unless-stopped
     environment:
       DOMAIN: ${DOMAIN}
@@ -180,3 +221,7 @@ volumes:
   caddydata:
   caddyconfig:
   lumendata:
+
+secrets:
+  lumen_config:
+    file: ${LUMEN_CONFIG_FILE:?set LUMEN_CONFIG_FILE to a hosted lumen.toml}

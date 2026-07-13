@@ -49,3 +49,22 @@ creation/events/cancel/approval/artifact/evidence, and one reconnecting SSE flow
 Confirm application logs have `request_id`, bounded `run_id`, and irreversible
 `user_hash`, and contain no prompt, token, API key, Cookie, or Authorization.
 Run the frontend E2E suite against the candidate origin before promotion.
+
+## Replayable local install, migration, and rollback evidence
+
+The rehearsal is deliberately isolated under a Compose project whose name must
+start with `oasis-phase9_`. Its exit trap previews and removes only that
+project's containers, `oasis-phase9_*` volumes, and locally built images. It
+does not connect to or remove the shared runtime PostgreSQL instance.
+
+```bash
+COMPOSE_PROJECT_NAME=oasis-phase9_rehearsal \
+  EVIDENCE_DIR="$PWD/work/phase9-evidence" \
+  bash scripts/phase9-rehearsal.sh
+```
+
+The command builds and starts the clean local stack, checks backend health and
+readiness plus frontend HTML, executes the embedded migration up/down/up test,
+restarts the application without changing the schema as the safe rollback
+rehearsal, rechecks readiness, and writes a timestamped transcript. Preserve
+that transcript with the release evidence bundle; do not commit live secrets.

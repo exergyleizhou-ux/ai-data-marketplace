@@ -45,4 +45,3 @@ Daily: readiness, backup completion, queue/provider/error dashboards. Weekly:
 restore a Postgres snapshot and verify object retrieval. Each release: migration
 rehearsal from the oldest supported schema, application rollback rehearsal, SSE
 reconnect, session revocation, and evidence bundle checksum verification.
-

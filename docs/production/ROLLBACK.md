@@ -33,3 +33,15 @@ the database and object-store snapshot, capture request IDs, and escalate using
 `RUNBOOK.md`. A rollback is complete only after synthetic Run and artifact tests
 pass; container state alone is insufficient.
 
+## Local replay command
+
+Before promotion, replay the isolated application rollback and migration
+roundtrip and retain its timestamped transcript:
+
+```bash
+COMPOSE_PROJECT_NAME=oasis-phase9_rehearsal \
+  EVIDENCE_DIR="$PWD/work/phase9-evidence" \
+  bash scripts/phase9-rehearsal.sh
+```
+
+This is an evidence rehearsal, not authorization to mutate a public host.
