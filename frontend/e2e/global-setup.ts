@@ -153,7 +153,14 @@ http.createServer((req,res)=>{if(req.url==="/v1/models"){res.setHeader("content-
   await waitForReady(`${BACKEND_BASE}/readyz`);
   launch(lumenBin, ["serve", "--addr", `127.0.0.1:${codePort}`], tempDir, common, "code");
   launch(lumenBin, ["science", "lab", "--addr", `127.0.0.1:${labPort}`, "--no-browser"], tempDir, common, "lab");
-  await Promise.all([waitForReady(`http://127.0.0.1:${codePort}/`), waitForReady(`http://127.0.0.1:${labPort}/api/lab/health`)]);
+  try {
+    await Promise.all([waitForReady(`http://127.0.0.1:${codePort}/`), waitForReady(`http://127.0.0.1:${labPort}/api/lab/health`)]);
+  } catch (error) {
+    for (const log of info.logs) {
+      try { console.error(`\n--- ${log} ---\n${readFileSync(log, "utf8")}`); } catch {}
+    }
+    throw error;
+  }
   execFileSync("npm", ["run", "build"], { cwd: process.cwd(), env: { ...process.env, E2E_ALLOW_HTTP: "1", NEXT_OUTPUT_STANDALONE: "0", BACKEND_API_BASE_URL: `${BACKEND_BASE}/api/v1`, LUMEN_SERVE_URL: `http://127.0.0.1:${codePort}`, LUMEN_LAB_URL: `http://127.0.0.1:${labPort}` }, stdio: "inherit" });
   launch(process.execPath, [join(process.cwd(), "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(FRONTEND_PORT)], process.cwd(), { ...process.env, E2E_ALLOW_HTTP: "1", BACKEND_API_BASE_URL: `${BACKEND_BASE}/api/v1`, LUMEN_SERVE_URL: `http://127.0.0.1:${codePort}`, LUMEN_LAB_URL: `http://127.0.0.1:${labPort}`, LUMEN_PROVIDER_CONFIGURED: "true", WORKBENCH_DATABASE_URL: "e2e", STORAGE_DRIVER: "local", COMPUTE_RUNNER: "controlled" }, "frontend");
   await waitForReady(`http://127.0.0.1:${FRONTEND_PORT}/`);
